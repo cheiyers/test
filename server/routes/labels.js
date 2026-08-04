@@ -1,0 +1,227 @@
+'use strict';
+
+const express = require('express');
+const { v4: uuidv4 } = require('uuid');
+const { requireRoles } = require('../auth');
+
+function shortCode(prefix) {
+  return `${prefix}${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+}
+
+function buildFieldCode(raw, fields) {
+  return (fields || []).map((f) => String(raw[f] ?? '').trim()).filter(Boolean).join('|');
+}
+
+function labelRoutes(db) {
+  const router = express.Router();
+  const canImport = requireRoles('importer', 'admin');
+
+  router.post('/generate', canImport, (req, res) => {
+    const { batch_id, master_template_id, child_template_id, only_success = true } = req.body || {};
+    if (!batch_id) return res.status(400).json({ error: '缺少 batch_id' });
+
+    const batch = db.prepare('SELECT * FROM import_batches WHERE id = ?').get(batch_id);
+    if (!batch) return res.status(404).json({ error: '批次不存在' });
+    if (batch.status === 'draft') {
+      return res.status(400).json({ error: '请先完成 BOM 关联' });
+    }
+
+    const masterTpl = master_template_id
+      ? db.prepare('SELECT * FROM label_templates WHERE id = ? AND label_type = ?').get(master_template_id, 'master')
+      : db.prepare('SELECT * FROM label_templates WHERE label_type = ? ORDER BY updated_at DESC LIMIT 1').get('master');
+    const childTpl = child_template_id
+      ? db.prepare('SELECT * FROM label_templates WHERE id = ? AND label_type = ?').get(child_template_id, 'child')
+      : db.prepare('SELECT * FROM label_templates WHERE label_type = ? ORDER BY updated_at DESC LIMIT 1').get('child');
+
+    if (!masterTpl || !childTpl) {
+      return res.status(400).json({ error: '请先创建总包与子件标签模板' });
+    }
+
+    const masters = db.prepare(`
+      SELECT * FROM master_order_lines WHERE batch_id = ?
+      ${only_success ? "AND match_status = 'success'" : ''}
+      ORDER BY line_no
+    `).all(batch_id);
+
+    const masterCodeFields = JSON.parse(masterTpl.code_fields_json || '[]');
+    const childCodeFields = JSON.parse(childTpl.code_fields_json || '[]');
+
+    let masterCreated = 0;
+    let childCreated = 0;
+    let skipped = 0;
+
+    const tx = db.transaction(() => {
+      const updateMaster = db.prepare(`
+        UPDATE master_order_lines SET package_code = ?, label_generated = 1 WHERE id = ?
+      `);
+      const updateAcc = db.prepare(`
+        UPDATE accessory_order_lines SET child_code = ?, label_generated = 1 WHERE id = ?
+      `);
+      const insertPkg = db.prepare(`
+        INSERT INTO packages (id, batch_id, master_line_id, order_no, package_code, status)
+        VALUES (?, ?, ?, ?, ?, 'unscanned')
+      `);
+      const insertChild = db.prepare(`
+        INSERT INTO package_children (id, package_id, accessory_line_id, child_code)
+        VALUES (?, ?, ?, ?)
+      `);
+
+      for (const master of masters) {
+        if (master.match_status !== 'success') {
+          skipped += 1;
+          continue;
+        }
+
+        // remove old package if regenerating
+        const oldPkg = db.prepare('SELECT id FROM packages WHERE master_line_id = ?').get(master.id);
+        if (oldPkg) {
+          db.prepare('DELETE FROM packages WHERE id = ?').run(oldPkg.id);
+        }
+
+        const raw = JSON.parse(master.raw_json);
+        let packageCode;
+        if (masterTpl.code_mode === 'fields') {
+          packageCode = buildFieldCode(raw, masterCodeFields) || shortCode('M');
+        } else {
+          packageCode = master.package_code || shortCode('M');
+        }
+
+        // ensure unique
+        let tryCode = packageCode;
+        let n = 1;
+        while (db.prepare('SELECT id FROM packages WHERE package_code = ?').get(tryCode) ||
+               db.prepare('SELECT id FROM master_order_lines WHERE package_code = ? AND id != ?').get(tryCode, master.id)) {
+          tryCode = `${packageCode}-${n++}`;
+        }
+        packageCode = tryCode;
+
+        const pkgId = uuidv4();
+        updateMaster.run(packageCode, master.id);
+        insertPkg.run(pkgId, batch_id, master.id, master.order_no, packageCode);
+        masterCreated += 1;
+
+        const children = db.prepare(`
+          SELECT * FROM accessory_order_lines
+          WHERE master_line_id = ? AND match_status = 'success'
+          ORDER BY line_no
+        `).all(master.id);
+
+        for (const child of children) {
+          const craw = JSON.parse(child.raw_json);
+          let childCode;
+          if (childTpl.code_mode === 'fields') {
+            childCode = buildFieldCode(craw, childCodeFields) || shortCode('C');
+          } else {
+            childCode = child.child_code || shortCode('C');
+          }
+          let cTry = childCode;
+          let cn = 1;
+          while (db.prepare('SELECT id FROM package_children WHERE child_code = ?').get(cTry) ||
+                 db.prepare('SELECT id FROM accessory_order_lines WHERE child_code = ? AND id != ?').get(cTry, child.id)) {
+            cTry = `${childCode}-${cn++}`;
+          }
+          childCode = cTry;
+          updateAcc.run(childCode, child.id);
+          insertChild.run(uuidv4(), pkgId, child.id, childCode);
+          childCreated += 1;
+        }
+      }
+
+      db.prepare(`UPDATE import_batches SET status = 'labelled' WHERE id = ?`).run(batch_id);
+    });
+    tx();
+
+    res.json({
+      ok: true,
+      master_created: masterCreated,
+      child_created: childCreated,
+      skipped,
+      master_template_id: masterTpl.id,
+      child_template_id: childTpl.id
+    });
+  });
+
+  router.get('/print-data', canImport, (req, res) => {
+    const { batch_id, master_template_id, child_template_id } = req.query;
+    if (!batch_id) return res.status(400).json({ error: '缺少 batch_id' });
+
+    const masterTpl = master_template_id
+      ? db.prepare('SELECT * FROM label_templates WHERE id = ?').get(master_template_id)
+      : db.prepare('SELECT * FROM label_templates WHERE label_type = ? ORDER BY updated_at DESC LIMIT 1').get('master');
+    const childTpl = child_template_id
+      ? db.prepare('SELECT * FROM label_templates WHERE id = ?').get(child_template_id)
+      : db.prepare('SELECT * FROM label_templates WHERE label_type = ? ORDER BY updated_at DESC LIMIT 1').get('child');
+
+    const packages = db.prepare(`
+      SELECT p.*, m.raw_json AS master_raw, m.mother_part_no, m.line_no AS master_line_no
+      FROM packages p
+      JOIN master_order_lines m ON m.id = p.master_line_id
+      WHERE p.batch_id = ?
+      ORDER BY m.line_no
+    `).all(batch_id);
+
+    const labels = [];
+    for (const pkg of packages) {
+      const masterRaw = JSON.parse(pkg.master_raw);
+      labels.push({
+        type: 'master',
+        code: pkg.package_code,
+        order_no: pkg.order_no,
+        data: {
+          ...masterRaw,
+          order_no: pkg.order_no,
+          mother_part_no: pkg.mother_part_no,
+          package_code: pkg.package_code
+        },
+        template: formatTpl(masterTpl)
+      });
+
+      const children = db.prepare(`
+        SELECT pc.*, a.raw_json, a.part_no, a.qty, a.line_no
+        FROM package_children pc
+        JOIN accessory_order_lines a ON a.id = pc.accessory_line_id
+        WHERE pc.package_id = ?
+        ORDER BY a.line_no
+      `).all(pkg.id);
+
+      for (const ch of children) {
+        const raw = JSON.parse(ch.raw_json);
+        labels.push({
+          type: 'child',
+          code: ch.child_code,
+          order_no: pkg.order_no,
+          data: {
+            ...raw,
+            order_no: pkg.order_no,
+            part_no: ch.part_no,
+            qty: ch.qty,
+            child_code: ch.child_code,
+            package_code: pkg.package_code
+          },
+          template: formatTpl(childTpl)
+        });
+      }
+    }
+
+    res.json({ labels, count: labels.length });
+  });
+
+  return router;
+}
+
+function formatTpl(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    label_type: row.label_type,
+    width_mm: row.width_mm,
+    height_mm: row.height_mm,
+    code_mode: row.code_mode,
+    code_fields: JSON.parse(row.code_fields_json || '[]'),
+    code_type: row.code_type,
+    elements: JSON.parse(row.elements_json || '[]')
+  };
+}
+
+module.exports = { labelRoutes };
