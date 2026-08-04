@@ -50,11 +50,21 @@ function bomRoutes(db) {
     if (!req.file) return res.status(400).json({ error: '请上传 Excel 文件' });
     try {
       const parsed = readExcelBuffer(req.file.buffer);
+      const distinct_by_column = {};
+      for (const h of parsed.headers) {
+        const set = new Set();
+        for (const row of parsed.rows) {
+          const v = pickField(row.data, h);
+          if (v) set.add(v);
+        }
+        distinct_by_column[h] = [...set].slice(0, 200);
+      }
       res.json({
         filename: req.file.originalname,
         headers: parsed.headers,
-        preview_rows: parsed.rows.slice(0, 20).map((r) => r.data),
-        total_rows: parsed.rows.length
+        preview_rows: parsed.rows.slice(0, 30).map((r) => r.data),
+        total_rows: parsed.rows.length,
+        distinct_by_column
       });
     } catch (e) {
       res.status(400).json({ error: 'Excel 解析失败：' + e.message });
@@ -70,7 +80,10 @@ function bomRoutes(db) {
       return res.status(400).json({ error: '映射配置无效' });
     }
     if (!mapping || !mapping.mother_part_no || !mapping.part_no) {
-      return res.status(400).json({ error: '请至少映射母件料号列与子件料号列' });
+      return res.status(400).json({ error: '请选择母件列与子件料号列' });
+    }
+    if (!mapping.mother_value) {
+      return res.status(400).json({ error: '请选择本 BOM 对应的母件值' });
     }
 
     const matchFields = Array.isArray(mapping.match_fields) && mapping.match_fields.length
@@ -79,19 +92,17 @@ function bomRoutes(db) {
 
     const versionLabel = (req.body.version_label || '').trim() || new Date().toISOString().slice(0, 19).replace('T', ' ');
     const name = (req.body.name || '').trim() || req.file.originalname;
+    const motherPartNo = String(mapping.mother_value).trim();
 
     try {
       const parsed = readExcelBuffer(req.file.buffer);
       if (!parsed.rows.length) return res.status(400).json({ error: 'Excel 无有效数据行' });
 
-      const mothers = new Set(parsed.rows.map((r) => pickField(r.data, mapping.mother_part_no)).filter(Boolean));
-      if (mothers.size === 0) return res.status(400).json({ error: '未读取到母件料号' });
-      if (mothers.size > 1) {
-        return res.status(400).json({
-          error: `一份 BOM 只能有一个母件，当前检测到：${[...mothers].join(', ')}`
-        });
+      const filtered = parsed.rows.filter((r) => pickField(r.data, mapping.mother_part_no) === motherPartNo);
+      if (!filtered.length) {
+        return res.status(400).json({ error: `未找到母件值为「${motherPartNo}」的数据行` });
       }
-      const motherPartNo = [...mothers][0];
+
       const bomId = uuidv4();
 
       const tx = db.transaction(() => {
@@ -115,7 +126,7 @@ function bomRoutes(db) {
           VALUES (?, ?, ?, ?, ?, ?)
         `);
 
-        for (const row of parsed.rows) {
+        for (const row of filtered) {
           const partNo = pickField(row.data, mapping.part_no);
           if (!partNo) continue;
           const qty = toNumber(pickField(row.data, mapping.qty), 1);
@@ -135,6 +146,7 @@ function bomRoutes(db) {
       tx();
 
       const lineCount = db.prepare('SELECT COUNT(*) AS c FROM bom_lines WHERE bom_id = ?').get(bomId).c;
+      if (!lineCount) return res.status(400).json({ error: '导入后没有有效子件行，请检查子件料号列' });
       res.json({
         id: bomId,
         name,

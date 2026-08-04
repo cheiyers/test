@@ -3,6 +3,7 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { requireRoles } = require('../auth');
+const { evalSegments } = require('../expr');
 
 function shortCode(prefix) {
   return `${prefix}${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
@@ -10,6 +11,20 @@ function shortCode(prefix) {
 
 function buildFieldCode(raw, fields) {
   return (fields || []).map((f) => String(raw[f] ?? '').trim()).filter(Boolean).join('|');
+}
+
+function buildCodeFromTemplate(tpl, raw, uniqueFallback) {
+  const codeMode = tpl.code_mode;
+  if (codeMode === 'unique') return uniqueFallback;
+  const segs = (() => {
+    try { return JSON.parse(tpl.code_segments_json || 'null'); } catch { return null; }
+  })();
+  if (Array.isArray(segs) && segs.length) {
+    const v = evalSegments(segs, raw);
+    return v || uniqueFallback;
+  }
+  const fields = JSON.parse(tpl.code_fields_json || '[]');
+  return buildFieldCode(raw, fields) || uniqueFallback;
 }
 
 function labelRoutes(db) {
@@ -42,9 +57,6 @@ function labelRoutes(db) {
       ${only_success ? "AND match_status = 'success'" : ''}
       ORDER BY line_no
     `).all(batch_id);
-
-    const masterCodeFields = JSON.parse(masterTpl.code_fields_json || '[]');
-    const childCodeFields = JSON.parse(childTpl.code_fields_json || '[]');
 
     let masterCreated = 0;
     let childCreated = 0;
@@ -79,12 +91,12 @@ function labelRoutes(db) {
         }
 
         const raw = JSON.parse(master.raw_json);
-        let packageCode;
-        if (masterTpl.code_mode === 'fields') {
-          packageCode = buildFieldCode(raw, masterCodeFields) || shortCode('M');
-        } else {
-          packageCode = master.package_code || shortCode('M');
-        }
+        const uniqueM = master.package_code || shortCode('M');
+        let packageCode = buildCodeFromTemplate(masterTpl, {
+          ...raw,
+          order_no: master.order_no,
+          mother_part_no: master.mother_part_no
+        }, uniqueM);
 
         // ensure unique
         let tryCode = packageCode;
@@ -108,12 +120,14 @@ function labelRoutes(db) {
 
         for (const child of children) {
           const craw = JSON.parse(child.raw_json);
-          let childCode;
-          if (childTpl.code_mode === 'fields') {
-            childCode = buildFieldCode(craw, childCodeFields) || shortCode('C');
-          } else {
-            childCode = child.child_code || shortCode('C');
-          }
+          const uniqueC = child.child_code || shortCode('C');
+          let childCode = buildCodeFromTemplate(childTpl, {
+            ...craw,
+            order_no: master.order_no,
+            part_no: child.part_no,
+            qty: child.qty,
+            package_code: packageCode
+          }, uniqueC);
           let cTry = childCode;
           let cn = 1;
           while (db.prepare('SELECT id FROM package_children WHERE child_code = ?').get(cTry) ||
@@ -219,6 +233,7 @@ function formatTpl(row) {
     height_mm: row.height_mm,
     code_mode: row.code_mode,
     code_fields: JSON.parse(row.code_fields_json || '[]'),
+    code_segments: JSON.parse(row.code_segments_json || '[]'),
     code_type: row.code_type,
     elements: JSON.parse(row.elements_json || '[]')
   };

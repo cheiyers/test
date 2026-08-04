@@ -186,7 +186,7 @@
     root.innerHTML = `
       <div class="card">
         <h2>BOM 管理</h2>
-        <p class="muted">每份 BOM 仅含一个母件；同母件可多版本共存，关联订单时再选择版本。</p>
+        <p class="muted">上传预览后，自选「哪一列是母件列」以及「本 BOM 的母件是哪个值」。同母件可多版本共存。</p>
         <div id="bomFlash"></div>
         <div class="grid-2">
           <div>
@@ -269,8 +269,11 @@
       box.innerHTML = `
         <label class="field"><span>名称</span><input id="bomName" value="${escapeHtml(data.filename)}" /></label>
         <label class="field"><span>版本说明</span><input id="bomVersion" placeholder="如 2026-08-04 上午版" /></label>
-        <div class="grid-3" style="margin-top:8px">
-          <label class="field"><span>母件料号列</span><select id="mapMother"><option value="">请选择</option>${opts(map.mother_part_no)}</select></label>
+        <div class="grid-2" style="margin-top:8px">
+          <label class="field"><span>1. 哪一列是母件列</span><select id="mapMother"><option value="">请选择</option>${opts(map.mother_part_no)}</select></label>
+          <label class="field"><span>2. 本 BOM 的母件是哪个</span><select id="mapMotherValue"><option value="">请先选择母件列</option></select></label>
+        </div>
+        <div class="grid-2" style="margin-top:8px">
           <label class="field"><span>子件料号列</span><select id="mapPart"><option value="">请选择</option>${opts(map.part_no)}</select></label>
           <label class="field"><span>数量列（可选）</span><select id="mapQty"><option value="">默认 1</option>${opts(map.qty)}</select></label>
         </div>
@@ -288,11 +291,28 @@
           </table>
         </div>
       `;
+
+      const refreshMotherValues = () => {
+        const col = $('#mapMother', box).value;
+        const sel = $('#mapMotherValue', box);
+        const values = (col && data.distinct_by_column?.[col]) || [];
+        const preferred = map.mother_value || (values.length === 1 ? values[0] : '');
+        sel.innerHTML = values.length
+          ? values.map((v) => `<option value="${escapeHtml(v)}" ${v === preferred ? 'selected' : ''}>${escapeHtml(v)}</option>`).join('')
+          : '<option value="">该列没有可用母件值</option>';
+      };
+      $('#mapMother', box).addEventListener('change', refreshMotherValues);
+      if (map.mother_part_no) {
+        $('#mapMother', box).value = map.mother_part_no;
+      }
+      refreshMotherValues();
+
       $('#bomImportBtn', box).addEventListener('click', async () => {
         const file = $('#bomFile', root).files[0];
         const matchSel = [...$('#mapMatch', box).selectedOptions].map((o) => o.value);
         const mapping = {
           mother_part_no: $('#mapMother', box).value,
+          mother_value: $('#mapMotherValue', box).value,
           part_no: $('#mapPart', box).value,
           qty: $('#mapQty', box).value || null,
           match_fields: matchSel.length ? matchSel : [$('#mapPart', box).value].filter(Boolean),
@@ -300,6 +320,9 @@
           set_default: $('#setDefault', box).checked,
           rule_name: `BOM映射-${$('#bomName', box).value}`
         };
+        if (!mapping.mother_part_no || !mapping.mother_value) {
+          return flash($('#bomFlash', root), '请先选择母件列，并指定本 BOM 的母件值', 'error');
+        }
         const fd = new FormData();
         fd.append('file', file);
         fd.append('name', $('#bomName', box).value);
@@ -307,7 +330,7 @@
         fd.append('mapping', JSON.stringify(mapping));
         try {
           const res = await API.upload('/boms/import', fd);
-          flash($('#bomFlash', root), `导入成功：${res.mother_part_no} / ${res.version_label}（${res.line_count} 行）`, 'success');
+          flash($('#bomFlash', root), `导入成功：母件 ${res.mother_part_no} / ${res.version_label}（${res.line_count} 行）`, 'success');
           navigate('bom');
         } catch (err) {
           flash($('#bomFlash', root), err.message, 'error');
@@ -647,20 +670,33 @@
       <div id="tplEditor"></div>
     `;
 
+    const openEditor = (tpl) => {
+      openTemplateEditor($('#tplEditor', root), tpl, {
+        onSaved: () => {
+          flash($('#tplFlash', root), '模板已保存', 'success');
+          navigate('templates');
+        }
+      });
+    };
+
     $('#newMasterTpl', root).addEventListener('click', () => openEditor({
       name: '新总包模板', label_type: 'master', width_mm: 100, height_mm: 60,
-      code_mode: 'unique', code_type: 'qr', code_fields: [],
+      code_mode: 'unique', code_type: 'qr', code_fields: [], code_segments: [],
       elements: [
-        { id: 't1', type: 'text', x: 4, y: 4, w: 50, h: 8, text: '总包标签', fontSize: 14, align: 'left', bold: true, bind: null },
-        { id: 'c1', type: 'code', x: 60, y: 10, w: 35, h: 35, text: '', fontSize: 10, align: 'center', bold: false, bind: null }
+        { id: 't1', type: 'text', x: 4, y: 4, w: 50, h: 8, text: '总包标签', fontSize: 14, align: 'left', bold: true,
+          segments: [{ type: 'text', value: '总包标签' }] },
+        { id: 'c1', type: 'code', x: 60, y: 10, w: 35, h: 35, text: '', fontSize: 10, align: 'center', bold: false, codeType: 'qr',
+          segments: [{ type: 'field', field: 'package_code', formula: '' }] }
       ]
     }));
     $('#newChildTpl', root).addEventListener('click', () => openEditor({
       name: '新子件模板', label_type: 'child', width_mm: 80, height_mm: 50,
-      code_mode: 'unique', code_type: 'qr', code_fields: [],
+      code_mode: 'unique', code_type: 'qr', code_fields: [], code_segments: [],
       elements: [
-        { id: 't1', type: 'text', x: 3, y: 3, w: 40, h: 7, text: '子件标签', fontSize: 13, align: 'left', bold: true, bind: null },
-        { id: 'c1', type: 'code', x: 48, y: 8, w: 28, h: 28, text: '', fontSize: 10, align: 'center', bold: false, bind: null }
+        { id: 't1', type: 'text', x: 3, y: 3, w: 40, h: 7, text: '子件标签', fontSize: 13, align: 'left', bold: true,
+          segments: [{ type: 'text', value: '子件标签' }] },
+        { id: 'c1', type: 'code', x: 48, y: 8, w: 28, h: 28, text: '', fontSize: 10, align: 'center', bold: false, codeType: 'qr',
+          segments: [{ type: 'field', field: 'child_code', formula: '' }] }
       ]
     }));
 
@@ -673,190 +709,6 @@
       await API.del(`/templates/${b.dataset.del}`);
       navigate('templates');
     }));
-
-    function openEditor(tpl) {
-      state.templateDraft = JSON.parse(JSON.stringify(tpl));
-      state.selectedElId = null;
-      const host = $('#tplEditor', root);
-      host.innerHTML = `
-        <div class="card">
-          <h3>模板编辑器 — ${tpl.label_type === 'master' ? '总包订单字段' : '配件订单字段'}</h3>
-          <div class="row">
-            <label class="field"><span>名称</span><input id="tplName" value="${escapeHtml(tpl.name)}" /></label>
-            <label class="field"><span>宽 mm</span><input id="tplW" type="number" value="${tpl.width_mm}" /></label>
-            <label class="field"><span>高 mm</span><input id="tplH" type="number" value="${tpl.height_mm}" /></label>
-            <label class="field"><span>码类型</span>
-              <select id="tplCodeType"><option value="qr" ${tpl.code_type === 'qr' ? 'selected' : ''}>二维码</option>
-              <option value="barcode" ${tpl.code_type === 'barcode' ? 'selected' : ''}>一维码</option></select>
-            </label>
-            <label class="field"><span>码内容</span>
-              <select id="tplCodeMode"><option value="unique" ${tpl.code_mode === 'unique' ? 'selected' : ''}>系统唯一编号</option>
-              <option value="fields" ${tpl.code_mode === 'fields' ? 'selected' : ''}>字段拼接</option></select>
-            </label>
-          </div>
-          <label class="field" style="margin-top:8px"><span>字段拼接时使用的字段名（逗号分隔，需与订单列名一致）</span>
-            <input id="tplCodeFields" value="${escapeHtml((tpl.code_fields || []).join(','))}" placeholder="如 order_no,part_no 或 订单号,料号" />
-          </label>
-          <div class="editor-layout" style="margin-top:12px">
-            <div class="palette">
-              <button class="btn secondary" data-add="text" type="button">+ 固定文字</button>
-              <button class="btn secondary" data-add="field" type="button">+ 绑定字段</button>
-              <button class="btn secondary" data-add="code" type="button">+ 条码/二维码</button>
-              <p class="muted" style="font-size:12px;margin-top:10px">字段绑定示例：订单号：{order_no}<br/>总包绑总包订单列，子件绑配件订单列。</p>
-            </div>
-            <div class="canvas-wrap"><div class="label-canvas" id="labelCanvas"></div></div>
-            <div class="props" id="elProps"><p class="muted">选中元素后编辑属性</p></div>
-          </div>
-          <div class="row" style="margin-top:12px">
-            <button class="btn" id="saveTplBtn" type="button">保存模板</button>
-          </div>
-        </div>
-      `;
-
-      const syncMeta = () => {
-        const d = state.templateDraft;
-        d.name = $('#tplName', host).value;
-        d.width_mm = Number($('#tplW', host).value) || 100;
-        d.height_mm = Number($('#tplH', host).value) || 50;
-        d.code_type = $('#tplCodeType', host).value;
-        d.code_mode = $('#tplCodeMode', host).value;
-        d.code_fields = $('#tplCodeFields', host).value.split(',').map((s) => s.trim()).filter(Boolean);
-      };
-
-      const renderCanvas = () => {
-        syncMeta();
-        const d = state.templateDraft;
-        const canvas = $('#labelCanvas', host);
-        const pxPerMm = 3.2;
-        canvas.style.width = `${d.width_mm * pxPerMm}px`;
-        canvas.style.height = `${d.height_mm * pxPerMm}px`;
-        canvas.innerHTML = d.elements.map((el) => {
-          const selected = el.id === state.selectedElId ? 'selected' : '';
-          if (el.type === 'code') {
-            return `<div class="label-el code ${selected}" data-id="${el.id}" style="left:${el.x * pxPerMm}px;top:${el.y * pxPerMm}px;width:${el.w * pxPerMm}px;height:${el.h * pxPerMm}px">CODE</div>`;
-          }
-          return `<div class="label-el ${selected}" data-id="${el.id}" style="left:${el.x * pxPerMm}px;top:${el.y * pxPerMm}px;width:${el.w * pxPerMm}px;height:${el.h * pxPerMm}px;font-size:${el.fontSize}px;text-align:${el.align};font-weight:${el.bold ? 700 : 400}">${escapeHtml(el.text)}</div>`;
-        }).join('');
-
-        $$('.label-el', canvas).forEach((node) => {
-          node.addEventListener('mousedown', (ev) => startDrag(ev, node, pxPerMm));
-          node.addEventListener('click', (ev) => {
-            ev.stopPropagation();
-            state.selectedElId = node.dataset.id;
-            renderCanvas();
-            renderProps();
-          });
-        });
-      };
-
-      const renderProps = () => {
-        const el = state.templateDraft.elements.find((e) => e.id === state.selectedElId);
-        const box = $('#elProps', host);
-        if (!el) {
-          box.innerHTML = '<p class="muted">选中元素后编辑属性</p>';
-          return;
-        }
-        box.innerHTML = `
-          <h4>元素属性</h4>
-          <label class="field"><span>内容</span><textarea id="elText" rows="3">${escapeHtml(el.text)}</textarea></label>
-          <label class="field"><span>绑定字段名（可选）</span><input id="elBind" value="${escapeHtml(el.bind || '')}" placeholder="如 order_no / 料号" /></label>
-          <div class="grid-2">
-            <label class="field"><span>X mm</span><input id="elX" type="number" step="0.5" value="${el.x}" /></label>
-            <label class="field"><span>Y mm</span><input id="elY" type="number" step="0.5" value="${el.y}" /></label>
-            <label class="field"><span>宽 mm</span><input id="elW" type="number" step="0.5" value="${el.w}" /></label>
-            <label class="field"><span>高 mm</span><input id="elH" type="number" step="0.5" value="${el.h}" /></label>
-          </div>
-          <label class="field"><span>字号</span><input id="elSize" type="number" value="${el.fontSize}" /></label>
-          <label class="field"><span>对齐</span>
-            <select id="elAlign"><option value="left">左</option><option value="center">中</option><option value="right">右</option></select>
-          </label>
-          <label class="field"><span><input type="checkbox" id="elBold" ${el.bold ? 'checked' : ''}/> 加粗</span></label>
-          <div class="row" style="margin-top:8px">
-            <button class="btn secondary" id="applyEl" type="button">应用</button>
-            <button class="btn danger" id="delEl" type="button">删除元素</button>
-          </div>
-        `;
-        $('#elAlign', box).value = el.align || 'left';
-        $('#applyEl', box).addEventListener('click', () => {
-          el.text = $('#elText', box).value;
-          el.bind = $('#elBind', box).value || null;
-          el.x = Number($('#elX', box).value);
-          el.y = Number($('#elY', box).value);
-          el.w = Number($('#elW', box).value);
-          el.h = Number($('#elH', box).value);
-          el.fontSize = Number($('#elSize', box).value);
-          el.align = $('#elAlign', box).value;
-          el.bold = $('#elBold', box).checked;
-          renderCanvas();
-        });
-        $('#delEl', box).addEventListener('click', () => {
-          state.templateDraft.elements = state.templateDraft.elements.filter((e) => e.id !== el.id);
-          state.selectedElId = null;
-          renderCanvas();
-          renderProps();
-        });
-      };
-
-      function startDrag(ev, node, pxPerMm) {
-        const el = state.templateDraft.elements.find((e) => e.id === node.dataset.id);
-        if (!el) return;
-        state.selectedElId = el.id;
-        const startX = ev.clientX;
-        const startY = ev.clientY;
-        const ox = el.x;
-        const oy = el.y;
-        const onMove = (e2) => {
-          el.x = Math.max(0, ox + (e2.clientX - startX) / pxPerMm);
-          el.y = Math.max(0, oy + (e2.clientY - startY) / pxPerMm);
-          renderCanvas();
-        };
-        const onUp = () => {
-          window.removeEventListener('mousemove', onMove);
-          window.removeEventListener('mouseup', onUp);
-          renderProps();
-        };
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onUp);
-      }
-
-      $$('[data-add]', host).forEach((btn) => {
-        btn.addEventListener('click', () => {
-          const type = btn.dataset.add;
-          const id = 'e' + Math.random().toString(36).slice(2, 8);
-          if (type === 'text') {
-            state.templateDraft.elements.push({ id, type: 'text', x: 5, y: 5, w: 40, h: 8, text: '文字', fontSize: 12, align: 'left', bold: false, bind: null });
-          } else if (type === 'field') {
-            state.templateDraft.elements.push({ id, type: 'field', x: 5, y: 15, w: 45, h: 8, text: '字段：{order_no}', fontSize: 11, align: 'left', bold: false, bind: 'order_no' });
-          } else {
-            state.templateDraft.elements.push({ id, type: 'code', x: 50, y: 10, w: 30, h: 30, text: '', fontSize: 10, align: 'center', bold: false, bind: null });
-          }
-          state.selectedElId = id;
-          renderCanvas();
-          renderProps();
-        });
-      });
-
-      $('#saveTplBtn', host).addEventListener('click', async () => {
-        syncMeta();
-        try {
-          if (state.templateDraft.id) {
-            await API.put(`/templates/${state.templateDraft.id}`, state.templateDraft);
-          } else {
-            await API.post('/templates', state.templateDraft);
-          }
-          flash($('#tplFlash', root), '模板已保存', 'success');
-          navigate('templates');
-        } catch (err) {
-          flash($('#tplFlash', root), err.message, 'error');
-        }
-      });
-
-      ['tplName', 'tplW', 'tplH', 'tplCodeType', 'tplCodeMode', 'tplCodeFields'].forEach((id) => {
-        $(`#${id}`, host).addEventListener('change', renderCanvas);
-      });
-
-      renderCanvas();
-    }
   }
 
   // ---------------- Print ----------------
@@ -936,145 +788,26 @@
     function renderLabels(labels) {
       const preview = $('#printPreview', root);
       const sheet = $('#printSheet');
-      preview.innerHTML = '';
+      preview.innerHTML = `<p class="muted">共 ${labels.length} 张，已准备打印。</p>`;
       sheet.innerHTML = '';
-      const pxPerMm = 3;
 
       labels.forEach((label, idx) => {
-        const tpl = label.template;
-        if (!tpl) return;
-        const wrap = document.createElement('div');
-        wrap.className = 'print-label';
-        wrap.style.width = `${tpl.width_mm}mm`;
-        wrap.style.height = `${tpl.height_mm}mm`;
-        wrap.style.position = 'relative';
-        wrap.style.border = '1px solid #ccc';
-        wrap.style.margin = '8px';
-        wrap.style.background = '#fff';
-        wrap.style.overflow = 'hidden';
+        const printWrap = document.createElement('div');
+        printWrap.className = 'print-label';
+        printWrap.style.pageBreakAfter = 'always';
+        LabelRender.renderLabelTo(printWrap, label);
+        sheet.appendChild(printWrap);
 
-        tpl.elements.forEach((el) => {
-          const node = document.createElement('div');
-          node.style.position = 'absolute';
-          node.style.left = `${el.x}mm`;
-          node.style.top = `${el.y}mm`;
-          node.style.width = `${el.w}mm`;
-          node.style.height = `${el.h}mm`;
-          node.style.fontSize = `${el.fontSize}pt`;
-          node.style.textAlign = el.align || 'left';
-          node.style.fontWeight = el.bold ? '700' : '400';
-          node.style.overflow = 'hidden';
-
-          if (el.type === 'code') {
-            const codeHost = document.createElement('div');
-            codeHost.style.width = '100%';
-            codeHost.style.height = '100%';
-            codeHost.style.display = 'grid';
-            codeHost.style.placeItems = 'center';
-            if (tpl.code_type === 'barcode') {
-              const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-              codeHost.appendChild(svg);
-              node.appendChild(codeHost);
-              try {
-                JsBarcode(svg, label.code, { format: 'CODE128', displayValue: false, margin: 0, height: 40, width: 1.2 });
-              } catch {
-                codeHost.textContent = label.code;
-              }
-            } else {
-              const qrBox = document.createElement('div');
-              codeHost.appendChild(qrBox);
-              node.appendChild(codeHost);
-              // eslint-disable-next-line no-new
-              new QRCode(qrBox, {
-                text: label.code,
-                width: Math.max(48, el.w * pxPerMm - 4),
-                height: Math.max(48, el.h * pxPerMm - 4),
-                correctLevel: QRCode.CorrectLevel.M
-              });
-            }
-          } else {
-            let text = el.text || '';
-            text = text.replace(/\{([^}]+)\}/g, (_, key) => label.data[key] ?? '');
-            if (el.bind && !/\{/.test(el.text || '')) {
-              text = String(label.data[el.bind] ?? text);
-            }
-            node.textContent = text;
-          }
-          wrap.appendChild(node);
-        });
-
-        // small screen preview clone
-        if (idx < 12) {
-          const screen = wrap.cloneNode(true);
-          // re-render codes for screen clone roughly by keeping as-is is hard; append original for first ones
-          preview.appendChild(wrap.cloneNode(true));
+        if (idx < 6) {
+          const screenWrap = document.createElement('div');
+          screenWrap.style.border = '1px solid #c9d8cf';
+          screenWrap.style.borderRadius = '10px';
+          screenWrap.style.margin = '8px';
+          screenWrap.style.transform = 'scale(0.85)';
+          screenWrap.style.transformOrigin = 'top left';
+          LabelRender.renderLabelTo(screenWrap, label);
+          preview.appendChild(screenWrap);
         }
-        sheet.appendChild(wrap);
-      });
-
-      // Re-generate codes properly on sheet only (cloning breaks QR canvas)
-      sheet.innerHTML = '';
-      labels.forEach((label) => {
-        const tpl = label.template;
-        if (!tpl) return;
-        const wrap = document.createElement('div');
-        wrap.className = 'print-label';
-        wrap.style.width = `${tpl.width_mm}mm`;
-        wrap.style.height = `${tpl.height_mm}mm`;
-        wrap.style.position = 'relative';
-        wrap.style.overflow = 'hidden';
-        wrap.style.pageBreakAfter = 'always';
-
-        tpl.elements.forEach((el) => {
-          const node = document.createElement('div');
-          node.style.position = 'absolute';
-          node.style.left = `${el.x}mm`;
-          node.style.top = `${el.y}mm`;
-          node.style.width = `${el.w}mm`;
-          node.style.height = `${el.h}mm`;
-          node.style.fontSize = `${el.fontSize}pt`;
-          node.style.textAlign = el.align || 'left';
-          node.style.fontWeight = el.bold ? '700' : '400';
-          if (el.type === 'code') {
-            const host = document.createElement('div');
-            host.style.width = '100%';
-            host.style.height = '100%';
-            host.style.display = 'grid';
-            host.style.placeItems = 'center';
-            if (tpl.code_type === 'barcode') {
-              const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-              host.appendChild(svg);
-              node.appendChild(host);
-              try { JsBarcode(svg, label.code, { format: 'CODE128', displayValue: false, margin: 0, height: 36, width: 1.1 }); } catch {}
-            } else {
-              const qrBox = document.createElement('div');
-              host.appendChild(qrBox);
-              node.appendChild(host);
-              // eslint-disable-next-line no-new
-              new QRCode(qrBox, { text: label.code, width: 96, height: 96, correctLevel: QRCode.CorrectLevel.M });
-            }
-          } else {
-            let text = el.text || '';
-            text = text.replace(/\{([^}]+)\}/g, (_, key) => label.data[key] ?? '');
-            node.textContent = text;
-          }
-          wrap.appendChild(node);
-        });
-        sheet.appendChild(wrap);
-      });
-
-      // rebuild preview simply from sheet children count message
-      preview.innerHTML = `<p class="muted">共 ${labels.length} 张，已准备打印。屏幕仅示意，实际以打印输出为准。</p>`;
-      labels.slice(0, 8).forEach((label) => {
-        const card = document.createElement('div');
-        card.style.border = '1px solid #c9d8cf';
-        card.style.borderRadius = '10px';
-        card.style.padding = '10px';
-        card.style.width = '180px';
-        card.innerHTML = `<div class="tag info">${label.type === 'master' ? '总包' : '子件'}</div>
-          <div style="margin-top:6px;font-size:12px">订单：${escapeHtml(label.order_no)}</div>
-          <div style="font-size:12px;word-break:break-all">码：${escapeHtml(label.code)}</div>`;
-        preview.appendChild(card);
       });
     }
   }

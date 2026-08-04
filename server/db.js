@@ -178,6 +178,11 @@ function initSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_packages_order ON packages(order_no);
     CREATE INDEX IF NOT EXISTS idx_scan_logs_created ON scan_logs(created_at);
   `);
+
+  const tplCols = db.prepare('PRAGMA table_info(label_templates)').all().map((c) => c.name);
+  if (!tplCols.includes('code_segments_json')) {
+    db.exec('ALTER TABLE label_templates ADD COLUMN code_segments_json TEXT');
+  }
 }
 
 function seedUsers(db) {

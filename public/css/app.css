@@ -161,6 +161,17 @@ tr:hover td { background: #f8fbf9; }
 }
 .label-el.selected { border-color: var(--brand); background: rgba(31,107,74,.04); }
 .label-el.code { display: grid; place-items: center; background: #fafafa; font-size: 11px; color: var(--muted); }
+.label-el.table { padding: 0; overflow: hidden; }
+.label-table-edit { width: 100%; height: 100%; border-collapse: collapse; table-layout: fixed; font-size: 10px; }
+.label-table-edit td {
+  border: 1px solid #7a9486; padding: 2px; text-align: center; vertical-align: middle;
+  overflow: hidden; word-break: break-all; background: #fff;
+}
+.label-table-edit td.cell-active { outline: 2px solid var(--brand); background: #eaf6ef; }
+.seg-builder { background: #f7faf8; border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+.seg-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
+.seg-row input, .seg-row select { min-width: 90px; flex: 1; }
+.label-table { width: 100%; height: 100%; border-collapse: collapse; table-layout: fixed; }
 
 /* Scan */
 .scan-hero {
