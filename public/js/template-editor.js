@@ -81,7 +81,8 @@
             <button class="btn secondary" data-add="field" type="button">+ 绑定字段</button>
             <button class="btn secondary" data-add="code" type="button">+ 条码/二维码</button>
             <button class="btn" data-add="table" type="button">+ 表格</button>
-            <p class="muted" style="font-size:12px;margin-top:10px">表格支持合并单元格；单元格内容可选文本或条码，并用订单列 + 任意字符 + 公式拼接。</p>
+            <p class="muted" style="font-size:12px;margin-top:10px">选中元素后，拖动边缘/角落手柄可放大缩小；拖动本体可移动位置。</p>
+            <p class="muted" style="font-size:12px">表格支持合并单元格；单元格内容可选文本或条码，并用订单列 + 任意字符 + 公式拼接。</p>
             <p class="muted" style="font-size:11px">${FORMULA_HINT}</p>
           </div>
           <div class="canvas-wrap"><div class="label-canvas" id="labelCanvas"></div></div>
@@ -180,6 +181,35 @@
       return wrap;
     }
 
+    const RESIZE_HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+
+    function handlesHtml(selected) {
+      if (!selected) return '';
+      return RESIZE_HANDLES.map((dir) => `<span class="resize-handle ${dir}" data-resize="${dir}"></span>`).join('');
+    }
+
+    function applyNodeBox(node, el, pxPerMm) {
+      node.style.left = `${el.x * pxPerMm}px`;
+      node.style.top = `${el.y * pxPerMm}px`;
+      node.style.width = `${el.w * pxPerMm}px`;
+      node.style.height = `${el.h * pxPerMm}px`;
+    }
+
+    function fmtMm(v) {
+      return Number(v).toFixed(1);
+    }
+
+    function syncSizeInputs(el) {
+      const setVal = (id, v) => {
+        const input = $(`#${id}`);
+        if (input) input.value = fmtMm(v);
+      };
+      setVal('elX', el.x);
+      setVal('elY', el.y);
+      const hint = $('#elSizeHint');
+      if (hint) hint.textContent = `${fmtMm(el.w)} × ${fmtMm(el.h)} mm`;
+    }
+
     function renderCanvas() {
       syncMeta();
       const canvas = $('#labelCanvas');
@@ -191,7 +221,7 @@
         if (el.type === 'table') {
           Expr.ensureTableCells(el);
           const occupied = Expr.buildOccupiedMap(el.rows, el.cols, el.cells);
-          let html = `<div class="label-el table ${selected}" data-id="${el.id}" style="left:${el.x * pxPerMm}px;top:${el.y * pxPerMm}px;width:${el.w * pxPerMm}px;height:${el.h * pxPerMm}px"><table class="label-table-edit">`;
+          let html = `<div class="label-el table ${selected}" data-id="${el.id}" style="left:${el.x * pxPerMm}px;top:${el.y * pxPerMm}px;width:${el.w * pxPerMm}px;height:${el.h * pxPerMm}px"><div class="el-body"><table class="label-table-edit">`;
           for (let r = 0; r < el.rows; r++) {
             html += '<tr>';
             for (let c = 0; c < el.cols; c++) {
@@ -204,22 +234,27 @@
             }
             html += '</tr>';
           }
-          html += '</table></div>';
+          html += `</table></div>${handlesHtml(!!selected)}</div>`;
           return html;
         }
         if (el.type === 'code') {
-          return `<div class="label-el code ${selected}" data-id="${el.id}" style="left:${el.x * pxPerMm}px;top:${el.y * pxPerMm}px;width:${el.w * pxPerMm}px;height:${el.h * pxPerMm}px">CODE</div>`;
+          return `<div class="label-el code ${selected}" data-id="${el.id}" style="left:${el.x * pxPerMm}px;top:${el.y * pxPerMm}px;width:${el.w * pxPerMm}px;height:${el.h * pxPerMm}px"><div class="el-body">CODE</div>${handlesHtml(!!selected)}</div>`;
         }
         const text = Expr.segmentsPreview(el.segments) || el.text || '';
-        return `<div class="label-el ${selected}" data-id="${el.id}" style="left:${el.x * pxPerMm}px;top:${el.y * pxPerMm}px;width:${el.w * pxPerMm}px;height:${el.h * pxPerMm}px;font-size:${el.fontSize || 12}px;text-align:${el.align || 'left'};font-weight:${el.bold ? 700 : 400}">${escapeHtml(text)}</div>`;
+        return `<div class="label-el ${selected}" data-id="${el.id}" style="left:${el.x * pxPerMm}px;top:${el.y * pxPerMm}px;width:${el.w * pxPerMm}px;height:${el.h * pxPerMm}px;font-size:${el.fontSize || 12}px;text-align:${el.align || 'left'};font-weight:${el.bold ? 700 : 400}"><div class="el-body">${escapeHtml(text)}</div>${handlesHtml(!!selected)}</div>`;
       }).join('');
 
       $$('.label-el', canvas).forEach((node) => {
         node.addEventListener('mousedown', (ev) => {
-          if (ev.target.closest('td')) return;
+          if (ev.target.closest('[data-resize]')) return;
           startDrag(ev, node, pxPerMm);
         });
         node.addEventListener('click', (ev) => {
+          if (ev.target.closest('[data-resize]')) return;
+          if (node.dataset.didDrag === '1') {
+            node.dataset.didDrag = '';
+            return;
+          }
           ev.stopPropagation();
           selectedElId = node.dataset.id;
           const td = ev.target.closest('td[data-cell]');
@@ -227,10 +262,50 @@
           renderCanvas();
           renderProps();
         });
+        $$('[data-resize]', node).forEach((handle) => {
+          handle.addEventListener('mousedown', (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            startResize(ev, node, handle.dataset.resize, pxPerMm);
+          });
+        });
       });
     }
 
     function startDrag(ev, node, pxPerMm) {
+      const el = draft.elements.find((e) => e.id === node.dataset.id);
+      if (!el) return;
+      ev.preventDefault();
+      selectedElId = el.id;
+      const startX = ev.clientX;
+      const startY = ev.clientY;
+      const ox = el.x;
+      const oy = el.y;
+      const maxX = Math.max(0, draft.width_mm - el.w);
+      const maxY = Math.max(0, draft.height_mm - el.h);
+      let moved = false;
+      node.classList.add('dragging');
+      const onMove = (e2) => {
+        const nx = Math.min(maxX, Math.max(0, ox + (e2.clientX - startX) / pxPerMm));
+        const ny = Math.min(maxY, Math.max(0, oy + (e2.clientY - startY) / pxPerMm));
+        if (Math.abs(nx - ox) > 0.05 || Math.abs(ny - oy) > 0.05) moved = true;
+        el.x = nx;
+        el.y = ny;
+        applyNodeBox(node, el, pxPerMm);
+        syncSizeInputs(el);
+      };
+      const onUp = () => {
+        node.classList.remove('dragging');
+        if (moved) node.dataset.didDrag = '1';
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+        if (moved) renderProps();
+      };
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    }
+
+    function startResize(ev, node, dir, pxPerMm) {
       const el = draft.elements.find((e) => e.id === node.dataset.id);
       if (!el) return;
       selectedElId = el.id;
@@ -238,14 +313,64 @@
       const startY = ev.clientY;
       const ox = el.x;
       const oy = el.y;
+      const ow = el.w;
+      const oh = el.h;
+      const minSize = 4; // mm
+      node.classList.add('resizing');
       const onMove = (e2) => {
-        el.x = Math.max(0, ox + (e2.clientX - startX) / pxPerMm);
-        el.y = Math.max(0, oy + (e2.clientY - startY) / pxPerMm);
-        renderCanvas();
+        const dx = (e2.clientX - startX) / pxPerMm;
+        const dy = (e2.clientY - startY) / pxPerMm;
+        let x = ox;
+        let y = oy;
+        let w = ow;
+        let h = oh;
+
+        if (dir.includes('e')) w = ow + dx;
+        if (dir.includes('s')) h = oh + dy;
+        if (dir.includes('w')) {
+          w = ow - dx;
+          x = ox + dx;
+        }
+        if (dir.includes('n')) {
+          h = oh - dy;
+          y = oy + dy;
+        }
+
+        if (w < minSize) {
+          if (dir.includes('w')) x = ox + ow - minSize;
+          w = minSize;
+        }
+        if (h < minSize) {
+          if (dir.includes('n')) y = oy + oh - minSize;
+          h = minSize;
+        }
+
+        // keep inside label canvas
+        if (x < 0) {
+          w += x;
+          x = 0;
+        }
+        if (y < 0) {
+          h += y;
+          y = 0;
+        }
+        if (x + w > draft.width_mm) w = draft.width_mm - x;
+        if (y + h > draft.height_mm) h = draft.height_mm - y;
+        w = Math.max(minSize, w);
+        h = Math.max(minSize, h);
+
+        el.x = x;
+        el.y = y;
+        el.w = w;
+        el.h = h;
+        applyNodeBox(node, el, pxPerMm);
+        syncSizeInputs(el);
       };
       const onUp = () => {
+        node.classList.remove('resizing');
         window.removeEventListener('mousemove', onMove);
         window.removeEventListener('mouseup', onUp);
+        renderCanvas();
         renderProps();
       };
       window.addEventListener('mousemove', onMove);
@@ -270,16 +395,15 @@
         }
         box.innerHTML = `
           <h4>表格属性</h4>
+          <p class="size-hint">宽高请在画布拖动手柄调整：当前 <strong id="elSizeHint">${fmtMm(el.w)} × ${fmtMm(el.h)} mm</strong></p>
           <div class="grid-2">
             <label class="field"><span>行数</span><input id="tRows" type="number" min="1" value="${el.rows}" /></label>
             <label class="field"><span>列数</span><input id="tCols" type="number" min="1" value="${el.cols}" /></label>
-            <label class="field"><span>X mm</span><input id="elX" type="number" step="0.5" value="${el.x}" /></label>
-            <label class="field"><span>Y mm</span><input id="elY" type="number" step="0.5" value="${el.y}" /></label>
-            <label class="field"><span>宽 mm</span><input id="elW" type="number" step="0.5" value="${el.w}" /></label>
-            <label class="field"><span>高 mm</span><input id="elH" type="number" step="0.5" value="${el.h}" /></label>
+            <label class="field"><span>X mm</span><input id="elX" type="number" step="0.5" value="${fmtMm(el.x)}" /></label>
+            <label class="field"><span>Y mm</span><input id="elY" type="number" step="0.5" value="${fmtMm(el.y)}" /></label>
           </div>
           <div class="row" style="margin-top:8px">
-            <button class="btn secondary" id="applyTable" type="button">应用表格尺寸</button>
+            <button class="btn secondary" id="applyTable" type="button">应用行列/位置</button>
             <button class="btn secondary" id="mergeRight" type="button">向右合并</button>
             <button class="btn secondary" id="mergeDown" type="button">向下合并</button>
             <button class="btn secondary" id="splitCell" type="button">拆分单元格</button>
@@ -328,8 +452,6 @@
           el.cols = Math.max(1, Number($('#tCols').value) || 1);
           el.x = Number($('#elX').value);
           el.y = Number($('#elY').value);
-          el.w = Number($('#elW').value);
-          el.h = Number($('#elH').value);
           el.colWidths = Array.from({ length: el.cols }, () => 100 / el.cols);
           // drop cells outside
           el.cells = (el.cells || []).filter((c) => c.r < el.rows && c.c < el.cols);
@@ -395,11 +517,10 @@
 
       box.innerHTML = `
         <h4>元素属性</h4>
+        <p class="size-hint">宽高请在画布拖动手柄调整：当前 <strong id="elSizeHint">${fmtMm(el.w)} × ${fmtMm(el.h)} mm</strong></p>
         <div class="grid-2">
-          <label class="field"><span>X mm</span><input id="elX" type="number" step="0.5" value="${el.x}" /></label>
-          <label class="field"><span>Y mm</span><input id="elY" type="number" step="0.5" value="${el.y}" /></label>
-          <label class="field"><span>宽 mm</span><input id="elW" type="number" step="0.5" value="${el.w}" /></label>
-          <label class="field"><span>高 mm</span><input id="elH" type="number" step="0.5" value="${el.h}" /></label>
+          <label class="field"><span>X mm</span><input id="elX" type="number" step="0.5" value="${fmtMm(el.x)}" /></label>
+          <label class="field"><span>Y mm</span><input id="elY" type="number" step="0.5" value="${fmtMm(el.y)}" /></label>
         </div>
         ${el.type === 'code' ? `
           <label class="field"><span>码类型</span>
@@ -447,8 +568,6 @@
       $('#applyEl').onclick = () => {
         el.x = Number($('#elX').value);
         el.y = Number($('#elY').value);
-        el.w = Number($('#elW').value);
-        el.h = Number($('#elH').value);
         if (el.type === 'code') {
           el.codeType = $('#elCodeType').value;
         } else {

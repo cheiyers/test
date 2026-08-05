@@ -193,13 +193,35 @@ tr:hover td { background: #f8fbf9; }
   overflow: hidden; user-select: none;
 }
 .label-el {
-  position: absolute; border: 1px solid transparent; padding: 2px; cursor: move;
-  white-space: pre-wrap; overflow: hidden;
+  position: absolute; border: 1px solid transparent; padding: 0; cursor: move;
+  white-space: pre-wrap; overflow: visible; box-sizing: border-box;
 }
-.label-el.selected { border-color: var(--brand); background: rgba(31,107,74,.04); }
+.label-el .el-body {
+  width: 100%; height: 100%; overflow: hidden; box-sizing: border-box;
+}
+.label-el.selected { border-color: var(--brand); background: rgba(31,107,74,.04); z-index: 2; }
+.label-el.dragging, .label-el.resizing { opacity: .92; z-index: 5; }
 .label-el.code { display: grid; place-items: center; background: #fafafa; font-size: 11px; color: var(--muted); }
-.label-el.table { padding: 0; overflow: hidden; }
+.label-el.table { padding: 0; }
+.label-el.table .el-body { border: 0; }
 .label-table-edit { width: 100%; height: 100%; border-collapse: collapse; table-layout: fixed; font-size: 10px; }
+.resize-handle {
+  position: absolute; width: 9px; height: 9px; background: #fff;
+  border: 1.5px solid var(--brand); border-radius: 1px; z-index: 6;
+  box-sizing: border-box;
+}
+.resize-handle.nw { left: -5px; top: -5px; cursor: nwse-resize; }
+.resize-handle.n  { left: 50%; top: -5px; margin-left: -4.5px; cursor: ns-resize; }
+.resize-handle.ne { right: -5px; top: -5px; cursor: nesw-resize; }
+.resize-handle.e  { right: -5px; top: 50%; margin-top: -4.5px; cursor: ew-resize; }
+.resize-handle.se { right: -5px; bottom: -5px; cursor: nwse-resize; }
+.resize-handle.s  { left: 50%; bottom: -5px; margin-left: -4.5px; cursor: ns-resize; }
+.resize-handle.sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
+.resize-handle.w  { left: -5px; top: 50%; margin-top: -4.5px; cursor: ew-resize; }
+.size-hint {
+  font-size: 12px; margin: 0 0 8px; padding: 8px 10px;
+  background: #eef5f1; border: 1px dashed #b7cfc2; border-radius: 8px;
+}
 .label-table-edit td {
   border: 1px solid #7a9486; padding: 2px; text-align: center; vertical-align: middle;
   overflow: hidden; word-break: break-all; background: #fff;
