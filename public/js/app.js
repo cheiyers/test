@@ -529,7 +529,7 @@
     root.innerHTML = `
       <div class="card">
         <h2>订单导入与关联</h2>
-        <p class="muted">流程：上传订单 → 用自定义列把总包与配件先关联 → 再选 BOM，仅按料号匹配子件。</p>
+        <p class="muted">流程：上传订单 → 自定义列关联总包与配件 → 按料号匹配 BOM（不比用量）→ 扫码时按配件订单判定齐套。</p>
         <div id="orderFlash"></div>
         <div class="upload-block">
           <h3>1. 上传总包订单 + 配件订单</h3>
@@ -744,7 +744,7 @@
           <p class="muted">总包 ${detail.masters.length} 行 · 配件 ${detail.accessories.length} 行
             ${savedLinks.length ? ` · 订单关联列：${escapeHtml(savedLinks.map((p) => p.label || `${p.left}/${p.right}`).join(' + '))}` : ''}
           </p>
-          <div class="flash info">规则：先按自定义列关联总包↔配件，再仅按料号匹配 BOM（数量需相等）。</div>
+          <div class="flash info">规则：先按自定义列关联总包↔配件，再仅按料号匹配 BOM；用量不在此校验，扫码时按该总包关联的配件订单判定齐套。</div>
           <div id="assocFlash"></div>
           <div id="assocEditor" class="${showEditor ? '' : 'hidden'}">
             <h4>A. 选择 BOM 版本（本批次使用一个）</h4>
@@ -759,7 +759,7 @@
                 </label>`).join('') : '<div class="flash warn">无候选 BOM，请先上传对应母件的 BOM</div>'}
             </div>
             <h4 style="margin-top:14px">B. 与 BOM 仅按料号匹配</h4>
-            <p class="muted" style="font-size:13px">第二步只比对料号；同料号数量合计须等于 BOM 用量。</p>
+            <p class="muted" style="font-size:13px">第二步只核对配件料号是否存在于 BOM，不比对用量。用量齐套在扫码时按总包关联的配件订单行判定。</p>
             <div class="form-grid" id="bomMatchWrap">
               <label class="field"><span>BOM 料号列</span>
                 <select id="bomPartField"><option value="">请选择</option>${partOpts(bomFields.length ? bomFields : ['物料代码'], defaultBomPart)}</select>
@@ -1045,7 +1045,7 @@
     root.innerHTML = `
       <div class="card">
         <h2>扫码入库</h2>
-        <p class="muted">先扫总包，再扫子件；子件无顺序；不可重复。切换到下一个总包时，未齐套将自动标记为「有缺漏」。</p>
+        <p class="muted">先扫总包，再扫子件；子件无顺序；不可重复。齐套按该总包关联的配件订单行判定（与 BOM 用量无关）。切换总包时未齐套将自动标记「有缺漏」。</p>
         <div id="scanFlash"></div>
         <div class="scan-hero">
           <div>

@@ -358,7 +358,8 @@ function batchRoutes(db) {
         result.linked_accessories += 1;
       }
 
-      // ---- Step 2: match linked accessories to BOM by custom columns ----
+      // ---- Step 2: match linked accessories to BOM by 料号 only (no qty) ----
+      // 用量不在此阶段校验；扫码时按总包关联的配件订单行判定齐套
       for (const master of masters) {
         if (master.mother_part_no !== bom.mother_part_no) {
           updateMaster.run('failed', `母件 ${master.mother_part_no} 与所选 BOM(${bom.mother_part_no}) 不一致`, master.id);
@@ -377,65 +378,30 @@ function batchRoutes(db) {
           continue;
         }
 
-        const accGroups = new Map();
-        for (const a of relatedAcc) {
-          const raw = JSON.parse(a.raw_json);
-          const key = buildPairKey(raw, bomPairs, 'right');
-          if (!accGroups.has(key)) accGroups.set(key, []);
-          accGroups.get(key).push(a);
-        }
-
         let masterOk = true;
         const messages = [];
 
-        for (const [key, bomEntry] of bomMap.entries()) {
-          const group = accGroups.get(key) || [];
-          const sumQty = group.reduce((s, x) => s + (Number(x.qty) || 0), 0);
-          if (!group.length) {
+        for (const a of relatedAcc) {
+          const raw = JSON.parse(a.raw_json);
+          const key = buildPairKey(raw, bomPairs, 'right');
+          const bomEntry = bomMap.get(key);
+          if (!bomEntry) {
             masterOk = false;
-            messages.push(`缺少 BOM 子件[${key}]`);
-            continue;
-          }
-          if (sumQty !== bomEntry.qty) {
-            masterOk = false;
-            messages.push(`子件[${key}]数量不符：订单${sumQty} ≠ BOM${bomEntry.qty}`);
-            for (const a of group) {
-              updateAcc.run(master.id, bomEntry.lines[0].id, 'failed', `数量不符：需等于 BOM ${bomEntry.qty}`, a.id);
-              result.accessory_failed += 1;
-            }
+            messages.push(`配件料号不在 BOM 中：[${key || '空'}]`);
+            updateAcc.run(master.id, null, 'failed', '料号在 BOM 中不存在', a.id);
+            result.accessory_failed += 1;
           } else {
-            for (const a of group) {
-              updateAcc.run(master.id, bomEntry.lines[0].id, 'success', '匹配成功', a.id);
-              result.accessory_success += 1;
-            }
-          }
-        }
-
-        for (const [key, group] of accGroups.entries()) {
-          if (!bomMap.has(key)) {
-            masterOk = false;
-            messages.push(`配件不在 BOM 中：[${key}]`);
-            for (const a of group) {
-              updateAcc.run(master.id, null, 'failed', '在 BOM 中找不到对应匹配键', a.id);
-              result.accessory_failed += 1;
-            }
+            updateAcc.run(master.id, bomEntry.lines[0].id, 'success', '料号匹配成功（不校验用量）', a.id);
+            result.accessory_success += 1;
           }
         }
 
         if (masterOk) {
-          updateMaster.run('success', '订单关联并匹配 BOM 成功', master.id);
+          updateMaster.run('success', '订单关联成功，配件料号已匹配 BOM（用量待扫码校验）', master.id);
           result.master_success += 1;
         } else {
           updateMaster.run('failed', messages.join('；'), master.id);
           result.master_failed += 1;
-          const demoted = db.prepare(`
-            UPDATE accessory_order_lines
-            SET match_status = 'failed',
-                match_message = TRIM(COALESCE(match_message, '') || '；总包整体未通过', '；')
-            WHERE master_line_id = ? AND match_status = 'success'
-          `).run(master.id);
-          result.accessory_success -= demoted.changes;
-          result.accessory_failed += demoted.changes;
         }
 
         result.details.push({
