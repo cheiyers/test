@@ -49,13 +49,19 @@ PORT=8080 npm start
 
 登录后请尽快修改密码（当前版本可在数据库 `data/qc.db` 的 users 表中调整，后续可加界面改密）。
 
-## 示例文件
+## 示例 / 导入模板
 
-仓库 `samples/` 目录提供可直接试用的 Excel：
+系统内可直接下载（登录后）：
 
-- `bom.xlsx` — 母件 M-100，含子件料号+规格（含同料号不同规格）
-- `master_order.xlsx` — 两行总包订单
-- `accessory_order.xlsx` — 对应配件；第二单故意数量不符，用于验证「部分生成」
+- BOM 管理页 → **下载 BOM 导入模板**
+- 订单关联页 → **下载总包订单模板 / 配件订单模板**
+
+文件也在仓库中：
+
+- `public/templates/bom_import_template.xlsx`
+- `public/templates/master_order_template.xlsx`
+- `public/templates/accessory_order_template.xlsx`
+- `samples/` 下为同内容示例（第二单配件数量故意不符，用于验证部分生成）
 
 ## 推荐使用流程
 

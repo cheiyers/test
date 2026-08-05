@@ -191,6 +191,12 @@
         <div class="grid-2">
           <div>
             <h3>上传 BOM</h3>
+            <p class="muted" style="margin:0 0 10px;font-size:13px">
+              可先下载模板填写。模板列：母件料号、子件料号、规格、数量、备注。上传后自选母件列与母件值。
+            </p>
+            <div class="row" style="margin-bottom:10px">
+              <a class="btn secondary" href="/templates/bom_import_template.xlsx" download>下载 BOM 导入模板</a>
+            </div>
             <label class="field"><span>Excel 文件</span><input type="file" id="bomFile" accept=".xlsx,.xls" /></label>
             <div class="row" style="margin-top:10px">
               <button class="btn secondary" id="bomPreviewBtn" type="button">预览并映射</button>
@@ -383,6 +389,10 @@
         <div class="grid-2">
           <div>
             <h3>1. 上传总包订单 + 配件订单</h3>
+            <div class="row" style="margin-bottom:10px">
+              <a class="btn secondary" href="/templates/master_order_template.xlsx" download>下载总包订单模板</a>
+              <a class="btn secondary" href="/templates/accessory_order_template.xlsx" download>下载配件订单模板</a>
+            </div>
             <label class="field"><span>批次名称</span><input id="batchName" placeholder="如 8月4日上午出货" /></label>
             <label class="field"><span>总包订单 Excel</span><input type="file" id="masterFile" accept=".xlsx,.xls" /></label>
             <label class="field"><span>配件订单 Excel</span><input type="file" id="accFile" accept=".xlsx,.xls" /></label>
