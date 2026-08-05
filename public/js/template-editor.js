@@ -1,5 +1,5 @@
 (function (global) {
-  const FORMULA_HINT = '公式可下拉选择或手输；支持链式如 trim|upper|left:4；条件如 if(>10,合格,不合格)、iffield(qty,>5,多,少)；格式如 format:0000、fixed:2';
+  const FORMULA_HINT = 'Excel 风格嵌套：FORMAT(,"yyyy-mm-dd")、IF(LEFT(TRIM(),2)="SO","订单","其他")、UPPER(LEFT(TRIM(),4))；当前值用空参或 VALUE()';
 
   function uid(prefix) {
     return (prefix || 'e') + Math.random().toString(36).slice(2, 8);

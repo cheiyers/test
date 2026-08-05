@@ -37,11 +37,12 @@ function templateRoutes(db) {
       formulas: FORMULA_CATALOG,
       scan_id_field: scanIdField(labelType),
       formula_help: [
-        '公式作用在所选订单字段上；多个公式可用 | 串联，如 trim|upper|left:4',
-        'format:0000 / format(0000)：数字补零；fixed:2：小数位；percent:1：转百分比',
-        'if(>10,合格,不合格)：按当前字段判断；then/else 可用 field:列名 取其他列',
-        'iffield(qty,>5,多,少)：用其他列做条件判断',
-        '条码/二维码必须包含系统唯一码字段（总包 package_code / 子件 child_code），才可扫码匹配；可在前后拼接其他内容'
+        '写法接近 Excel：函数可嵌套，如 IF(LEFT(TRIM(),2)="SO","订单","其他")、UPPER(LEFT(TRIM(),4))',
+        '当前字段值：参数留空，或用 VALUE() / . ；其他列：FIELD("列名") 或 field:列名',
+        'FORMAT / TEXT：日期与数字格式化。日期例 FORMAT(,"yyyy-mm-dd")，可识别 2024/1/5、20240105、2024年1月5日 等；数字例 FORMAT(,"0000")、FORMAT(,"0.00")',
+        'IF(条件,是,否) 条件支持 = <> > >= < <= 与嵌套函数；也可用 IF(FIELD("qty")>5,"多","少")',
+        '仍兼容旧写法：left:4、format:yyyy-mm-dd、以及链式 trim|upper|left:4',
+        '条码/二维码必须包含系统唯一码字段（总包 package_code / 子件 child_code）'
       ],
       has_order_data: fromOrders.length > 0,
       sample: sampleRaw
