@@ -263,7 +263,10 @@ tr:hover td { background: #f8fbf9; }
   overflow: hidden; max-width: 100%; max-height: 100%;
 }
 .label-table-edit td.cell-active { outline: 2px solid var(--brand); background: #eaf6ef; }
-.seg-builder { background: #f7faf8; border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+.formula-help {
+  background: #f7faf8; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+}
+.formula-help summary { cursor: pointer; font-weight: 600; font-size: 13px; }
 .seg-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
 .seg-row input, .seg-row select { min-width: 90px; flex: 1; }
 .label-table { width: 100%; height: 100%; border-collapse: collapse; table-layout: fixed; }

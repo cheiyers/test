@@ -38,6 +38,15 @@
     host.textContent = value;
   }
 
+  function ensureCodeHasScanId(content, scanId) {
+    const c = String(content || '');
+    const id = String(scanId || '');
+    if (!id) return c;
+    if (!c) return id;
+    if (c.includes(id)) return c;
+    return `${c}|${id}`;
+  }
+
   function renderTableElement(el, data, codeFallback, options = {}) {
     const table = document.createElement('table');
     table.className = 'label-table';
@@ -78,8 +87,9 @@
         td.colSpan = (cell && cell.colspan) || 1;
 
         const contentType = (cell && cell.contentType) || 'text';
-        const text = Expr.resolveCellContent(cell, data, codeFallback);
+        let text = Expr.resolveCellContent(cell, data, codeFallback);
         if (contentType === 'qr' || contentType === 'barcode') {
+          text = ensureCodeHasScanId(text, codeFallback || data?.child_code || data?.package_code);
           const host = document.createElement('div');
           host.style.width = '100%';
           host.style.height = '100%';
@@ -124,11 +134,12 @@
       node.style.overflow = 'hidden';
 
       if (el.type === 'table') {
-        node.appendChild(renderTableElement(el, label.data, label.code, options));
+        node.appendChild(renderTableElement(el, label.data, label.scan_id || label.code, options));
       } else if (el.type === 'code') {
         node.style.display = 'grid';
         node.style.placeItems = 'center';
-        const content = Expr.resolveElementContent(el, label.data, label.code);
+        let content = Expr.resolveElementContent(el, label.data, label.code);
+        content = ensureCodeHasScanId(content, label.scan_id || label.data?.child_code || label.data?.package_code || label.code);
         const type = el.codeType || tpl.code_type || 'qr';
         if (options.previewOnly) {
           node.textContent = 'CODE';

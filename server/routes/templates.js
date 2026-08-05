@@ -3,6 +3,7 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { requireRoles } = require('../auth');
+const { FORMULA_CATALOG, ensureScanIdInSegments, scanIdField } = require('../expr');
 
 function templateRoutes(db) {
   const router = express.Router();
@@ -30,22 +31,18 @@ function templateRoutes(db) {
 
     const fromOrders = Object.keys(sampleRaw || {});
     const fields = [...new Set([...builtins, ...fromOrders])];
-    const formulas = [
-      { value: '', label: '无（原值）' },
-      { value: 'trim', label: '去空格 trim' },
-      { value: 'upper', label: '转大写 upper' },
-      { value: 'lower', label: '转小写 lower' },
-      { value: 'left:4', label: '左取N位 left:4' },
-      { value: 'right:3', label: '右取N位 right:3' },
-      { value: 'mid:2:3', label: '截取 mid:起始:长度' },
-      { value: 'padleft:6:0', label: '左补齐 padleft:6:0' },
-      { value: 'num+1', label: '数字加减乘除 num+1' },
-      { value: 'replace:mm:', label: '替换 replace:旧:新' }
-    ];
     res.json({
       label_type: labelType,
       fields,
-      formulas,
+      formulas: FORMULA_CATALOG,
+      scan_id_field: scanIdField(labelType),
+      formula_help: [
+        '公式作用在所选订单字段上；多个公式可用 | 串联，如 trim|upper|left:4',
+        'format:0000 / format(0000)：数字补零；fixed:2：小数位；percent:1：转百分比',
+        'if(>10,合格,不合格)：按当前字段判断；then/else 可用 field:列名 取其他列',
+        'iffield(qty,>5,多,少)：用其他列做条件判断',
+        '条码/二维码必须包含系统唯一码字段（总包 package_code / 子件 child_code），才可扫码匹配；可在前后拼接其他内容'
+      ],
       has_order_data: fromOrders.length > 0,
       sample: sampleRaw
     });
@@ -70,8 +67,36 @@ function templateRoutes(db) {
     res.json(formatTemplate(row));
   });
 
+  function sanitizeTemplateBody(body) {
+    const labelType = body.label_type === 'child' ? 'child' : 'master';
+    const next = { ...body };
+    if (next.code_mode === 'fields') {
+      next.code_segments = ensureScanIdInSegments(next.code_segments || [], labelType);
+      next.code_fields = (next.code_segments || [])
+        .filter((s) => s.type === 'field')
+        .map((s) => s.field)
+        .filter(Boolean);
+    }
+    next.elements = (next.elements || []).map((el) => {
+      const copy = { ...el };
+      if (copy.type === 'code') {
+        copy.segments = ensureScanIdInSegments(copy.segments || [], labelType);
+      }
+      if (copy.type === 'table' && Array.isArray(copy.cells)) {
+        copy.cells = copy.cells.map((cell) => {
+          if (cell.contentType === 'qr' || cell.contentType === 'barcode') {
+            return { ...cell, segments: ensureScanIdInSegments(cell.segments || [], labelType) };
+          }
+          return cell;
+        });
+      }
+      return copy;
+    });
+    return next;
+  }
+
   router.post('/', canImport, (req, res) => {
-    const body = req.body || {};
+    const body = sanitizeTemplateBody(req.body || {});
     if (!body.name || !body.label_type) {
       return res.status(400).json({ error: '名称与标签类型必填' });
     }
@@ -98,7 +123,10 @@ function templateRoutes(db) {
   router.put('/:id', canImport, (req, res) => {
     const existing = db.prepare('SELECT * FROM label_templates WHERE id = ?').get(req.params.id);
     if (!existing) return res.status(404).json({ error: '模板不存在' });
-    const body = req.body || {};
+    const body = sanitizeTemplateBody({
+      ...(req.body || {}),
+      label_type: (req.body && req.body.label_type) || existing.label_type
+    });
     db.prepare(`
       UPDATE label_templates SET
         name = ?, width_mm = ?, height_mm = ?, code_mode = ?, code_fields_json = ?,

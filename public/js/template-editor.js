@@ -1,5 +1,5 @@
 (function (global) {
-  const FORMULA_HINT = '公式示例：left:4 / right:3 / upper / lower / trim / num+1 / replace:旧:新 / mid:2:3 / padleft:6:0';
+  const FORMULA_HINT = '公式可下拉选择或手输；支持链式如 trim|upper|left:4；条件如 if(>10,合格,不合格)、iffield(qty,>5,多,少)；格式如 format:0000、fixed:2';
 
   function uid(prefix) {
     return (prefix || 'e') + Math.random().toString(36).slice(2, 8);
@@ -49,15 +49,28 @@
     draft.code_fields = draft.code_fields || [];
     let selectedElId = null;
     let selectedCellKey = null; // "r,c"
-    let fieldMeta = { fields: ['order_no', 'part_no', 'qty', 'mother_part_no', 'package_code', 'child_code'], formulas: [] };
+    let fieldMeta = {
+      fields: ['order_no', 'part_no', 'qty', 'mother_part_no', 'package_code', 'child_code'],
+      formulas: Expr.FORMULA_CATALOG || [],
+      formula_help: [],
+      scan_id_field: draft.label_type === 'child' ? 'child_code' : 'package_code'
+    };
     try {
       fieldMeta = await API.get(`/templates/meta/field-options?label_type=${draft.label_type}`);
+      if (!fieldMeta.formulas?.length) fieldMeta.formulas = Expr.FORMULA_CATALOG || [];
+      if (!fieldMeta.scan_id_field) {
+        fieldMeta.scan_id_field = draft.label_type === 'child' ? 'child_code' : 'package_code';
+      }
     } catch (_) {}
 
     host.innerHTML = `
       <div class="card">
         <h3>模板编辑器 — ${draft.label_type === 'master' ? '总包订单字段' : '配件订单字段'}</h3>
         <p class="muted">${fieldMeta.has_order_data ? '已检测到导入订单列，可直接点选拼接。' : '尚未导入订单时仍可手动填写列名；导入后会自动出现列清单。'}</p>
+        <div class="flash info" style="margin-bottom:10px">
+          扫码匹配依赖系统唯一码字段 <code>${escapeHtml(fieldMeta.scan_id_field)}</code>。
+          条码/二维码内容可自定义拼接其他字段或固定文字，但<strong>必须包含该唯一码</strong>；保存时若缺失会自动补上。
+        </div>
         <div class="row">
           <label class="field"><span>名称</span><input id="tplName" value="${escapeHtml(draft.name)}" /></label>
           <label class="field"><span>宽 mm</span><input id="tplW" type="number" value="${draft.width_mm}" /></label>
@@ -70,11 +83,25 @@
           </label>
           <label class="field"><span>标签码内容模式</span>
             <select id="tplCodeMode">
-              <option value="unique" ${draft.code_mode === 'unique' ? 'selected' : ''}>系统唯一编号</option>
-              <option value="fields" ${draft.code_mode === 'fields' ? 'selected' : ''}>字段/公式拼接</option>
+              <option value="unique" ${draft.code_mode === 'unique' ? 'selected' : ''}>仅系统唯一码</option>
+              <option value="fields" ${draft.code_mode === 'fields' ? 'selected' : ''}>唯一码 + 自定义拼接</option>
             </select>
           </label>
         </div>
+        <details class="formula-help" style="margin-top:10px">
+          <summary>公式说明与示例（点击展开）</summary>
+          <ul class="muted" style="margin:8px 0 0;padding-left:18px;font-size:12px;line-height:1.6">
+            ${(fieldMeta.formula_help || []).map((h) => `<li>${escapeHtml(h)}</li>`).join('') || `<li>${escapeHtml(FORMULA_HINT)}</li>`}
+            ${(fieldMeta.formulas || []).filter((f) => f.value).slice(0, 18).map((f) =>
+              `<li><code>${escapeHtml(f.value)}</code> — ${escapeHtml(f.label)}${f.hint ? `（${escapeHtml(f.hint)}）` : ''}</li>`
+            ).join('')}
+          </ul>
+        </details>
+        <datalist id="formulaDatalist">
+          ${(fieldMeta.formulas || []).filter((f) => f.value).map((f) =>
+            `<option value="${escapeHtml(f.value)}">${escapeHtml(f.label || f.value)}</option>`
+          ).join('')}
+        </datalist>
         <div id="codeSegBox" class="seg-builder" style="margin-top:10px"></div>
         <div class="editor-layout" style="margin-top:12px">
           <div class="palette">
@@ -155,14 +182,18 @@
 
     function renderCodeSegBox() {
       const box = $('#codeSegBox');
+      const idField = fieldMeta.scan_id_field || Expr.scanIdField(draft.label_type);
       if (draft.code_mode !== 'fields') {
-        box.innerHTML = '<p class="muted">当前使用系统唯一编号作为扫码主码。</p>';
+        box.innerHTML = `<p class="muted">当前条码内容仅为系统唯一码 <code>${escapeHtml(idField)}</code>，扫码可精确匹配总包/配件。</p>`;
         return;
       }
+      draft.code_segments = Expr.ensureScanIdInSegments(draft.code_segments || [], draft.label_type);
       box.innerHTML = `
-        <h4 style="margin:0 0 8px">标签主码拼接（字段间可插入任意字符）</h4>
+        <h4 style="margin:0 0 8px">条码内容拼接（必须含唯一码，可再加订单字段/固定文字）</h4>
+        <p class="muted" style="font-size:12px;margin:0 0 8px">唯一码字段：<code>${escapeHtml(idField)}</code>。可在其前后加订单号、料号等；扫码时只要内容里带有该唯一码即可匹配。</p>
         <div id="codeSegments"></div>
         <div class="row" style="margin-top:8px">
+          <button class="btn secondary" id="addCodeScanId" type="button">+ 唯一码</button>
           <button class="btn secondary" id="addCodeField" type="button">+ 订单字段</button>
           <button class="btn secondary" id="addCodeText" type="button">+ 任意字符</button>
         </div>
@@ -175,10 +206,15 @@
           $('#codePreview').textContent = Expr.segmentsPreview(draft.code_segments);
         }, () => {
           draft.code_segments.splice(idx, 1);
+          draft.code_segments = Expr.ensureScanIdInSegments(draft.code_segments, draft.label_type);
           renderCodeSegBox();
         }));
       });
       $('#codePreview').textContent = Expr.segmentsPreview(draft.code_segments);
+      $('#addCodeScanId').onclick = () => {
+        draft.code_segments = Expr.ensureScanIdInSegments(draft.code_segments, draft.label_type);
+        renderCodeSegBox();
+      };
       $('#addCodeField').onclick = () => {
         draft.code_segments.push({ type: 'field', field: fieldMeta.fields[0] || 'order_no', formula: '' });
         renderCodeSegBox();
@@ -189,9 +225,19 @@
       };
     }
 
+    function formulaOptionsHtml(selected) {
+      const list = fieldMeta.formulas || Expr.FORMULA_CATALOG || [];
+      return list.map((f) => {
+        const val = f.value || '';
+        const sel = val === (selected || '') ? 'selected' : '';
+        return `<option value="${escapeHtml(val)}" ${sel}>${escapeHtml(f.label || val || '无（原值）')}</option>`;
+      }).join('');
+    }
+
     function segmentEditorRow(seg, idx, onChange, onRemove) {
       const wrap = document.createElement('div');
       wrap.className = 'seg-row';
+      const idField = fieldMeta.scan_id_field || Expr.scanIdField(draft.label_type);
       if (seg.type === 'text') {
         wrap.innerHTML = `
           <span class="tag info">字符</span>
@@ -199,24 +245,33 @@
           <button class="btn danger" type="button" data-rm>删</button>
         `;
       } else {
+        const isScanId = String(seg.field || '').toLowerCase() === String(idField).toLowerCase();
         wrap.innerHTML = `
-          <span class="tag ok">字段</span>
+          <span class="tag ${isScanId ? 'warn' : 'ok'}">${isScanId ? '唯一码' : '字段'}</span>
           <select data-k="field">
             ${fieldMeta.fields.map((f) => `<option value="${escapeHtml(f)}" ${f === seg.field ? 'selected' : ''}>${escapeHtml(f)}</option>`).join('')}
             ${seg.field && !fieldMeta.fields.includes(seg.field) ? `<option value="${escapeHtml(seg.field)}" selected>${escapeHtml(seg.field)}</option>` : ''}
           </select>
           <input data-k="fieldManual" placeholder="或手输列名" value="" style="max-width:120px" />
-          <input data-k="formula" value="${escapeHtml(seg.formula || '')}" placeholder="公式，可空" />
+          <select data-k="formulaPick" title="选择常用公式" style="max-width:160px">
+            ${formulaOptionsHtml(seg.formula || '')}
+          </select>
+          <input data-k="formula" list="formulaDatalist" value="${escapeHtml(seg.formula || '')}" placeholder="公式，可空；可链式" />
           <button class="btn danger" type="button" data-rm>删</button>
         `;
       }
       wrap.querySelectorAll('[data-k]').forEach((input) => {
-        input.addEventListener('input', () => {
+        const evt = input.tagName === 'SELECT' ? 'change' : 'input';
+        input.addEventListener(evt, () => {
           const next = { ...seg };
           if (input.dataset.k === 'fieldManual' && input.value.trim()) {
             next.field = input.value.trim();
           } else if (input.dataset.k === 'field') {
             next.field = input.value;
+          } else if (input.dataset.k === 'formulaPick') {
+            next.formula = input.value;
+            const manual = wrap.querySelector('[data-k="formula"]');
+            if (manual) manual.value = input.value;
           } else if (input.dataset.k === 'formula') {
             next.formula = input.value;
           } else if (input.dataset.k === 'value') {
@@ -584,6 +639,7 @@
           <h4 style="margin-top:10px">内容拼接</h4>
           <div id="cellSegs"></div>
           <div class="row" style="margin-top:8px">
+            <button class="btn secondary" id="addCellScanId" type="button">+ 唯一码</button>
             <button class="btn secondary" id="addCellField" type="button">+ 订单字段</button>
             <button class="btn secondary" id="addCellText" type="button">+ 任意字符</button>
             <button class="btn" id="applyCell" type="button">应用单元格</button>
@@ -633,6 +689,10 @@
           renderCanvas();
           renderProps();
         };
+        $('#addCellScanId').onclick = () => {
+          cell.segments = Expr.ensureScanIdInSegments(cell.segments || [], draft.label_type);
+          renderProps();
+        };
         $('#addCellField').onclick = () => {
           cell.segments = cell.segments || [];
           cell.segments.push({ type: 'field', field: fieldMeta.fields[0] || 'order_no', formula: '' });
@@ -653,6 +713,9 @@
           }
           if ($('#cellRowH')) {
             el.rowHeights = Expr.setPercentAt(el.rowHeights, cell.r, Number($('#cellRowH').value), el.rows);
+          }
+          if (cell.contentType === 'qr' || cell.contentType === 'barcode') {
+            cell.segments = Expr.ensureScanIdInSegments(cell.segments || [], draft.label_type);
           }
           Expr.ensureTableLayout(el);
           renderCanvas();
@@ -709,6 +772,7 @@
         <h4 style="margin-top:10px">内容拼接（订单列 / 任意字符 / 公式）</h4>
         <div id="elSegs"></div>
         <div class="row" style="margin-top:8px">
+          <button class="btn secondary" id="addElScanId" type="button">+ 唯一码</button>
           <button class="btn secondary" id="addElField" type="button">+ 订单字段</button>
           <button class="btn secondary" id="addElText" type="button">+ 任意字符</button>
           <button class="btn" id="applyEl" type="button">应用</button>
@@ -728,6 +792,10 @@
         }));
       });
       $('#elPreview').textContent = Expr.segmentsPreview(el.segments);
+      $('#addElScanId').onclick = () => {
+        el.segments = Expr.ensureScanIdInSegments(el.segments || [], draft.label_type);
+        renderProps();
+      };
       $('#addElField').onclick = () => {
         el.segments.push({ type: 'field', field: fieldMeta.fields[0] || 'order_no', formula: '' });
         renderProps();
@@ -741,6 +809,7 @@
         el.y = Number($('#elY').value);
         if (el.type === 'code') {
           el.codeType = $('#elCodeType').value;
+          el.segments = Expr.ensureScanIdInSegments(el.segments || [], draft.label_type);
         } else {
           el.fontSize = Number($('#elSize').value) || 12;
           el.align = $('#elAlign').value;
@@ -822,6 +891,24 @@
 
     $('#saveTplBtn').onclick = async () => {
       syncMeta();
+      if (draft.code_mode === 'fields') {
+        draft.code_segments = Expr.ensureScanIdInSegments(draft.code_segments || [], draft.label_type);
+      }
+      draft.elements = (draft.elements || []).map((el) => {
+        const copy = { ...el };
+        if (copy.type === 'code') {
+          copy.segments = Expr.ensureScanIdInSegments(copy.segments || [], draft.label_type);
+        }
+        if (copy.type === 'table' && Array.isArray(copy.cells)) {
+          copy.cells = copy.cells.map((cell) => {
+            if (cell.contentType === 'qr' || cell.contentType === 'barcode') {
+              return { ...cell, segments: Expr.ensureScanIdInSegments(cell.segments || [], draft.label_type) };
+            }
+            return cell;
+          });
+        }
+        return copy;
+      });
       draft.code_fields = (draft.code_segments || [])
         .filter((s) => s.type === 'field')
         .map((s) => s.field)

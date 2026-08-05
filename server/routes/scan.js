@@ -122,8 +122,38 @@ function scanRoutes(db) {
     const currentPackageId = req.body?.current_package_id || null;
     if (!code) return res.status(400).json({ error: '请扫描条码内容' });
 
+    // 精确匹配，或条码自定义内容中包含唯一码（取最长匹配，避免短码误伤）
+    function findMasterByScan(scanned) {
+      const exact = db.prepare('SELECT * FROM packages WHERE package_code = ?').get(scanned);
+      if (exact) return exact;
+      return db.prepare(`
+        SELECT * FROM packages
+        WHERE length(package_code) >= 6 AND ? LIKE '%' || package_code || '%'
+        ORDER BY length(package_code) DESC, rowid DESC
+        LIMIT 1
+      `).get(scanned);
+    }
+
+    function findChildByScan(scanned) {
+      const exact = db.prepare(`
+        SELECT pc.*, p.id AS pkg_id, p.package_code, p.status AS pkg_status
+        FROM package_children pc
+        JOIN packages p ON p.id = pc.package_id
+        WHERE pc.child_code = ?
+      `).get(scanned);
+      if (exact) return exact;
+      return db.prepare(`
+        SELECT pc.*, p.id AS pkg_id, p.package_code, p.status AS pkg_status
+        FROM package_children pc
+        JOIN packages p ON p.id = pc.package_id
+        WHERE length(pc.child_code) >= 6 AND ? LIKE '%' || pc.child_code || '%'
+        ORDER BY length(pc.child_code) DESC, pc.rowid DESC
+        LIMIT 1
+      `).get(scanned);
+    }
+
     // Try master first
-    const masterPkg = db.prepare('SELECT * FROM packages WHERE package_code = ?').get(code);
+    const masterPkg = findMasterByScan(code);
     if (masterPkg) {
       let leftShortage = null;
       if (currentPackageId && currentPackageId !== masterPkg.id) {
@@ -158,12 +188,7 @@ function scanRoutes(db) {
     }
 
     // Child scan
-    const child = db.prepare(`
-      SELECT pc.*, p.id AS pkg_id, p.package_code, p.status AS pkg_status
-      FROM package_children pc
-      JOIN packages p ON p.id = pc.package_id
-      WHERE pc.child_code = ?
-    `).get(code);
+    const child = findChildByScan(code);
 
     if (!child) {
       addLog({

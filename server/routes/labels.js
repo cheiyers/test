@@ -3,28 +3,10 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { requireRoles } = require('../auth');
-const { evalSegments } = require('../expr');
+const { buildPrintCode } = require('../expr');
 
 function shortCode(prefix) {
   return `${prefix}${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-}
-
-function buildFieldCode(raw, fields) {
-  return (fields || []).map((f) => String(raw[f] ?? '').trim()).filter(Boolean).join('|');
-}
-
-function buildCodeFromTemplate(tpl, raw, uniqueFallback) {
-  const codeMode = tpl.code_mode;
-  if (codeMode === 'unique') return uniqueFallback;
-  const segs = (() => {
-    try { return JSON.parse(tpl.code_segments_json || 'null'); } catch { return null; }
-  })();
-  if (Array.isArray(segs) && segs.length) {
-    const v = evalSegments(segs, raw);
-    return v || uniqueFallback;
-  }
-  const fields = JSON.parse(tpl.code_fields_json || '[]');
-  return buildFieldCode(raw, fields) || uniqueFallback;
 }
 
 function labelRoutes(db) {
@@ -90,15 +72,8 @@ function labelRoutes(db) {
           db.prepare('DELETE FROM packages WHERE id = ?').run(oldPkg.id);
         }
 
-        const raw = JSON.parse(master.raw_json);
-        const uniqueM = master.package_code || shortCode('M');
-        let packageCode = buildCodeFromTemplate(masterTpl, {
-          ...raw,
-          order_no: master.order_no,
-          mother_part_no: master.mother_part_no
-        }, uniqueM);
-
-        // ensure unique
+        // 扫码主键永远是系统唯一码；自定义条码内容只影响打印载荷，且必须包含唯一码
+        let packageCode = master.package_code || shortCode('M');
         let tryCode = packageCode;
         let n = 1;
         while (db.prepare('SELECT id FROM packages WHERE package_code = ?').get(tryCode) ||
@@ -119,15 +94,7 @@ function labelRoutes(db) {
         `).all(master.id);
 
         for (const child of children) {
-          const craw = JSON.parse(child.raw_json);
-          const uniqueC = child.child_code || shortCode('C');
-          let childCode = buildCodeFromTemplate(childTpl, {
-            ...craw,
-            order_no: master.order_no,
-            part_no: child.part_no,
-            qty: child.qty,
-            package_code: packageCode
-          }, uniqueC);
+          let childCode = child.child_code || shortCode('C');
           let cTry = childCode;
           let cn = 1;
           while (db.prepare('SELECT id FROM package_children WHERE child_code = ?').get(cTry) ||
@@ -177,17 +144,21 @@ function labelRoutes(db) {
     const labels = [];
     for (const pkg of packages) {
       const masterRaw = JSON.parse(pkg.master_raw);
+      const masterData = {
+        ...masterRaw,
+        order_no: pkg.order_no,
+        mother_part_no: pkg.mother_part_no,
+        package_code: pkg.package_code
+      };
+      const masterTplFmt = formatTpl(masterTpl);
+      const masterPrintCode = buildPrintCode(masterTplFmt, masterData, pkg.package_code, 'master');
       labels.push({
         type: 'master',
-        code: pkg.package_code,
+        code: masterPrintCode,
+        scan_id: pkg.package_code,
         order_no: pkg.order_no,
-        data: {
-          ...masterRaw,
-          order_no: pkg.order_no,
-          mother_part_no: pkg.mother_part_no,
-          package_code: pkg.package_code
-        },
-        template: formatTpl(masterTpl)
+        data: masterData,
+        template: masterTplFmt
       });
 
       const children = db.prepare(`
@@ -200,19 +171,23 @@ function labelRoutes(db) {
 
       for (const ch of children) {
         const raw = JSON.parse(ch.raw_json);
+        const childData = {
+          ...raw,
+          order_no: pkg.order_no,
+          part_no: ch.part_no,
+          qty: ch.qty,
+          child_code: ch.child_code,
+          package_code: pkg.package_code
+        };
+        const childTplFmt = formatTpl(childTpl);
+        const childPrintCode = buildPrintCode(childTplFmt, childData, ch.child_code, 'child');
         labels.push({
           type: 'child',
-          code: ch.child_code,
+          code: childPrintCode,
+          scan_id: ch.child_code,
           order_no: pkg.order_no,
-          data: {
-            ...raw,
-            order_no: pkg.order_no,
-            part_no: ch.part_no,
-            qty: ch.qty,
-            child_code: ch.child_code,
-            package_code: pkg.package_code
-          },
-          template: formatTpl(childTpl)
+          data: childData,
+          template: childTplFmt
         });
       }
     }
