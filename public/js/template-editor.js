@@ -19,6 +19,7 @@
       rows: 2,
       cols: 2,
       colWidths: [50, 50],
+      rowHeights: [40, 60],
       cells: [
         {
           r: 0, c: 0, rowspan: 1, colspan: 2, contentType: 'text',
@@ -81,7 +82,7 @@
             <button class="btn secondary" data-add="field" type="button">+ 绑定字段</button>
             <button class="btn secondary" data-add="code" type="button">+ 条码/二维码</button>
             <button class="btn" data-add="table" type="button">+ 表格</button>
-            <p class="muted" style="font-size:12px;margin-top:10px">可用上方滑块放大画布；选中元素后拖动手柄缩放，拖动本体移动。表格行数增多时会自动加高，也可再拖动手柄调整。</p>
+            <p class="muted" style="font-size:12px;margin-top:10px">可用上方滑块放大画布；选中元素后拖动手柄缩放。表格内拖动单元格右边线调列宽、下边线调行高。</p>
             <p class="muted" style="font-size:12px">表格支持合并单元格；单元格内容可选文本或条码，并用订单列 + 任意字符 + 公式拼接。</p>
             <p class="muted" style="font-size:11px">${FORMULA_HINT}</p>
           </div>
@@ -272,11 +273,15 @@
       canvas.innerHTML = draft.elements.map((el) => {
         const selected = el.id === selectedElId ? 'selected' : '';
         if (el.type === 'table') {
-          Expr.ensureTableCells(el);
+          Expr.ensureTableLayout(el);
           const occupied = Expr.buildOccupiedMap(el.rows, el.cols, el.cells);
-          let html = `<div class="label-el table ${selected}" data-id="${el.id}" style="left:${el.x * pxPerMm}px;top:${el.y * pxPerMm}px;width:${el.w * pxPerMm}px;height:${el.h * pxPerMm}px"><div class="el-body"><table class="label-table-edit">`;
+          let html = `<div class="label-el table ${selected}" data-id="${el.id}" style="left:${el.x * pxPerMm}px;top:${el.y * pxPerMm}px;width:${el.w * pxPerMm}px;height:${el.h * pxPerMm}px"><div class="el-body"><table class="label-table-edit"><colgroup>`;
+          for (let c = 0; c < el.cols; c++) {
+            html += `<col style="width:${el.colWidths[c]}%">`;
+          }
+          html += '</colgroup>';
           for (let r = 0; r < el.rows; r++) {
-            html += '<tr>';
+            html += `<tr style="height:${el.rowHeights[r]}%">`;
             for (let c = 0; c < el.cols; c++) {
               const cell = occupied[r][c];
               if (cell === 'skip') continue;
@@ -284,7 +289,15 @@
               const active = selectedElId === el.id && selectedCellKey === key ? 'cell-active' : '';
               const preview = Expr.segmentsPreview(cell.segments) || cell.contentType || '';
               const fs = editorFontPx(cell.fontSize || 10);
-              html += `<td class="${active}" data-cell="${key}" rowspan="${cell.rowspan || 1}" colspan="${cell.colspan || 1}" style="font-size:${fs}px">${escapeHtml(preview || '空')}</td>`;
+              const endCol = c + (cell.colspan || 1) - 1;
+              const endRow = r + (cell.rowspan || 1) - 1;
+              const colHandle = endCol < el.cols - 1
+                ? `<span class="cell-resize col" data-col-boundary="${endCol}" title="拖动调整列宽"></span>`
+                : '';
+              const rowHandle = endRow < el.rows - 1
+                ? `<span class="cell-resize row" data-row-boundary="${endRow}" title="拖动调整行高"></span>`
+                : '';
+              html += `<td class="${active}" data-cell="${key}" rowspan="${cell.rowspan || 1}" colspan="${cell.colspan || 1}" style="font-size:${fs}px">${escapeHtml(preview || '空')}${colHandle}${rowHandle}</td>`;
             }
             html += '</tr>';
           }
@@ -301,11 +314,11 @@
 
       $$('.label-el', canvas).forEach((node) => {
         node.addEventListener('mousedown', (ev) => {
-          if (ev.target.closest('[data-resize]')) return;
+          if (ev.target.closest('[data-resize], .cell-resize')) return;
           startDrag(ev, node, pxPerMm);
         });
         node.addEventListener('click', (ev) => {
-          if (ev.target.closest('[data-resize]')) return;
+          if (ev.target.closest('[data-resize], .cell-resize')) return;
           if (node.dataset.didDrag === '1') {
             node.dataset.didDrag = '';
             return;
@@ -324,7 +337,89 @@
             startResize(ev, node, handle.dataset.resize, pxPerMm);
           });
         });
+        $$('[data-col-boundary]', node).forEach((handle) => {
+          handle.addEventListener('mousedown', (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            startCellAxisResize(ev, node, 'col', Number(handle.dataset.colBoundary));
+          });
+        });
+        $$('[data-row-boundary]', node).forEach((handle) => {
+          handle.addEventListener('mousedown', (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            startCellAxisResize(ev, node, 'row', Number(handle.dataset.rowBoundary));
+          });
+        });
       });
+    }
+
+    function syncCellLayoutInputs(el) {
+      if (!el || el.type !== 'table') return;
+      Expr.ensureTableLayout(el);
+      const [cr, cc] = (selectedCellKey || '0,0').split(',').map(Number);
+      const colInput = $('#cellColW');
+      const rowInput = $('#cellRowH');
+      if (colInput && Number.isFinite(cc)) colInput.value = el.colWidths[cc]?.toFixed(1) || '';
+      if (rowInput && Number.isFinite(cr)) rowInput.value = el.rowHeights[cr]?.toFixed(1) || '';
+      const hint = $('#cellLayoutHint');
+      if (hint) {
+        hint.textContent = `列宽 ${el.colWidths.map((v) => v.toFixed(0) + '%').join(' / ')}；行高 ${el.rowHeights.map((v) => v.toFixed(0) + '%').join(' / ')}`;
+      }
+    }
+
+    function applyTableLayoutStyles(node, el) {
+      Expr.ensureTableLayout(el);
+      const cols = $$('col', node);
+      cols.forEach((col, i) => {
+        if (el.colWidths[i] != null) col.style.width = `${el.colWidths[i]}%`;
+      });
+      const rows = $$('tr', node);
+      rows.forEach((tr, i) => {
+        if (el.rowHeights[i] != null) tr.style.height = `${el.rowHeights[i]}%`;
+      });
+    }
+
+    function startCellAxisResize(ev, node, axis, boundary) {
+      const el = draft.elements.find((e) => e.id === node.dataset.id);
+      if (!el || el.type !== 'table') return;
+      Expr.ensureTableLayout(el);
+      const tableEl = node.querySelector('.label-table-edit');
+      if (!tableEl) return;
+      selectedElId = el.id;
+      const start = axis === 'col' ? ev.clientX : ev.clientY;
+      const totalPx = axis === 'col' ? tableEl.getBoundingClientRect().width : tableEl.getBoundingClientRect().height;
+      if (totalPx <= 0) return;
+      const arr = axis === 'col' ? el.colWidths.slice() : el.rowHeights.slice();
+      if (boundary < 0 || boundary >= arr.length - 1) return;
+      const a0 = arr[boundary];
+      const b0 = arr[boundary + 1];
+      const pair = a0 + b0;
+      const minPct = 5;
+      ev.target.classList.add('active');
+      node.classList.add('resizing');
+      const onMove = (e2) => {
+        const deltaPx = (axis === 'col' ? e2.clientX - start : e2.clientY - start);
+        const deltaPct = (deltaPx / totalPx) * 100;
+        let a = Math.max(minPct, Math.min(pair - minPct, a0 + deltaPct));
+        let b = pair - a;
+        arr[boundary] = a;
+        arr[boundary + 1] = b;
+        if (axis === 'col') el.colWidths = arr.slice();
+        else el.rowHeights = arr.slice();
+        applyTableLayoutStyles(node, el);
+        syncCellLayoutInputs(el);
+      };
+      const onUp = () => {
+        ev.target.classList.remove('active');
+        node.classList.remove('resizing');
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+        renderCanvas();
+        renderProps();
+      };
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
     }
 
     function startDrag(ev, node, pxPerMm) {
@@ -441,16 +536,18 @@
       }
 
       if (el.type === 'table') {
-        Expr.ensureTableCells(el);
+        Expr.ensureTableLayout(el);
         const [cr, cc] = (selectedCellKey || '0,0').split(',').map(Number);
         let cell = el.cells.find((c) => c.r === cr && c.c === cc);
         if (!cell) {
           selectedCellKey = '0,0';
           cell = el.cells.find((c) => c.r === 0 && c.c === 0);
         }
+        const colW = el.colWidths[cell.c] ?? (100 / el.cols);
+        const rowH = el.rowHeights[cell.r] ?? (100 / el.rows);
         box.innerHTML = `
           <h4>表格属性</h4>
-          <p class="size-hint">宽高请在画布拖动手柄调整：当前 <strong id="elSizeHint">${fmtMm(el.w)} × ${fmtMm(el.h)} mm</strong></p>
+          <p class="size-hint">表格外框拖动手柄调整；单元格拖右边线调列宽、下边线调行高。<br/>当前外框 <strong id="elSizeHint">${fmtMm(el.w)} × ${fmtMm(el.h)} mm</strong></p>
           <div class="grid-2">
             <label class="field"><span>行数</span><input id="tRows" type="number" min="1" value="${el.rows}" /></label>
             <label class="field"><span>列数</span><input id="tCols" type="number" min="1" value="${el.cols}" /></label>
@@ -465,6 +562,11 @@
           </div>
           <hr style="border:none;border-top:1px solid #c9d8cf;margin:12px 0" />
           <h4>当前单元格 (${cell.r + 1}, ${cell.c + 1})</h4>
+          <p class="muted" id="cellLayoutHint" style="font-size:12px;margin:0 0 8px">列宽 ${el.colWidths.map((v) => v.toFixed(0) + '%').join(' / ')}；行高 ${el.rowHeights.map((v) => v.toFixed(0) + '%').join(' / ')}</p>
+          <div class="grid-2">
+            <label class="field"><span>本列宽 %</span><input id="cellColW" type="number" min="5" max="95" step="0.5" value="${colW.toFixed(1)}" /></label>
+            <label class="field"><span>本行高 %</span><input id="cellRowH" type="number" min="5" max="95" step="0.5" value="${rowH.toFixed(1)}" /></label>
+          </div>
           <label class="field"><span>内容类型</span>
             <select id="cellType">
               <option value="text" ${cell.contentType === 'text' ? 'selected' : ''}>文本</option>
@@ -508,7 +610,8 @@
           el.cols = Math.max(1, Number($('#tCols').value) || 1);
           el.x = Number($('#elX').value);
           el.y = Number($('#elY').value);
-          el.colWidths = Array.from({ length: el.cols }, () => 100 / el.cols);
+          el.colWidths = Expr.resizePercents(el.colWidths, el.cols);
+          el.rowHeights = Expr.resizePercents(el.rowHeights, el.rows);
           // 行数增加时自动增高表格，避免多行挤在原高度里看不见
           if (el.rows > prevRows) {
             const perRow = Math.max(4, (el.h || 40) / Math.max(1, prevRows));
@@ -516,7 +619,7 @@
           }
           // drop cells outside
           el.cells = (el.cells || []).filter((c) => c.r < el.rows && c.c < el.cols);
-          Expr.ensureTableCells(el);
+          Expr.ensureTableLayout(el);
           selectedCellKey = '0,0';
           renderCanvas();
           renderProps();
@@ -545,6 +648,13 @@
           cell.fontSize = Number($('#cellSize').value) || 10;
           cell.align = $('#cellAlign').value;
           cell.bold = $('#cellBold').checked;
+          if ($('#cellColW')) {
+            el.colWidths = Expr.setPercentAt(el.colWidths, cell.c, Number($('#cellColW').value), el.cols);
+          }
+          if ($('#cellRowH')) {
+            el.rowHeights = Expr.setPercentAt(el.rowHeights, cell.r, Number($('#cellRowH').value), el.rows);
+          }
+          Expr.ensureTableLayout(el);
           renderCanvas();
           renderProps();
         };

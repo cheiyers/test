@@ -225,6 +225,19 @@ tr:hover td { background: #f8fbf9; }
 .label-el.table .el-body { border: 0; }
 .label-table-edit { width: 100%; height: 100%; border-collapse: collapse; table-layout: fixed; font-size: 10px; }
 .label-table-edit tr { height: auto; }
+.label-table-edit td { position: relative; }
+.cell-resize {
+  position: absolute; z-index: 4; background: transparent;
+}
+.cell-resize.col {
+  top: 0; right: -3px; width: 7px; height: 100%; cursor: col-resize;
+}
+.cell-resize.row {
+  left: 0; bottom: -3px; width: 100%; height: 7px; cursor: row-resize;
+}
+.cell-resize:hover, .cell-resize.active {
+  background: rgba(31, 107, 74, 0.28);
+}
 .resize-handle {
   position: absolute; width: 9px; height: 9px; background: #fff;
   border: 1.5px solid var(--brand); border-radius: 1px; z-index: 6;

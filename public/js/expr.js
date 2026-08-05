@@ -123,6 +123,52 @@
     return table;
   }
 
+  function normalizePercents(arr, count) {
+    const n = Math.max(1, Number(count) || 1);
+    let next = Array.isArray(arr) ? arr.slice(0, n).map(Number) : [];
+    while (next.length < n) next.push(0);
+    next = next.map((v) => (Number.isFinite(v) && v > 0 ? v : 0));
+    const sum = next.reduce((a, b) => a + b, 0);
+    if (sum <= 0) return Array.from({ length: n }, () => 100 / n);
+    return next.map((v) => (v / sum) * 100);
+  }
+
+  function resizePercents(arr, count) {
+    const n = Math.max(1, Number(count) || 1);
+    const cur = Array.isArray(arr)
+      ? arr.map(Number).filter((v) => Number.isFinite(v) && v > 0)
+      : [];
+    if (!cur.length) return Array.from({ length: n }, () => 100 / n);
+    if (cur.length === n) return normalizePercents(cur, n);
+    if (cur.length > n) return normalizePercents(cur.slice(0, n), n);
+    const avg = cur.reduce((a, b) => a + b, 0) / cur.length;
+    return normalizePercents(cur.concat(Array.from({ length: n - cur.length }, () => avg)), n);
+  }
+
+  /** 调整某一项百分比，其余项按原比例分摊剩余 */
+  function setPercentAt(arr, index, value, count) {
+    const n = Math.max(1, Number(count) || 1);
+    const idx = Math.max(0, Math.min(n - 1, Number(index) || 0));
+    const next = normalizePercents(arr, n);
+    if (n === 1) return [100];
+    const v = Math.max(5, Math.min(95, Number(value) || 5));
+    const others = next.reduce((s, x, i) => (i === idx ? s : s + x), 0);
+    const remain = 100 - v;
+    if (others <= 0) {
+      return next.map((_, i) => (i === idx ? v : remain / (n - 1)));
+    }
+    return next.map((x, i) => (i === idx ? v : (x / others) * remain));
+  }
+
+  function ensureTableLayout(table) {
+    ensureTableCells(table);
+    table.rows = Math.max(1, Number(table.rows) || 1);
+    table.cols = Math.max(1, Number(table.cols) || 1);
+    table.colWidths = resizePercents(table.colWidths, table.cols);
+    table.rowHeights = resizePercents(table.rowHeights, table.rows);
+    return table;
+  }
+
   global.Expr = {
     getField,
     applyFormula,
@@ -132,6 +178,10 @@
     resolveCellContent,
     segmentsPreview,
     buildOccupiedMap,
-    ensureTableCells
+    ensureTableCells,
+    normalizePercents,
+    resizePercents,
+    setPercentAt,
+    ensureTableLayout
   };
 })(window);

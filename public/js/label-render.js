@@ -48,9 +48,10 @@
 
     const rows = el.rows || 1;
     const cols = el.cols || 1;
-    Expr.ensureTableCells(el);
+    Expr.ensureTableLayout(el);
     const occupied = Expr.buildOccupiedMap(rows, cols, el.cells);
     const colWidths = el.colWidths || Array.from({ length: cols }, () => 100 / cols);
+    const rowHeights = el.rowHeights || Array.from({ length: rows }, () => 100 / rows);
 
     const colgroup = document.createElement('colgroup');
     for (let c = 0; c < cols; c++) {
@@ -62,6 +63,7 @@
 
     for (let r = 0; r < rows; r++) {
       const tr = document.createElement('tr');
+      tr.style.height = `${rowHeights[r] || (100 / rows)}%`;
       for (let c = 0; c < cols; c++) {
         const cell = occupied[r][c];
         if (cell === 'skip') continue;
