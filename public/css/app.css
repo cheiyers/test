@@ -176,9 +176,27 @@ tr:hover td { background: #f8fbf9; }
 .stat .l { color: var(--muted); font-size: 13px; margin-top: 4px; }
 
 /* Template editor */
-.editor-layout { display: grid; grid-template-columns: 240px 1fr 280px; gap: 14px; }
-.palette, .props { background: #f7faf8; border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+.editor-layout {
+  display: grid;
+  grid-template-columns: 220px minmax(420px, 1fr) 280px;
+  gap: 14px;
+  align-items: stretch;
+}
+.palette, .props {
+  background: #f7faf8; border: 1px solid var(--line); border-radius: 12px; padding: 12px;
+  max-height: min(80vh, 860px); overflow: auto;
+}
 .palette button { width: 100%; margin-bottom: 8px; }
+.canvas-panel {
+  display: flex; flex-direction: column; gap: 8px; min-width: 0;
+}
+.canvas-toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 8px 10px; background: #f7faf8; border: 1px solid var(--line); border-radius: 10px;
+}
+.canvas-toolbar-label { font-size: 13px; font-weight: 600; color: var(--text); }
+.canvas-toolbar #zoomRange { width: 140px; accent-color: var(--brand); }
+.btn-icon { min-width: 36px; padding-left: 10px; padding-right: 10px; font-size: 18px; line-height: 1; }
 .canvas-wrap {
   border: 1px dashed var(--line); border-radius: 12px; background:
     linear-gradient(45deg, #f3f6f4 25%, transparent 25%),
@@ -186,11 +204,12 @@ tr:hover td { background: #f8fbf9; }
     linear-gradient(45deg, transparent 75%, #f3f6f4 75%),
     linear-gradient(-45deg, transparent 75%, #f3f6f4 75%);
   background-size: 16px 16px; background-position: 0 0, 0 8px, 8px -8px, -8px 0;
-  min-height: 360px; display: grid; place-items: center; padding: 16px; overflow: auto;
+  min-height: 560px; height: min(72vh, 780px); display: grid; place-items: center;
+  padding: 20px; overflow: auto;
 }
 .label-canvas {
   position: relative; background: #fff; border: 1px solid #999; box-shadow: var(--shadow);
-  overflow: hidden; user-select: none;
+  overflow: hidden; user-select: none; flex-shrink: 0;
 }
 .label-el {
   position: absolute; border: 1px solid transparent; padding: 0; cursor: move;
@@ -205,6 +224,7 @@ tr:hover td { background: #f8fbf9; }
 .label-el.table { padding: 0; }
 .label-el.table .el-body { border: 0; }
 .label-table-edit { width: 100%; height: 100%; border-collapse: collapse; table-layout: fixed; font-size: 10px; }
+.label-table-edit tr { height: auto; }
 .resize-handle {
   position: absolute; width: 9px; height: 9px; background: #fff;
   border: 1.5px solid var(--brand); border-radius: 1px; z-index: 6;

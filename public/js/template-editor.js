@@ -81,11 +81,22 @@
             <button class="btn secondary" data-add="field" type="button">+ 绑定字段</button>
             <button class="btn secondary" data-add="code" type="button">+ 条码/二维码</button>
             <button class="btn" data-add="table" type="button">+ 表格</button>
-            <p class="muted" style="font-size:12px;margin-top:10px">选中元素后，拖动边缘/角落手柄可放大缩小；拖动本体可移动位置。</p>
+            <p class="muted" style="font-size:12px;margin-top:10px">可用上方滑块放大画布；选中元素后拖动手柄缩放，拖动本体移动。表格行数增多时会自动加高，也可再拖动手柄调整。</p>
             <p class="muted" style="font-size:12px">表格支持合并单元格；单元格内容可选文本或条码，并用订单列 + 任意字符 + 公式拼接。</p>
             <p class="muted" style="font-size:11px">${FORMULA_HINT}</p>
           </div>
-          <div class="canvas-wrap"><div class="label-canvas" id="labelCanvas"></div></div>
+          <div class="canvas-panel">
+            <div class="canvas-toolbar">
+              <span class="canvas-toolbar-label">画布缩放</span>
+              <button class="btn secondary btn-icon" id="zoomOut" type="button" title="缩小">−</button>
+              <input id="zoomRange" type="range" min="2" max="16" step="0.5" />
+              <button class="btn secondary btn-icon" id="zoomIn" type="button" title="放大">+</button>
+              <span class="muted" id="zoomLabel"></span>
+              <button class="btn secondary" id="zoomFit" type="button">适应窗口</button>
+              <button class="btn secondary" id="zoomReset" type="button">默认</button>
+            </div>
+            <div class="canvas-wrap" id="canvasWrap"><div class="label-canvas" id="labelCanvas"></div></div>
+          </div>
           <div class="props" id="elProps"><p class="muted">选中元素后编辑属性</p></div>
         </div>
         <div class="row" style="margin-top:12px">
@@ -96,6 +107,42 @@
 
     const $ = (sel, el = host) => el.querySelector(sel);
     const $$ = (sel, el = host) => [...el.querySelectorAll(sel)];
+
+    const ZOOM_MIN = 2;
+    const ZOOM_MAX = 16;
+    const ZOOM_DEFAULT = 6;
+    const ZOOM_KEY = 'labelTplCanvasZoom';
+    let canvasZoom = clampZoom(Number(localStorage.getItem(ZOOM_KEY) || ZOOM_DEFAULT));
+
+    function clampZoom(v) {
+      const n = Number(v);
+      if (!Number.isFinite(n)) return ZOOM_DEFAULT;
+      return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(n * 2) / 2));
+    }
+
+    function setCanvasZoom(next, { persist = true, rerender = true } = {}) {
+      canvasZoom = clampZoom(next);
+      const range = $('#zoomRange');
+      const label = $('#zoomLabel');
+      if (range) range.value = String(canvasZoom);
+      if (label) label.textContent = `${canvasZoom.toFixed(1)}×（约 ${Math.round(canvasZoom * 100 / 3.78)}% 实物）`;
+      if (persist) {
+        try { localStorage.setItem(ZOOM_KEY, String(canvasZoom)); } catch (_) {}
+      }
+      if (rerender) renderCanvas();
+    }
+
+    function fitCanvasZoom() {
+      const wrap = $('#canvasWrap');
+      if (!wrap) return;
+      syncMeta();
+      const pad = 48;
+      const availW = Math.max(160, wrap.clientWidth - pad);
+      const availH = Math.max(160, wrap.clientHeight - pad);
+      const zW = availW / Math.max(1, draft.width_mm);
+      const zH = availH / Math.max(1, draft.height_mm);
+      setCanvasZoom(Math.min(zW, zH));
+    }
 
     function syncMeta() {
       draft.name = $('#tplName').value;
@@ -210,10 +257,16 @@
       if (hint) hint.textContent = `${fmtMm(el.w)} × ${fmtMm(el.h)} mm`;
     }
 
+    function editorFontPx(pt) {
+      // 按当前画布缩放近似 pt → px，便于放大后看清多行表格
+      return Math.max(8, (Number(pt) || 10) * canvasZoom / 3.2);
+    }
+
     function renderCanvas() {
       syncMeta();
       const canvas = $('#labelCanvas');
-      const pxPerMm = 3.2;
+      if (!canvas) return;
+      const pxPerMm = canvasZoom;
       canvas.style.width = `${draft.width_mm * pxPerMm}px`;
       canvas.style.height = `${draft.height_mm * pxPerMm}px`;
       canvas.innerHTML = draft.elements.map((el) => {
@@ -230,7 +283,8 @@
               const key = `${r},${c}`;
               const active = selectedElId === el.id && selectedCellKey === key ? 'cell-active' : '';
               const preview = Expr.segmentsPreview(cell.segments) || cell.contentType || '';
-              html += `<td class="${active}" data-cell="${key}" rowspan="${cell.rowspan || 1}" colspan="${cell.colspan || 1}">${escapeHtml(preview || '空')}</td>`;
+              const fs = editorFontPx(cell.fontSize || 10);
+              html += `<td class="${active}" data-cell="${key}" rowspan="${cell.rowspan || 1}" colspan="${cell.colspan || 1}" style="font-size:${fs}px">${escapeHtml(preview || '空')}</td>`;
             }
             html += '</tr>';
           }
@@ -241,7 +295,8 @@
           return `<div class="label-el code ${selected}" data-id="${el.id}" style="left:${el.x * pxPerMm}px;top:${el.y * pxPerMm}px;width:${el.w * pxPerMm}px;height:${el.h * pxPerMm}px"><div class="el-body">CODE</div>${handlesHtml(!!selected)}</div>`;
         }
         const text = Expr.segmentsPreview(el.segments) || el.text || '';
-        return `<div class="label-el ${selected}" data-id="${el.id}" style="left:${el.x * pxPerMm}px;top:${el.y * pxPerMm}px;width:${el.w * pxPerMm}px;height:${el.h * pxPerMm}px;font-size:${el.fontSize || 12}px;text-align:${el.align || 'left'};font-weight:${el.bold ? 700 : 400}"><div class="el-body">${escapeHtml(text)}</div>${handlesHtml(!!selected)}</div>`;
+        const fs = editorFontPx(el.fontSize || 12);
+        return `<div class="label-el ${selected}" data-id="${el.id}" style="left:${el.x * pxPerMm}px;top:${el.y * pxPerMm}px;width:${el.w * pxPerMm}px;height:${el.h * pxPerMm}px;font-size:${fs}px;text-align:${el.align || 'left'};font-weight:${el.bold ? 700 : 400}"><div class="el-body">${escapeHtml(text)}</div>${handlesHtml(!!selected)}</div>`;
       }).join('');
 
       $$('.label-el', canvas).forEach((node) => {
@@ -448,11 +503,17 @@
         $('#cellPreview').textContent = Expr.segmentsPreview(cell.segments);
 
         $('#applyTable').onclick = () => {
+          const prevRows = el.rows;
           el.rows = Math.max(1, Number($('#tRows').value) || 1);
           el.cols = Math.max(1, Number($('#tCols').value) || 1);
           el.x = Number($('#elX').value);
           el.y = Number($('#elY').value);
           el.colWidths = Array.from({ length: el.cols }, () => 100 / el.cols);
+          // 行数增加时自动增高表格，避免多行挤在原高度里看不见
+          if (el.rows > prevRows) {
+            const perRow = Math.max(4, (el.h || 40) / Math.max(1, prevRows));
+            el.h = Math.min(draft.height_mm - el.y, Math.max(el.h || 40, perRow * el.rows));
+          }
           // drop cells outside
           el.cells = (el.cells || []).filter((c) => c.r < el.rows && c.c < el.cols);
           Expr.ensureTableCells(el);
@@ -672,8 +733,14 @@
       $(`#${id}`).addEventListener('change', renderCanvas);
     });
 
+    $('#zoomOut').onclick = () => setCanvasZoom(canvasZoom - 0.5);
+    $('#zoomIn').onclick = () => setCanvasZoom(canvasZoom + 0.5);
+    $('#zoomRange').oninput = (ev) => setCanvasZoom(ev.target.value);
+    $('#zoomFit').onclick = () => fitCanvasZoom();
+    $('#zoomReset').onclick = () => setCanvasZoom(ZOOM_DEFAULT);
+
     renderCodeSegBox();
-    renderCanvas();
+    setCanvasZoom(canvasZoom, { persist: false, rerender: true });
   }
 
   global.openTemplateEditor = openTemplateEditor;
