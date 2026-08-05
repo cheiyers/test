@@ -56,12 +56,10 @@ PORT=8080 npm start
 - BOM 管理页 → **下载 BOM 导入模板**
 - 订单关联页 → **下载总包订单模板 / 配件订单模板**
 
-文件也在仓库中：
+BOM 模板为 ERP 风格列：BOM单号、顺序号、物料代码、物料名称、规格型号、物料类型、辅助属性、基本单位、基本用量、单位、用量、费用、损耗率、使用状态、发料仓库、备注、审核状态。  
+其中 **物料类型=母件** 的行填写母件完整信息，**物料类型=子件** 的行填写子件。
 
-- `public/templates/bom_import_template.xlsx`
-- `public/templates/master_order_template.xlsx`
-- `public/templates/accessory_order_template.xlsx`
-- `samples/` 下为同内容示例（第二单配件数量故意不符，用于验证部分生成）
+文件也在仓库中：`public/templates/` 与 `samples/`。
 
 ## 推荐使用流程
 

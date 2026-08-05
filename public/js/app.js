@@ -110,6 +110,13 @@
     renderNav();
     const menus = ROLE_MENUS[API.user.role] || ROLE_MENUS.scanner;
     state.page = menus.includes('home') ? 'home' : menus[0];
+    const toggle = $('#menuToggle');
+    if (toggle && !toggle.dataset.bound) {
+      toggle.dataset.bound = '1';
+      toggle.addEventListener('click', () => {
+        $('#mainNav')?.classList.toggle('mobile-open');
+      });
+    }
     navigate(state.page);
   }
 
@@ -123,8 +130,28 @@
       `<button type="button" data-page="${p}" class="${state.page === p ? 'active' : ''}">${PAGE_LABELS[p]}</button>`
     ).join('');
     $$('#mainNav button').forEach((btn) => {
-      btn.addEventListener('click', () => navigate(btn.dataset.page));
+      btn.addEventListener('click', () => {
+        $('#mainNav')?.classList.remove('mobile-open');
+        navigate(btn.dataset.page);
+      });
     });
+  }
+
+  function checkboxList(id, options, selected = []) {
+    const selectedSet = new Set(selected);
+    return `<div class="check-list" id="${id}">
+      ${(options || []).map((opt, i) => {
+        const val = typeof opt === 'string' ? opt : opt.value;
+        const label = typeof opt === 'string' ? opt : (opt.label || opt.value);
+        const checked = selectedSet.has(val) ? 'checked' : '';
+        return `<label class="check-item"><input type="checkbox" value="${escapeHtml(val)}" ${checked}/> <span>${escapeHtml(label)}</span></label>`;
+      }).join('') || '<span class="muted">暂无可选列</span>'}
+    </div>`;
+  }
+
+  function checkedValues(listEl) {
+    if (!listEl) return [];
+    return [...listEl.querySelectorAll('input[type="checkbox"]:checked')].map((x) => x.value);
   }
 
   async function navigate(page) {
@@ -502,56 +529,47 @@
     root.innerHTML = `
       <div class="card">
         <h2>订单导入与关联</h2>
+        <p class="muted">流程：上传订单 → 自定义列把总包与配件先关联 → 再选 BOM 并用自定义列匹配子件。</p>
         <div id="orderFlash"></div>
-        <div class="grid-2">
-          <div>
-            <h3>1. 上传总包订单 + 配件订单</h3>
-            <div class="row" style="margin-bottom:10px">
-              <a class="btn secondary" href="/templates/master_order_template.xlsx" download>下载总包订单模板</a>
-              <a class="btn secondary" href="/templates/accessory_order_template.xlsx" download>下载配件订单模板</a>
-            </div>
+        <div class="upload-block">
+          <h3>1. 上传总包订单 + 配件订单</h3>
+          <div class="row" style="margin-bottom:10px">
+            <a class="btn secondary" href="/templates/master_order_template.xlsx" download>下载总包订单模板</a>
+            <a class="btn secondary" href="/templates/accessory_order_template.xlsx" download>下载配件订单模板</a>
+          </div>
+          <div class="form-grid">
             <label class="field"><span>批次名称</span><input id="batchName" placeholder="如 8月4日上午出货" /></label>
             <label class="field"><span>总包订单 Excel</span><input type="file" id="masterFile" accept=".xlsx,.xls" /></label>
             <label class="field"><span>配件订单 Excel</span><input type="file" id="accFile" accept=".xlsx,.xls" /></label>
-            <div class="row" style="margin-top:10px">
-              <button class="btn secondary" id="previewOrdersBtn" type="button">预览映射</button>
-            </div>
-            <div id="orderMapBox" class="hidden" style="margin-top:12px"></div>
           </div>
-          <div>
-            <h3>已保存映射</h3>
-            <p class="muted">总包规则 ${masterRules.items.length} 条 · 配件规则 ${accRules.items.length} 条</p>
-            <div class="table-wrap"><table>
-              <thead><tr><th>类型</th><th>名称</th><th>默认</th></tr></thead>
-              <tbody>
-                ${[...masterRules.items.map((r) => ({ ...r, _t: '总包' })), ...accRules.items.map((r) => ({ ...r, _t: '配件' }))]
-                  .map((r) => `<tr><td>${r._t}</td><td>${escapeHtml(r.name)}</td><td>${r.is_default ? '是' : ''}</td></tr>`).join('') || '<tr><td colspan="3">暂无</td></tr>'}
-              </tbody>
-            </table></div>
+          <div class="row" style="margin-top:10px">
+            <button class="btn secondary" id="previewOrdersBtn" type="button">预览并配置关联列</button>
           </div>
         </div>
+        <div id="orderMapBox" class="hidden panel-block" style="margin-top:14px"></div>
       </div>
       <div class="card">
-        <h3>批次列表</h3>
-        <div class="table-wrap"><table>
-          <thead><tr><th>名称</th><th>状态</th><th>总包/配件</th><th>匹配</th><th>BOM</th><th>创建时间</th><th></th></tr></thead>
+        <div class="row" style="justify-content:space-between;align-items:center">
+          <h3 style="margin:0">批次列表</h3>
+          <span class="muted" style="font-size:13px">总包规则 ${masterRules.items.length} · 配件规则 ${accRules.items.length}</span>
+        </div>
+        <div class="table-wrap scrollable" style="margin-top:12px"><table>
+          <thead><tr><th>名称</th><th>状态</th><th>总包/配件</th><th>匹配</th><th>BOM</th><th>时间</th><th>操作</th></tr></thead>
           <tbody>
             ${(batches.items || []).map((b) => `
               <tr>
                 <td>${escapeHtml(b.name)}</td>
                 <td>${statusTag(b.status)}</td>
                 <td>${b.master_count} / ${b.accessory_count}</td>
-                <td>${b.master_ok || 0} 成功 / ${b.master_fail || 0} 失败</td>
-                <td>${escapeHtml(b.bom_name || '-')} ${escapeHtml(b.bom_version || '')}</td>
-                <td>${escapeHtml(b.created_at)}</td>
-                <td>
-                  <button class="btn secondary" data-open="${b.id}" type="button">打开</button>
-                  <button class="btn danger" data-del="${b.id}" type="button">删除</button>
-                </td>
+                <td>${b.master_ok || 0}/${b.master_fail || 0}</td>
+                <td class="cell-wrap">${escapeHtml(b.bom_name || '-')}<br/><span class="muted">${escapeHtml(b.bom_version || '')}</span></td>
+                <td>${escapeHtml((b.created_at || '').slice(0, 16))}</td>
+                <td class="actions"><button class="btn secondary" data-open="${b.id}" type="button">打开</button>
+                <button class="btn danger" data-del="${b.id}" type="button">删除</button></td>
               </tr>`).join('') || '<tr><td colspan="7">暂无批次</td></tr>'}
           </tbody>
         </table></div>
-        <div id="batchDetail" style="margin-top:14px"></div>
+        <div id="batchDetail" class="detail-panel hidden" style="margin-top:14px"></div>
       </div>
     `;
 
@@ -559,6 +577,8 @@
     let accHeaders = [];
     const defaultMaster = masterRules.items.find((r) => r.is_default);
     const defaultAcc = accRules.items.find((r) => r.is_default);
+
+    const guess = (headers, names) => headers.find((h) => names.some((n) => h === n || h.includes(n))) || '';
 
     $('#previewOrdersBtn', root).addEventListener('click', async () => {
       const mf = $('#masterFile', root).files[0];
@@ -588,38 +608,72 @@
       const am = defaultAcc?.mapping || {};
       const box = $('#orderMapBox', root);
       box.classList.remove('hidden');
+      const mOrder = mm.order_no || guess(masterHeaders, ['订单号', '单号', '批次']);
+      const aOrder = am.order_no || guess(accHeaders, ['订单号', '单号', '批次']);
+      const mMother = mm.mother_part_no || guess(masterHeaders, ['物料代码', '母件', '料号']);
+      const aPart = am.part_no || guess(accHeaders, ['物料代码', '子件', '料号']);
+      const aQty = am.qty || guess(accHeaders, ['用量', '数量']);
+      const common = masterHeaders.filter((h) => accHeaders.includes(h));
+      const defaultLink = common.length ? common.filter((h) => /订单|单号|批次/.test(h)) : [];
+      if (!defaultLink.length && mOrder && aOrder) {
+        // will use pair UI defaults
+      }
+
       box.innerHTML = `
-        <h3>总包订单映射</h3>
+        <h3>2. 字段映射</h3>
+        <div class="form-grid">
+          <label class="field"><span>总包显示用订单号列</span><select id="mOrder"><option value="">请选择</option>${opts(masterHeaders, mOrder)}</select></label>
+          <label class="field"><span>总包母件/物料代码列</span><select id="mMother"><option value="">请选择</option>${opts(masterHeaders, mMother)}</select></label>
+          <label class="field"><span>配件显示用订单号列</span><select id="aOrder"><option value="">请选择</option>${opts(accHeaders, aOrder)}</select></label>
+          <label class="field"><span>配件物料代码列</span><select id="aPart"><option value="">请选择</option>${opts(accHeaders, aPart)}</select></label>
+          <label class="field"><span>配件数量/用量列</span><select id="aQty"><option value="">默认1</option>${opts(accHeaders, aQty)}</select></label>
+        </div>
+
+        <h3 style="margin-top:16px">3. 总包 ↔ 配件 关联列（可多选，值须全部一致）</h3>
+        <p class="muted" style="font-size:13px">先用这些列把配件挂到对应总包上，再去做 BOM 匹配。可只选订单号，也可再加批次、客户等。</p>
         <div class="grid-2">
-          <label class="field"><span>订单号/批次号列</span><select id="mOrder"><option value="">请选择</option>${opts(masterHeaders, mm.order_no)}</select></label>
-          <label class="field"><span>母件料号列</span><select id="mMother"><option value="">请选择</option>${opts(masterHeaders, mm.mother_part_no)}</select></label>
+          <div>
+            <div class="section-title">总包侧列</div>
+            ${checkboxList('linkMasterFields', masterHeaders, defaultLink.length ? defaultLink : (mOrder ? [mOrder] : []))}
+          </div>
+          <div>
+            <div class="section-title">配件侧列（同名优先勾选）</div>
+            ${checkboxList('linkAccFields', accHeaders, defaultLink.length ? defaultLink : (aOrder ? [aOrder] : []))}
+          </div>
         </div>
-        <h3 style="margin-top:12px">配件订单映射</h3>
-        <div class="grid-3">
-          <label class="field"><span>订单号/批次号列</span><select id="aOrder"><option value="">请选择</option>${opts(accHeaders, am.order_no)}</select></label>
-          <label class="field"><span>子件料号列</span><select id="aPart"><option value="">请选择</option>${opts(accHeaders, am.part_no)}</select></label>
-          <label class="field"><span>数量列</span><select id="aQty"><option value="">默认1</option>${opts(accHeaders, am.qty)}</select></label>
-        </div>
-        <label class="field" style="margin-top:8px"><span><input type="checkbox" id="saveMaps" checked /> 保存映射规则</span></label>
-        <div class="row" style="margin-top:10px"><button class="btn" id="createBatchBtn" type="button">创建批次</button></div>
+        <p class="muted" style="font-size:12px;margin-top:8px">说明：两边勾选数量建议一致，并按同名列配对；若列名不同，请保证勾选顺序一一对应。</p>
+
+        <label class="check-row" style="margin-top:12px"><input type="checkbox" id="saveMaps" checked /> 保存映射规则</label>
+        <div class="row" style="margin-top:12px"><button class="btn" id="createBatchBtn" type="button">创建批次</button></div>
       `;
+
       $('#createBatchBtn', box).addEventListener('click', async () => {
+        const mLinks = checkedValues($('#linkMasterFields', box));
+        const aLinks = checkedValues($('#linkAccFields', box));
+        if (!mLinks.length || !aLinks.length) {
+          return flash($('#orderFlash', root), '请至少各选一列用于总包与配件关联', 'error');
+        }
+        const n = Math.min(mLinks.length, aLinks.length);
+        const orderLinkFields = [];
+        for (let i = 0; i < n; i++) {
+          orderLinkFields.push({ master_field: mLinks[i], accessory_field: aLinks[i] });
+        }
         const fd = new FormData();
         fd.append('name', $('#batchName', root).value || '');
         fd.append('master_file', $('#masterFile', root).files[0]);
         fd.append('accessory_file', $('#accFile', root).files[0]);
+        fd.append('order_link_fields', JSON.stringify(orderLinkFields));
         fd.append('master_mapping', JSON.stringify({
-          order_no: $('#mOrder', box).value,
+          order_no: $('#mOrder', box).value || mLinks[0],
           mother_part_no: $('#mMother', box).value,
           save_rule: $('#saveMaps', box).checked,
           set_default: true,
           rule_name: '总包默认映射'
         }));
         fd.append('accessory_mapping', JSON.stringify({
-          order_no: $('#aOrder', box).value,
+          order_no: $('#aOrder', box).value || aLinks[0],
           part_no: $('#aPart', box).value,
           qty: $('#aQty', box).value || null,
-          match_fields: [$('#aPart', box).value].filter(Boolean),
           save_rule: $('#saveMaps', box).checked,
           set_default: true,
           rule_name: '配件默认映射'
@@ -627,74 +681,114 @@
         try {
           const res = await API.upload('/batches/create', fd);
           flash($('#orderFlash', root), `批次已创建：总包 ${res.master_count} 行，配件 ${res.accessory_count} 行`, 'success');
+          state.openBatchId = res.id;
           await navigate('orders');
-          // open detail
-          setTimeout(() => openBatch(res.id), 100);
         } catch (err) {
           flash($('#orderFlash', root), err.message, 'error');
         }
       });
     }
 
-    async function openBatch(id) {
+    async function openBatch(id, forceEdit = false) {
       const detail = await API.get(`/batches/${id}`);
-      const candidates = await Promise.all(
-        [...new Set((detail.masters || []).map((m) => m.mother_part_no).filter(Boolean))]
-          .map(async (m) => {
-            const r = await API.get(`/boms?mother_part_no=${encodeURIComponent(m)}`);
-            return { mother_part_no: m, boms: r.items || [] };
-          })
-      );
+      const cfg = detail.match_fields || {};
+      const savedLinks = cfg.order_link_fields || [];
+      const savedBomFields = cfg.associate_match_fields || [];
+      const mothers = [...new Set((detail.masters || []).map((m) => m.mother_part_no).filter(Boolean))];
+      const candidates = [];
+      for (const m of mothers) {
+        const r = await API.get(`/boms?mother_part_no=${encodeURIComponent(m)}`);
+        candidates.push({ mother_part_no: m, boms: r.items || [] });
+      }
+      const allBoms = candidates.flatMap((c) => c.boms.map((b) => ({ ...b, _mother: c.mother_part_no })));
+      const accFields = detail.accessories?.[0] ? Object.keys(detail.accessories[0].raw || {}) : [];
+      let bomFields = [];
+      if (detail.selected_bom_id) {
+        try {
+          const bomDetail = await API.get(`/boms/${detail.selected_bom_id}`);
+          bomFields = bomDetail.columns || [];
+        } catch {}
+      }
+      if (!bomFields.length && allBoms[0]) {
+        try {
+          const bomDetail = await API.get(`/boms/${allBoms[0].id}`);
+          bomFields = bomDetail.columns || [];
+        } catch {}
+      }
 
-      // collect possible match fields from first accessory raw + bom if any
-      let fieldOptions = [];
-      if (detail.accessories?.[0]) fieldOptions = Object.keys(detail.accessories[0].raw || {});
+      const showEditor = forceEdit || detail.status === 'draft' || !detail.selected_bom_id;
+      const defaultBomMatch = (savedBomFields.length
+        ? savedBomFields.map((x) => (typeof x === 'string' ? x : x.right || x.order_field || x.left))
+        : accFields.filter((f) => /物料代码|料号|规格|辅助/.test(f)));
+      const defaultBomSide = (savedBomFields.length
+        ? savedBomFields.map((x) => (typeof x === 'string' ? x : x.left || x.bom_field))
+        : bomFields.filter((f) => /物料代码|料号|规格|辅助/.test(f)));
 
-      $('#batchDetail', root).innerHTML = `
-        <div class="card" style="box-shadow:none;border-style:dashed">
-          <h3>${escapeHtml(detail.name)} ${statusTag(detail.status)}</h3>
-          <p class="muted">总包 ${detail.masters.length} 行 · 配件 ${detail.accessories.length} 行</p>
+      const panel = $('#batchDetail', root);
+      panel.classList.remove('hidden');
+      panel.innerHTML = `
+        <div class="panel-block">
+          <div class="row" style="justify-content:space-between;align-items:center">
+            <h3 style="margin:0">${escapeHtml(detail.name)} ${statusTag(detail.status)}</h3>
+            <button class="btn secondary" id="closeDetailBtn" type="button">关闭</button>
+          </div>
+          <p class="muted">总包 ${detail.masters.length} 行 · 配件 ${detail.accessories.length} 行
+            ${savedLinks.length ? ` · 订单关联列：${escapeHtml(savedLinks.map((p) => p.label || `${p.left}/${p.right}`).join(' + '))}` : ''}
+          </p>
           <div id="assocFlash"></div>
-          ${detail.status === 'draft' || !detail.selected_bom_id ? `
-            <h4>选择 BOM 版本并关联</h4>
-            ${candidates.map((c) => `
-              <div style="margin-bottom:10px">
-                <div>母件 <strong>${escapeHtml(c.mother_part_no)}</strong> 候选版本：</div>
-                ${c.boms.length ? c.boms.map((b) => `
-                  <label style="display:block;margin:6px 0">
-                    <input type="radio" name="bomPick" value="${b.id}" />
-                    ${escapeHtml(b.name)} / ${escapeHtml(b.version_label)} （${b.line_count} 子件，${escapeHtml(b.created_at)}）
-                  </label>`).join('') : '<div class="flash warn">无候选 BOM，请先上传</div>'}
-              </div>`).join('')}
-            <label class="field"><span>自定义匹配字段（BOM 与配件订单两边值须完全一致）</span>
-              <select id="assocFields" multiple size="6">
-                ${fieldOptions.map((f) => `<option value="${escapeHtml(f)}" ${f.includes('料号') || f.toLowerCase().includes('part') ? 'selected' : ''}>${escapeHtml(f)}</option>`).join('')}
-              </select>
-            </label>
-            <div class="row" style="margin-top:10px"><button class="btn" id="assocBtn" type="button">开始关联</button></div>
-          ` : `
-            <p>已选 BOM：${escapeHtml(detail.bom_name || '')} / ${escapeHtml(detail.bom_version || '')}</p>
-            <div class="row"><button class="btn secondary" id="reassocBtn" type="button">重新关联</button>
-            <button class="btn" data-go-print="${detail.id}" type="button">去生成标签</button></div>
-          `}
-          <div class="grid-2" style="margin-top:14px">
+          <div id="assocEditor" class="${showEditor ? '' : 'hidden'}">
+            <h4>A. 选择 BOM 版本（本批次使用一个）</h4>
+            <div class="bom-pick-list">
+              ${allBoms.length ? allBoms.map((b, idx) => `
+                <label class="bom-pick-item">
+                  <input type="radio" name="bomPick" value="${b.id}" data-cols='${escapeHtml(JSON.stringify([]))}' ${idx === 0 ? 'checked' : ''}/>
+                  <span>
+                    <strong>${escapeHtml(b.name)}</strong> / ${escapeHtml(b.version_label)}
+                    <br/><span class="muted">母件 ${escapeHtml(b.mother_part_no)} · 子件 ${b.line_count} · ${escapeHtml(b.created_at || '')}</span>
+                  </span>
+                </label>`).join('') : '<div class="flash warn">无候选 BOM，请先上传对应母件的 BOM</div>'}
+            </div>
+            <h4 style="margin-top:14px">B. BOM ↔ 配件 匹配列（可多可少）</h4>
+            <p class="muted" style="font-size:13px">第二步：在已关联到总包的配件上，用这些列与 BOM 子件比对（值完全一致 + 数量相等）。</p>
+            <div class="grid-2" id="bomMatchWrap">
+              <div>
+                <div class="section-title">BOM 侧列</div>
+                ${checkboxList('bomSideFields', bomFields.length ? bomFields : accFields, defaultBomSide)}
+              </div>
+              <div>
+                <div class="section-title">配件订单侧列</div>
+                ${checkboxList('accSideFields', accFields, defaultBomMatch)}
+              </div>
+            </div>
+            <div class="row" style="margin-top:12px">
+              <button class="btn" id="assocBtn" type="button">先关联订单，再匹配 BOM</button>
+            </div>
+          </div>
+          ${!showEditor ? `
+            <div class="flash success">已完成关联。BOM：${escapeHtml(detail.bom_name || '')} / ${escapeHtml(detail.bom_version || '')}</div>
+            <div class="row">
+              <button class="btn secondary" id="reassocBtn" type="button">重新关联</button>
+              <button class="btn" data-go-print="${detail.id}" type="button">去生成标签</button>
+            </div>
+          ` : ''}
+          <div class="result-grids" style="margin-top:14px">
             <div>
               <h4>总包订单</h4>
-              <div class="table-wrap"><table>
+              <div class="table-wrap scrollable"><table>
                 <thead><tr><th>#</th><th>订单号</th><th>母件</th><th>状态</th><th>说明</th></tr></thead>
                 <tbody>${detail.masters.map((m) => `
-                  <tr><td>${m.line_no}</td><td>${escapeHtml(m.order_no)}</td><td>${escapeHtml(m.mother_part_no)}</td>
-                  <td>${statusTag(m.match_status)}</td><td>${escapeHtml(m.match_message || '')}</td></tr>`).join('')}
+                  <tr><td>${m.line_no}</td><td class="cell-wrap">${escapeHtml(m.order_no)}</td><td>${escapeHtml(m.mother_part_no)}</td>
+                  <td>${statusTag(m.match_status)}</td><td class="cell-wrap">${escapeHtml(m.match_message || '')}</td></tr>`).join('')}
                 </tbody>
               </table></div>
             </div>
             <div>
               <h4>配件订单</h4>
-              <div class="table-wrap"><table>
+              <div class="table-wrap scrollable"><table>
                 <thead><tr><th>#</th><th>订单号</th><th>料号</th><th>数量</th><th>状态</th><th>说明</th></tr></thead>
                 <tbody>${detail.accessories.map((a) => `
-                  <tr><td>${a.line_no}</td><td>${escapeHtml(a.order_no)}</td><td>${escapeHtml(a.part_no)}</td><td>${a.qty}</td>
-                  <td>${statusTag(a.match_status)}</td><td>${escapeHtml(a.match_message || '')}</td></tr>`).join('')}
+                  <tr><td>${a.line_no}</td><td class="cell-wrap">${escapeHtml(a.order_no)}</td><td>${escapeHtml(a.part_no)}</td><td>${a.qty}</td>
+                  <td>${statusTag(a.match_status)}</td><td class="cell-wrap">${escapeHtml(a.match_message || '')}</td></tr>`).join('')}
                 </tbody>
               </table></div>
             </div>
@@ -702,56 +796,53 @@
         </div>
       `;
 
-      const doAssoc = async () => {
-        const bomId = $('input[name="bomPick"]:checked', root)?.value;
-        if (!bomId) return flash($('#assocFlash', root), '请选择 BOM 版本', 'error');
-        const fields = [...($('#assocFields', root)?.selectedOptions || [])].map((o) => o.value);
+      panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      $('#closeDetailBtn', panel)?.addEventListener('click', () => panel.classList.add('hidden'));
+
+      const reloadBomColumns = async () => {
+        const bomId = $('input[name="bomPick"]:checked', panel)?.value;
+        if (!bomId) return;
         try {
-          const res = await API.post(`/batches/${id}/associate`, { bom_id: bomId, match_fields: fields });
-          flash($('#orderFlash', root),
-            `关联完成：总包成功 ${res.result.master_success} / 失败 ${res.result.master_failed}；配件成功 ${res.result.accessory_success} / 失败 ${res.result.accessory_failed}`,
+          const bomDetail = await API.get(`/boms/${bomId}`);
+          const host = $('#bomSideFields', panel);
+          if (!host) return;
+          const selected = checkedValues(host);
+          host.outerHTML = checkboxList('bomSideFields', bomDetail.columns || [], selected.length ? selected : (bomDetail.match_fields || []));
+        } catch {}
+      };
+      $$('input[name="bomPick"]', panel).forEach((r) => r.addEventListener('change', reloadBomColumns));
+      if (showEditor) reloadBomColumns();
+
+      const doAssoc = async () => {
+        const bomId = $('input[name="bomPick"]:checked', panel)?.value;
+        if (!bomId) return flash($('#assocFlash', panel), '请选择 BOM 版本', 'error');
+        const bomSide = checkedValues($('#bomSideFields', panel));
+        const accSide = checkedValues($('#accSideFields', panel));
+        if (!bomSide.length || !accSide.length) {
+          return flash($('#assocFlash', panel), '请至少各选一个 BOM 匹配列', 'error');
+        }
+        const n = Math.min(bomSide.length, accSide.length);
+        const bomMatchFields = [];
+        for (let i = 0; i < n; i++) {
+          bomMatchFields.push({ bom_field: bomSide[i], order_field: accSide[i] });
+        }
+        try {
+          const res = await API.post(`/batches/${id}/associate`, {
+            bom_id: bomId,
+            order_link_fields: savedLinks,
+            bom_match_fields: bomMatchFields
+          });
+          flash($('#assocFlash', panel),
+            `完成：订单关联 ${res.result.linked_accessories} 行；总包成功 ${res.result.master_success}/失败 ${res.result.master_failed}；配件成功 ${res.result.accessory_success}/失败 ${res.result.accessory_failed}`,
             'success');
-          openBatch(id);
+          openBatch(id, false);
         } catch (err) {
-          flash($('#assocFlash', root), err.message, 'error');
+          flash($('#assocFlash', panel), err.message, 'error');
         }
       };
-      $('#assocBtn', root)?.addEventListener('click', doAssoc);
-      $('#reassocBtn', root)?.addEventListener('click', async () => {
-        const pickerHost = $('#batchDetail', root);
-        const cands = await Promise.all(
-          [...new Set((detail.masters || []).map((m) => m.mother_part_no).filter(Boolean))]
-            .map(async (m) => {
-              const r = await API.get(`/boms?mother_part_no=${encodeURIComponent(m)}`);
-              return { mother_part_no: m, boms: r.items || [] };
-            })
-        );
-        let fieldOptions = [];
-        if (detail.accessories?.[0]) fieldOptions = Object.keys(detail.accessories[0].raw || {});
-        const form = document.createElement('div');
-        form.innerHTML = `
-          <div class="flash info">重新选择 BOM 版本并关联</div>
-          ${cands.map((c) => `
-            <div style="margin-bottom:10px">
-              <div>母件 <strong>${escapeHtml(c.mother_part_no)}</strong></div>
-              ${c.boms.map((b) => `
-                <label style="display:block;margin:6px 0">
-                  <input type="radio" name="bomPick" value="${b.id}" />
-                  ${escapeHtml(b.name)} / ${escapeHtml(b.version_label)}
-                </label>`).join('') || '<div class="flash warn">无候选 BOM</div>'}
-            </div>`).join('')}
-          <label class="field"><span>匹配字段</span>
-            <select id="assocFields" multiple size="6">
-              ${fieldOptions.map((f) => `<option value="${escapeHtml(f)}" selected>${escapeHtml(f)}</option>`).join('')}
-            </select>
-          </label>
-          <div class="row" style="margin-top:10px"><button class="btn" id="assocBtn" type="button">开始关联</button></div>
-          <div id="assocFlash"></div>
-        `;
-        pickerHost.prepend(form);
-        $('#assocBtn', form)?.addEventListener('click', doAssoc);
-      });
-      $$('[data-go-print]', root).forEach((b) => b.addEventListener('click', () => {
+      $('#assocBtn', panel)?.addEventListener('click', doAssoc);
+      $('#reassocBtn', panel)?.addEventListener('click', () => openBatch(id, true));
+      $$('[data-go-print]', panel).forEach((b) => b.addEventListener('click', () => {
         state.printBatchId = b.dataset.goPrint;
         navigate('print');
       }));
@@ -763,6 +854,12 @@
       await API.del(`/batches/${b.dataset.del}`);
       navigate('orders');
     }));
+
+    if (state.openBatchId) {
+      const id = state.openBatchId;
+      state.openBatchId = null;
+      await openBatch(id, true);
+    }
   }
 
   // ---------------- Templates ----------------

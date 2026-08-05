@@ -40,7 +40,27 @@ function pickField(rowData, fieldName) {
 }
 
 function buildMatchKey(rowData, matchFields) {
-  return (matchFields || []).map((f) => pickField(rowData, f)).join('||');
+  return (matchFields || []).map((f) => {
+    if (typeof f === 'string') return pickField(rowData, f);
+    return pickField(rowData, f.field || f.name || '');
+  }).join('||');
+}
+
+/** Normalize link/match field defs to { left, right } or { bom, order } */
+function normalizePairs(list, leftKey = 'master_field', rightKey = 'accessory_field') {
+  if (!Array.isArray(list)) return [];
+  return list.map((item) => {
+    if (typeof item === 'string') {
+      return { left: item, right: item, label: item };
+    }
+    const left = item[leftKey] || item.master_field || item.bom_field || item.left || item.field || '';
+    const right = item[rightKey] || item.accessory_field || item.order_field || item.right || item.field || left;
+    return { left, right, label: item.label || `${left}${left === right ? '' : '↔' + right}` };
+  }).filter((p) => p.left && p.right);
+}
+
+function buildPairKey(rowData, pairs, side = 'left') {
+  return (pairs || []).map((p) => pickField(rowData, side === 'left' ? p.left : p.right)).join('||');
 }
 
 function toNumber(val, fallback = 1) {
@@ -60,6 +80,8 @@ module.exports = {
   readExcelBuffer,
   pickField,
   buildMatchKey,
+  normalizePairs,
+  buildPairKey,
   toNumber,
   exportRowsToBuffer
 };
