@@ -183,6 +183,14 @@ function initSchema(db) {
   if (!tplCols.includes('code_segments_json')) {
     db.exec('ALTER TABLE label_templates ADD COLUMN code_segments_json TEXT');
   }
+
+  const bomCols = db.prepare('PRAGMA table_info(bom_files)').all().map((c) => c.name);
+  if (!bomCols.includes('mother_info_json')) {
+    db.exec('ALTER TABLE bom_files ADD COLUMN mother_info_json TEXT');
+  }
+  if (!bomCols.includes('bom_no')) {
+    db.exec('ALTER TABLE bom_files ADD COLUMN bom_no TEXT');
+  }
 }
 
 function seedUsers(db) {

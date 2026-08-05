@@ -186,13 +186,13 @@
     root.innerHTML = `
       <div class="card">
         <h2>BOM 管理</h2>
-        <p class="muted">上传预览后，自选「哪一列是母件列」以及「本 BOM 的母件是哪个值」。同母件可多版本共存。</p>
+        <p class="muted">支持 ERP 风格 BOM：含母件行（物料类型=母件）与子件行。上传后选择 BOM单号即可导入。</p>
         <div id="bomFlash"></div>
         <div class="grid-2">
           <div>
             <h3>上传 BOM</h3>
             <p class="muted" style="margin:0 0 10px;font-size:13px">
-              可先下载模板填写。模板列：母件料号、子件料号、规格、数量、备注。上传后自选母件列与母件值。
+              模板含：BOM单号、顺序号、物料代码/名称、规格型号、物料类型、辅助属性、单位/用量、费用、损耗率、发料仓库、备注、审核状态等。第一行填母件信息，后续行填子件。
             </p>
             <div class="row" style="margin-bottom:10px">
               <a class="btn secondary" href="/templates/bom_import_template.xlsx" download>下载 BOM 导入模板</a>
@@ -267,25 +267,121 @@
     function renderBomMapper(data, rule) {
       const map = rule?.mapping || {};
       const matchFields = rule?.match_fields || [];
+      const sug = data.suggested || {};
+      const erpMode = data.import_mode === 'erp' && (data.bom_groups || []).length;
       const opts = (selected) => previewHeaders.map((h) =>
         `<option value="${escapeHtml(h)}" ${h === selected ? 'selected' : ''}>${escapeHtml(h)}</option>`
       ).join('');
+      const defaultMatch = matchFields.length
+        ? matchFields
+        : [sug.part_no, sug.spec, sug.aux].filter(Boolean);
       const box = $('#bomMapBox', root);
       box.classList.remove('hidden');
+
+      if (erpMode) {
+        box.innerHTML = `
+          <div class="flash info">已识别 ERP 风格 BOM（含 BOM单号 + 物料类型）。请选择要导入的 BOM单号；母件信息来自「物料类型=母件」那一行。</div>
+          <label class="field"><span>名称</span><input id="bomName" value="${escapeHtml(data.filename)}" /></label>
+          <label class="field"><span>版本说明</span><input id="bomVersion" placeholder="如 2026-08-04 上午版" /></label>
+          <label class="field"><span>选择 BOM单号（将导入其母件+子件）</span>
+            <select id="mapBomNo">
+              ${(data.bom_groups || []).map((g) => `
+                <option value="${escapeHtml(g.bom_no)}" ${map.bom_no_value === g.bom_no ? 'selected' : ''}>
+                  ${escapeHtml(g.bom_no)} ｜ 母件 ${escapeHtml(g.mother_part_no)} ${escapeHtml(g.mother_name || '')} ｜ 子件 ${g.child_count} 行
+                </option>`).join('')}
+            </select>
+          </label>
+          <div id="motherInfoBox" class="muted" style="margin:8px 0;font-size:13px"></div>
+          <div class="grid-3" style="margin-top:8px">
+            <label class="field"><span>物料代码列</span><select id="mapPart"><option value="">请选择</option>${opts(map.part_no || sug.part_no)}</select></label>
+            <label class="field"><span>用量列</span><select id="mapQty"><option value="">默认 1</option>${opts(map.qty || sug.qty)}</select></label>
+            <label class="field"><span>物料类型列</span><select id="mapType"><option value="">请选择</option>${opts(map.material_type || sug.material_type)}</select></label>
+          </div>
+          <div class="grid-2" style="margin-top:8px">
+            <label class="field"><span>规格型号列（匹配用，可选）</span><select id="mapSpec"><option value="">无</option>${opts(map.spec || sug.spec)}</select></label>
+            <label class="field"><span>辅助属性列（匹配用，可选）</span><select id="mapAux"><option value="">无</option>${opts(map.aux || sug.aux)}</select></label>
+          </div>
+          <label class="field" style="margin-top:8px"><span>参与匹配的列（可多选，需与配件订单一致）</span>
+            <select id="mapMatch" multiple size="6">${previewHeaders.map((h) =>
+              `<option value="${escapeHtml(h)}" ${defaultMatch.includes(h) ? 'selected' : ''}>${escapeHtml(h)}</option>`
+            ).join('')}</select>
+          </label>
+          <label class="field" style="margin-top:8px"><span><input type="checkbox" id="saveRule" checked /> 保存为映射规则</span></label>
+          <label class="field"><span><input type="checkbox" id="setDefault" checked /> 设为该类型默认规则</span></label>
+          <div class="row" style="margin-top:10px"><button class="btn" id="bomImportBtn" type="button">确认导入</button></div>
+          <div class="table-wrap" style="margin-top:12px;max-height:320px;overflow:auto">
+            <table><thead><tr>${data.headers.map((h) => `<th>${escapeHtml(h)}</th>`).join('')}</tr></thead>
+            <tbody>${data.preview_rows.map((r) => `<tr>${data.headers.map((h) => `<td>${escapeHtml(r[h])}</td>`).join('')}</tr>`).join('')}</tbody>
+            </table>
+          </div>
+        `;
+
+        const refreshMotherInfo = () => {
+          const bomNo = $('#mapBomNo', box).value;
+          const g = (data.bom_groups || []).find((x) => x.bom_no === bomNo);
+          if (!g) {
+            $('#motherInfoBox', box).textContent = '';
+            return;
+          }
+          $('#motherInfoBox', box).innerHTML = `
+            <strong>母件信息预览：</strong>
+            代码 ${escapeHtml(g.mother_part_no)} ｜
+            名称 ${escapeHtml(g.mother_name || '-')} ｜
+            规格 ${escapeHtml(g.mother_spec || '-')} ｜
+            子件 ${g.child_count} 行
+          `;
+        };
+        $('#mapBomNo', box).addEventListener('change', refreshMotherInfo);
+        refreshMotherInfo();
+
+        $('#bomImportBtn', box).addEventListener('click', async () => {
+          const file = $('#bomFile', root).files[0];
+          const matchSel = [...$('#mapMatch', box).selectedOptions].map((o) => o.value);
+          const mapping = {
+            mode: 'erp',
+            bom_no: sug.bom_no || 'BOM单号',
+            bom_no_value: $('#mapBomNo', box).value,
+            material_type: $('#mapType', box).value,
+            part_no: $('#mapPart', box).value,
+            qty: $('#mapQty', box).value || null,
+            spec: $('#mapSpec', box).value || null,
+            aux: $('#mapAux', box).value || null,
+            match_fields: matchSel,
+            save_rule: $('#saveRule', box).checked,
+            set_default: $('#setDefault', box).checked,
+            rule_name: `BOM-ERP-${$('#bomName', box).value}`
+          };
+          const fd = new FormData();
+          fd.append('file', file);
+          fd.append('name', $('#bomName', box).value);
+          fd.append('version_label', $('#bomVersion', box).value);
+          fd.append('mapping', JSON.stringify(mapping));
+          try {
+            const res = await API.upload('/boms/import', fd);
+            flash($('#bomFlash', root), `导入成功：BOM ${res.bom_no || ''} 母件 ${res.mother_part_no}（子件 ${res.line_count} 行）`, 'success');
+            navigate('bom');
+          } catch (err) {
+            flash($('#bomFlash', root), err.message, 'error');
+          }
+        });
+        return;
+      }
+
+      // simple fallback
       box.innerHTML = `
         <label class="field"><span>名称</span><input id="bomName" value="${escapeHtml(data.filename)}" /></label>
         <label class="field"><span>版本说明</span><input id="bomVersion" placeholder="如 2026-08-04 上午版" /></label>
         <div class="grid-2" style="margin-top:8px">
-          <label class="field"><span>1. 哪一列是母件列</span><select id="mapMother"><option value="">请选择</option>${opts(map.mother_part_no)}</select></label>
+          <label class="field"><span>1. 哪一列是母件列</span><select id="mapMother"><option value="">请选择</option>${opts(map.mother_part_no || sug.mother_part_no || sug.part_no)}</select></label>
           <label class="field"><span>2. 本 BOM 的母件是哪个</span><select id="mapMotherValue"><option value="">请先选择母件列</option></select></label>
         </div>
         <div class="grid-2" style="margin-top:8px">
-          <label class="field"><span>子件料号列</span><select id="mapPart"><option value="">请选择</option>${opts(map.part_no)}</select></label>
-          <label class="field"><span>数量列（可选）</span><select id="mapQty"><option value="">默认 1</option>${opts(map.qty)}</select></label>
+          <label class="field"><span>子件料号/物料代码列</span><select id="mapPart"><option value="">请选择</option>${opts(map.part_no || sug.part_no)}</select></label>
+          <label class="field"><span>数量/用量列（可选）</span><select id="mapQty"><option value="">默认 1</option>${opts(map.qty || sug.qty)}</select></label>
         </div>
-        <label class="field" style="margin-top:8px"><span>参与匹配的列（可多选，需与配件订单一致）</span>
+        <label class="field" style="margin-top:8px"><span>参与匹配的列（可多选）</span>
           <select id="mapMatch" multiple size="5">${previewHeaders.map((h) =>
-            `<option value="${escapeHtml(h)}" ${matchFields.includes(h) ? 'selected' : ''}>${escapeHtml(h)}</option>`
+            `<option value="${escapeHtml(h)}" ${defaultMatch.includes(h) ? 'selected' : ''}>${escapeHtml(h)}</option>`
           ).join('')}</select>
         </label>
         <label class="field" style="margin-top:8px"><span><input type="checkbox" id="saveRule" checked /> 保存为映射规则</span></label>
@@ -308,19 +404,18 @@
           : '<option value="">该列没有可用母件值</option>';
       };
       $('#mapMother', box).addEventListener('change', refreshMotherValues);
-      if (map.mother_part_no) {
-        $('#mapMother', box).value = map.mother_part_no;
-      }
       refreshMotherValues();
 
       $('#bomImportBtn', box).addEventListener('click', async () => {
         const file = $('#bomFile', root).files[0];
         const matchSel = [...$('#mapMatch', box).selectedOptions].map((o) => o.value);
         const mapping = {
+          mode: 'simple',
           mother_part_no: $('#mapMother', box).value,
           mother_value: $('#mapMotherValue', box).value,
           part_no: $('#mapPart', box).value,
           qty: $('#mapQty', box).value || null,
+          material_type: sug.material_type || null,
           match_fields: matchSel.length ? matchSel : [$('#mapPart', box).value].filter(Boolean),
           save_rule: $('#saveRule', box).checked,
           set_default: $('#setDefault', box).checked,
@@ -354,14 +449,36 @@
     $$('[data-view]', root).forEach((btn) => {
       btn.addEventListener('click', async () => {
         const detail = await API.get(`/boms/${btn.dataset.view}`);
+        const mi = detail.mother_info || {};
         $('#bomDetail', root).innerHTML = `
           <h3>${escapeHtml(detail.name)} · ${escapeHtml(detail.version_label)}</h3>
-          <p class="muted">母件：${escapeHtml(detail.mother_part_no)} · 匹配字段：${escapeHtml((detail.match_fields || []).join(', '))}</p>
+          <p class="muted">
+            BOM单号：${escapeHtml(detail.bom_no || '-')} ｜
+            母件代码：${escapeHtml(detail.mother_part_no)} ｜
+            匹配字段：${escapeHtml((detail.match_fields || []).join(', '))}
+          </p>
+          ${detail.mother_info ? `
+            <div class="card" style="box-shadow:none;border-style:dashed;margin:10px 0">
+              <h4 style="margin:0 0 8px">母件信息</h4>
+              <div class="muted" style="font-size:13px;line-height:1.7">
+                名称：${escapeHtml(mi['物料名称'] || mi.mother_name || '-')} ｜
+                规格型号：${escapeHtml(mi['规格型号'] || '-')} ｜
+                单位：${escapeHtml(mi['基本单位'] || mi['单位'] || '-')} ｜
+                审核状态：${escapeHtml(mi['审核状态'] || '-')} ｜
+                备注：${escapeHtml(mi['备注'] || '-')}
+              </div>
+            </div>` : ''}
           <div class="table-wrap"><table>
-            <thead><tr><th>#</th><th>料号</th><th>数量</th><th>原始行</th></tr></thead>
+            <thead><tr><th>#</th><th>物料代码</th><th>数量</th><th>名称</th><th>规格</th><th>辅助属性</th></tr></thead>
             <tbody>${detail.lines.map((l) => `
-              <tr><td>${l.line_no}</td><td>${escapeHtml(l.part_no)}</td><td>${l.qty}</td>
-              <td><code>${escapeHtml(JSON.stringify(l.raw))}</code></td></tr>`).join('')}
+              <tr>
+                <td>${l.line_no}</td>
+                <td>${escapeHtml(l.part_no)}</td>
+                <td>${l.qty}</td>
+                <td>${escapeHtml(l.raw['物料名称'] || '')}</td>
+                <td>${escapeHtml(l.raw['规格型号'] || l.raw['规格'] || '')}</td>
+                <td>${escapeHtml(l.raw['辅助属性'] || '')}</td>
+              </tr>`).join('')}
             </tbody>
           </table></div>`;
       });
