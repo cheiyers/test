@@ -529,7 +529,7 @@
     root.innerHTML = `
       <div class="card">
         <h2>订单导入与关联</h2>
-        <p class="muted">流程：上传订单 → 自定义列把总包与配件先关联 → 再选 BOM 并用自定义列匹配子件。</p>
+        <p class="muted">流程：上传订单 → 用自定义列把总包与配件先关联 → 再选 BOM，仅按料号匹配子件。</p>
         <div id="orderFlash"></div>
         <div class="upload-block">
           <h3>1. 上传总包订单 + 配件订单</h3>
@@ -717,12 +717,21 @@
       }
 
       const showEditor = forceEdit || detail.status === 'draft' || !detail.selected_bom_id;
-      const defaultBomMatch = (savedBomFields.length
-        ? savedBomFields.map((x) => (typeof x === 'string' ? x : x.right || x.order_field || x.left))
-        : accFields.filter((f) => /物料代码|料号|规格|辅助/.test(f)));
-      const defaultBomSide = (savedBomFields.length
-        ? savedBomFields.map((x) => (typeof x === 'string' ? x : x.left || x.bom_field))
-        : bomFields.filter((f) => /物料代码|料号|规格|辅助/.test(f)));
+      const pickPartCol = (headers, preferred) => {
+        if (preferred && headers.includes(preferred)) return preferred;
+        return headers.find((h) => /物料代码|子件料号|母件料号|^料号$|part/i.test(h)) || headers[0] || '';
+      };
+      const savedBomPart = savedBomFields[0]
+        ? (typeof savedBomFields[0] === 'string' ? savedBomFields[0] : (savedBomFields[0].left || savedBomFields[0].bom_field))
+        : '';
+      const savedAccPart = savedBomFields[0]
+        ? (typeof savedBomFields[0] === 'string' ? savedBomFields[0] : (savedBomFields[0].right || savedBomFields[0].order_field))
+        : '';
+      const defaultBomPart = pickPartCol(bomFields.length ? bomFields : accFields, savedBomPart || '物料代码');
+      const defaultAccPart = pickPartCol(accFields, savedAccPart || cfg.accessory?.part_no || '物料代码');
+      const partOpts = (headers, selected) => headers.map((h) =>
+        `<option value="${escapeHtml(h)}" ${h === selected ? 'selected' : ''}>${escapeHtml(h)}</option>`
+      ).join('');
 
       const panel = $('#batchDetail', root);
       panel.classList.remove('hidden');
@@ -735,33 +744,32 @@
           <p class="muted">总包 ${detail.masters.length} 行 · 配件 ${detail.accessories.length} 行
             ${savedLinks.length ? ` · 订单关联列：${escapeHtml(savedLinks.map((p) => p.label || `${p.left}/${p.right}`).join(' + '))}` : ''}
           </p>
+          <div class="flash info">规则：先按自定义列关联总包↔配件，再仅按料号匹配 BOM（数量需相等）。</div>
           <div id="assocFlash"></div>
           <div id="assocEditor" class="${showEditor ? '' : 'hidden'}">
             <h4>A. 选择 BOM 版本（本批次使用一个）</h4>
             <div class="bom-pick-list">
               ${allBoms.length ? allBoms.map((b, idx) => `
                 <label class="bom-pick-item">
-                  <input type="radio" name="bomPick" value="${b.id}" data-cols='${escapeHtml(JSON.stringify([]))}' ${idx === 0 ? 'checked' : ''}/>
+                  <input type="radio" name="bomPick" value="${b.id}" ${idx === 0 ? 'checked' : ''}/>
                   <span>
                     <strong>${escapeHtml(b.name)}</strong> / ${escapeHtml(b.version_label)}
                     <br/><span class="muted">母件 ${escapeHtml(b.mother_part_no)} · 子件 ${b.line_count} · ${escapeHtml(b.created_at || '')}</span>
                   </span>
                 </label>`).join('') : '<div class="flash warn">无候选 BOM，请先上传对应母件的 BOM</div>'}
             </div>
-            <h4 style="margin-top:14px">B. BOM ↔ 配件 匹配列（可多可少）</h4>
-            <p class="muted" style="font-size:13px">第二步：在已关联到总包的配件上，用这些列与 BOM 子件比对（值完全一致 + 数量相等）。</p>
-            <div class="grid-2" id="bomMatchWrap">
-              <div>
-                <div class="section-title">BOM 侧列</div>
-                ${checkboxList('bomSideFields', bomFields.length ? bomFields : accFields, defaultBomSide)}
-              </div>
-              <div>
-                <div class="section-title">配件订单侧列</div>
-                ${checkboxList('accSideFields', accFields, defaultBomMatch)}
-              </div>
+            <h4 style="margin-top:14px">B. 与 BOM 仅按料号匹配</h4>
+            <p class="muted" style="font-size:13px">第二步只比对料号；同料号数量合计须等于 BOM 用量。</p>
+            <div class="form-grid" id="bomMatchWrap">
+              <label class="field"><span>BOM 料号列</span>
+                <select id="bomPartField"><option value="">请选择</option>${partOpts(bomFields.length ? bomFields : ['物料代码'], defaultBomPart)}</select>
+              </label>
+              <label class="field"><span>配件订单料号列</span>
+                <select id="accPartField"><option value="">请选择</option>${partOpts(accFields, defaultAccPart)}</select>
+              </label>
             </div>
             <div class="row" style="margin-top:12px">
-              <button class="btn" id="assocBtn" type="button">先关联订单，再匹配 BOM</button>
+              <button class="btn" id="assocBtn" type="button">开始关联（订单关联 + 料号匹配BOM）</button>
             </div>
           </div>
           ${!showEditor ? `
@@ -799,38 +807,34 @@
       panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
       $('#closeDetailBtn', panel)?.addEventListener('click', () => panel.classList.add('hidden'));
 
-      const reloadBomColumns = async () => {
+      const reloadBomPartOptions = async () => {
         const bomId = $('input[name="bomPick"]:checked', panel)?.value;
-        if (!bomId) return;
+        const sel = $('#bomPartField', panel);
+        if (!bomId || !sel) return;
         try {
           const bomDetail = await API.get(`/boms/${bomId}`);
-          const host = $('#bomSideFields', panel);
-          if (!host) return;
-          const selected = checkedValues(host);
-          host.outerHTML = checkboxList('bomSideFields', bomDetail.columns || [], selected.length ? selected : (bomDetail.match_fields || []));
+          const cols = bomDetail.columns || [];
+          const cur = sel.value;
+          const preferred = pickPartCol(cols, cur || '物料代码');
+          sel.innerHTML = `<option value="">请选择</option>${partOpts(cols, preferred)}`;
         } catch {}
       };
-      $$('input[name="bomPick"]', panel).forEach((r) => r.addEventListener('change', reloadBomColumns));
-      if (showEditor) reloadBomColumns();
+      $$('input[name="bomPick"]', panel).forEach((r) => r.addEventListener('change', reloadBomPartOptions));
+      if (showEditor) reloadBomPartOptions();
 
       const doAssoc = async () => {
         const bomId = $('input[name="bomPick"]:checked', panel)?.value;
         if (!bomId) return flash($('#assocFlash', panel), '请选择 BOM 版本', 'error');
-        const bomSide = checkedValues($('#bomSideFields', panel));
-        const accSide = checkedValues($('#accSideFields', panel));
-        if (!bomSide.length || !accSide.length) {
-          return flash($('#assocFlash', panel), '请至少各选一个 BOM 匹配列', 'error');
-        }
-        const n = Math.min(bomSide.length, accSide.length);
-        const bomMatchFields = [];
-        for (let i = 0; i < n; i++) {
-          bomMatchFields.push({ bom_field: bomSide[i], order_field: accSide[i] });
+        const bomPart = $('#bomPartField', panel)?.value;
+        const accPart = $('#accPartField', panel)?.value;
+        if (!bomPart || !accPart) {
+          return flash($('#assocFlash', panel), '请选择 BOM 与配件的料号列', 'error');
         }
         try {
           const res = await API.post(`/batches/${id}/associate`, {
             bom_id: bomId,
             order_link_fields: savedLinks,
-            bom_match_fields: bomMatchFields
+            bom_match_fields: [{ bom_field: bomPart, order_field: accPart }]
           });
           flash($('#assocFlash', panel),
             `完成：订单关联 ${res.result.linked_accessories} 行；总包成功 ${res.result.master_success}/失败 ${res.result.master_failed}；配件成功 ${res.result.accessory_success}/失败 ${res.result.accessory_failed}`,

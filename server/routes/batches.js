@@ -258,17 +258,22 @@ function batchRoutes(db) {
       : ((Array.isArray(match_fields) && match_fields.length)
         ? match_fields
         : (mappingBag.associate_match_fields || []));
+    // BOM 匹配默认仅料号（物料代码）；若前端显式传入则尊重传入
     let bomPairs = normalizePairs(rawBomFields, 'bom_field', 'order_field');
     if (!bomPairs.length) {
-      const fallback = JSON.parse(bom.match_fields_json || '[]');
+      const partNo = accessoryMapping.part_no || '物料代码';
       bomPairs = normalizePairs(
-        fallback.length ? fallback : [accessoryMapping.part_no || '物料代码'].filter(Boolean),
+        [{ bom_field: partNo, order_field: partNo }],
         'bom_field',
         'order_field'
       );
     }
+    // 若误传了多列，当前业务只取第一对料号匹配
+    if (bomPairs.length > 1 && !req.body?.allow_multi_bom_fields) {
+      bomPairs = bomPairs.slice(0, 1);
+    }
     if (!bomPairs.length) {
-      return res.status(400).json({ error: '请至少选择一个 BOM 匹配字段' });
+      return res.status(400).json({ error: '请选择 BOM 料号匹配列' });
     }
 
     const bomLines = db.prepare('SELECT * FROM bom_lines WHERE bom_id = ?').all(bom.id);
