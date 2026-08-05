@@ -225,7 +225,6 @@ tr:hover td { background: #f8fbf9; }
 .label-el.table .el-body { border: 0; }
 .label-table-edit { width: 100%; height: 100%; border-collapse: collapse; table-layout: fixed; font-size: 10px; }
 .label-table-edit tr { height: auto; }
-.label-table-edit td { position: relative; }
 .cell-resize {
   position: absolute; z-index: 4; background: transparent;
 }
@@ -256,8 +255,12 @@ tr:hover td { background: #f8fbf9; }
   background: #eef5f1; border: 1px dashed #b7cfc2; border-radius: 8px;
 }
 .label-table-edit td {
+  position: relative;
   border: 1px solid #7a9486; padding: 2px; text-align: center; vertical-align: middle;
-  overflow: hidden; word-break: break-all; background: #fff;
+  overflow: visible; word-break: break-all; background: #fff;
+}
+.label-table-edit td .cell-content-clip {
+  overflow: hidden; max-width: 100%; max-height: 100%;
 }
 .label-table-edit td.cell-active { outline: 2px solid var(--brand); background: #eaf6ef; }
 .seg-builder { background: #f7faf8; border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
