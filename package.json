@@ -4,9 +4,11 @@
   "description": "基于 BOM 与订单的扫码质量监管系统",
   "main": "server/index.js",
   "scripts": {
+    "prestart": "node scripts/ensure-deps.js",
     "start": "node server/index.js",
-    "dev": "node server/index.js",
-    "init-db": "node server/init-db.js"
+    "dev": "node scripts/ensure-deps.js && node server/index.js",
+    "init-db": "node server/init-db.js",
+    "check": "node scripts/ensure-deps.js"
   },
   "engines": {
     "node": ">=18"

@@ -2,7 +2,18 @@
 
 const fs = require('fs');
 const path = require('path');
-const Database = require('better-sqlite3');
+let Database;
+try {
+  Database = require('better-sqlite3');
+} catch (err) {
+  console.error('');
+  console.error('[错误] 无法加载 better-sqlite3（数据库驱动）。');
+  console.error('请在项目根目录删除 node_modules 后重新执行: npm install');
+  console.error('若在 Windows 上编译失败，请安装 Visual Studio Build Tools（勾选 C++ 桌面开发）。');
+  console.error('原始错误:', err.message);
+  console.error('');
+  process.exit(1);
+}
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 

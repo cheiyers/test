@@ -58,7 +58,7 @@ function lanAddresses() {
   return result;
 }
 
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   const lans = lanAddresses();
   console.log('');
   console.log('========================================');
@@ -74,4 +74,18 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('    scan / scan123     (扫码入库)');
   console.log('========================================');
   console.log('');
+});
+
+server.on('error', (err) => {
+  if (err && err.code === 'EADDRINUSE') {
+    console.error('');
+    console.error(`[错误] 端口 ${PORT} 已被占用。`);
+    console.error('请关闭占用该端口的程序，或换端口启动：');
+    console.error(`  Windows: set PORT=3790 && npm start`);
+    console.error(`  Linux/macOS: PORT=3790 npm start`);
+    console.error('');
+    process.exit(1);
+  }
+  console.error('[错误] 服务启动失败:', err.message || err);
+  process.exit(1);
 });
