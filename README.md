@@ -57,8 +57,10 @@ npm start
 
 | 现象 | 处理 |
 |------|------|
-| 提示未检测到 Node.js | 再运行一次「一键配置环境.bat」；若自动安装失败，按提示从官网安装 LTS 后重开脚本 |
-| 依赖安装失败 / better-sqlite3 报错 | 删除 `node_modules` 后重跑「一键配置环境」；必要时安装 Visual Studio Build Tools（勾选 C++ 桌面开发） |
+| 提示未检测到 Node.js | 再运行一次「一键配置环境.bat」；若自动安装失败，按提示从官网安装后重开脚本 |
+| `better-sqlite3` / `node-gyp` / `Visual Studio` 报错 | 请用**最新代码**（依赖已升到 v13，不再强依赖本机编译）。关闭所有窗口 → 删掉 `node_modules` → 再跑「一键配置环境」 |
+| `EPERM` 无法删除 node_modules | 关掉杀毒/占用该目录的程序，手动删除 `node_modules` 后再安装 |
+| `multer` / `prebuild-install` 的 deprecated 警告 | 可忽略；新版本已升级，警告应消失 |
 | 端口被占用 | 关掉已打开的「开始运行」窗口，或换端口启动 |
 | 从别的电脑拷了 node_modules | 不要拷贝；在本机重新「一键配置环境」 |
 
