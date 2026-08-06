@@ -19,7 +19,11 @@ const API = {
     const ct = res.headers.get('content-type') || '';
     if (ct.includes('application/json')) {
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || '请求失败');
+      if (!res.ok) {
+        const err = new Error(data.error || '请求失败');
+        err.data = data;
+        throw err;
+      }
       return data;
     }
     if (!res.ok) throw new Error('请求失败');

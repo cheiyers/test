@@ -1042,10 +1042,16 @@
 
   // ---------------- Scan ----------------
   async function renderScan(root) {
+    let mode = 'inbound'; // inbound | lookup
+
     root.innerHTML = `
       <div class="card">
-        <h2>扫码入库</h2>
-        <p class="muted">先扫总包，再扫子件；子件无顺序；不可重复。齐套按该总包关联的配件订单行判定（与 BOM 用量无关）。切换总包时未齐套将自动标记「有缺漏」。</p>
+        <h2>扫码</h2>
+        <div class="mode-tabs" id="scanModeTabs">
+          <button type="button" class="mode-tab active" data-mode="inbound">扫码入库</button>
+          <button type="button" class="mode-tab" data-mode="lookup">扫码查单</button>
+        </div>
+        <p class="muted" id="scanModeHint">先扫总包，再扫配件；配件无顺序、不可重复。齐套后扫下一总包不会再误报缺漏。同一总包勿重复扫；已齐套再扫会提示已齐套。</p>
         <div id="scanFlash"></div>
         <div class="scan-hero">
           <div>
@@ -1065,33 +1071,86 @@
     const input = $('#scanCode', root);
     input.focus();
 
+    function setMode(next) {
+      mode = next;
+      $$('.mode-tab', root).forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.mode === mode);
+      });
+      const hint = $('#scanModeHint', root);
+      const clearBtn = $('#clearPkgBtn', root);
+      if (mode === 'lookup') {
+        hint.textContent = '扫码查单：扫描总包或配件码，查看订单信息与齐套进度，不改变入库状态。';
+        clearBtn.style.display = 'none';
+        renderLookup(null);
+      } else {
+        hint.textContent = '先扫总包，再扫配件；配件无顺序、不可重复。齐套后扫下一总包不会再误报缺漏。同一总包勿重复扫；已齐套再扫会提示已齐套。';
+        clearBtn.style.display = '';
+        if (state.currentPackageId) {
+          API.get(`/scan/packages/${state.currentPackageId}`).then(renderPkg).catch(() => {
+            state.currentPackageId = null;
+            renderPkg(null);
+          });
+        } else {
+          renderPkg(null);
+        }
+      }
+      input.focus();
+    }
+
     const doScan = async () => {
       const code = input.value.trim();
       if (!code) return;
       try {
-        const res = await API.post('/scan/scan', {
-          code,
-          current_package_id: state.currentPackageId
-        });
-        if (res.scan_type === 'master') {
-          state.currentPackageId = res.package.id;
-          if (res.previous_shortage) {
-            flash($('#scanFlash', root), `上一总包未齐套，已标记缺漏：${res.previous_shortage.package_code}`, 'warn');
+        if (mode === 'lookup') {
+          const res = await API.post('/scan/lookup', { code });
+          flash($('#scanFlash', root), res.message, 'success');
+          renderLookup(res);
+        } else {
+          const res = await API.post('/scan/scan', {
+            code,
+            current_package_id: state.currentPackageId
+          });
+          if (res.scan_type === 'master') {
+            state.currentPackageId = res.package.id;
+            if (res.previous_shortage) {
+              flash($('#scanFlash', root), `上一总包未齐套，已标记缺漏：${res.previous_shortage.package_code}`, 'warn');
+            } else {
+              flash($('#scanFlash', root), res.message, 'success');
+            }
           } else {
             flash($('#scanFlash', root), res.message, 'success');
+            if (res.package) state.currentPackageId = res.package.id;
           }
-        } else {
-          flash($('#scanFlash', root), res.message, 'success');
-          if (res.completed) state.currentPackageId = res.package.id;
+          renderPkg(res.package);
         }
-        renderPkg(res.package);
         input.value = '';
         input.focus();
       } catch (err) {
-        flash($('#scanFlash', root), err.message, 'error');
+        const data = err.data || {};
+        // 已齐套 / 重复扫等：仍展示对应总包信息
+        if (mode === 'inbound' && data.package) {
+          if (data.package.status === 'complete') {
+            // 已齐套不作为当前入库上下文
+            if (state.currentPackageId === data.package.id) state.currentPackageId = null;
+          }
+          renderPkg(data.package);
+        }
+        if (data.previous_shortage) {
+          flash($('#scanFlash', root), `${err.message}；上一总包未齐套已标记缺漏：${data.previous_shortage.package_code}`, 'warn');
+        } else {
+          flash($('#scanFlash', root), err.message, 'error');
+        }
         input.select();
       }
     };
+
+    function rawPreview(raw, limit = 8) {
+      const entries = Object.entries(raw || {}).slice(0, limit);
+      if (!entries.length) return '<div class="muted">无订单明细字段</div>';
+      return `<div class="kv-list">${entries.map(([k, v]) =>
+        `<div><span class="muted">${escapeHtml(k)}</span>：${escapeHtml(v)}</div>`
+      ).join('')}</div>`;
+    }
 
     function renderPkg(pkg) {
       if (!pkg) {
@@ -1102,10 +1161,55 @@
         <div>
           <div>${statusTag(pkg.status)} <strong>${escapeHtml(pkg.order_no)}</strong></div>
           <div class="muted" style="margin:6px 0">总包码：${escapeHtml(pkg.package_code)}</div>
-          <div>进度：${pkg.scanned_children}/${pkg.total_children}</div>
+          <div>进度：${pkg.scanned_children}/${pkg.total_children}${pkg.status === 'complete' ? '（已齐套）' : ''}</div>
           <div class="child-list" style="margin-top:10px">
-            ${pkg.children.map((c) => `
+            ${(pkg.children || []).map((c) => `
               <div class="child-item ${c.scanned ? 'done' : ''}">
+                <div>
+                  <div>${escapeHtml(c.part_no)} × ${c.qty}</div>
+                  <div class="muted" style="font-size:12px">${escapeHtml(c.child_code)}</div>
+                </div>
+                <div>${c.scanned ? '<span class="tag ok">已扫</span>' : '<span class="tag muted">待扫</span>'}</div>
+              </div>`).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderLookup(res) {
+      if (!res || !res.package) {
+        $('#pkgPanel', root).innerHTML = '<div class="muted">扫码后显示订单信息…</div>';
+        return;
+      }
+      const pkg = res.package;
+      const child = res.child;
+      $('#pkgPanel', root).innerHTML = `
+        <div>
+          <div class="row" style="gap:8px;align-items:center;margin-bottom:8px">
+            <span class="tag info">${res.match_type === 'child' ? '配件码' : '总包码'}</span>
+            ${statusTag(pkg.status)}
+          </div>
+          <div><strong>订单号：</strong>${escapeHtml(pkg.order_no || '-')}</div>
+          <div class="muted" style="margin:4px 0">批次：${escapeHtml(pkg.batch_name || '-')}</div>
+          <div>母件：${escapeHtml(pkg.mother_part_no || '-')}</div>
+          <div class="muted" style="margin:4px 0">总包码：${escapeHtml(pkg.package_code)}</div>
+          <div>齐套进度：${pkg.scanned_children}/${pkg.total_children}</div>
+          ${child ? `
+            <hr style="border:none;border-top:1px solid var(--line);margin:10px 0" />
+            <div><strong>当前配件</strong></div>
+            <div>料号：${escapeHtml(child.part_no)} × ${child.qty}</div>
+            <div class="muted">配件码：${escapeHtml(child.child_code)}</div>
+            <div>${child.scanned ? '<span class="tag ok">已扫</span>' : '<span class="tag muted">未扫</span>'}</div>
+            <div style="margin-top:8px">${rawPreview(child.raw)}</div>
+          ` : `
+            <hr style="border:none;border-top:1px solid var(--line);margin:10px 0" />
+            <div><strong>总包订单字段</strong></div>
+            <div style="margin-top:6px">${rawPreview(pkg.master_raw)}</div>
+          `}
+          <div class="child-list" style="margin-top:12px">
+            <div class="muted" style="margin-bottom:6px">配件清单</div>
+            ${(pkg.children || []).map((c) => `
+              <div class="child-item ${c.scanned ? 'done' : ''}${child && child.id === c.id ? ' cell-active' : ''}">
                 <div>
                   <div>${escapeHtml(c.part_no)} × ${c.qty}</div>
                   <div class="muted" style="font-size:12px">${escapeHtml(c.child_code)}</div>
@@ -1126,6 +1230,9 @@
       }
     }
 
+    $$('[data-mode]', root).forEach((btn) => {
+      btn.addEventListener('click', () => setMode(btn.dataset.mode));
+    });
     $('#scanBtn', root).addEventListener('click', doScan);
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {

@@ -25,11 +25,15 @@ function scanRoutes(db) {
     );
   }
 
+  /**
+   * 离开当前总包时：仅当子件未齐套才标记缺漏并返回该包；
+   * 已齐套/已缺漏/无子件缺口时返回 null（避免前端误报「上一总包未齐套」）。
+   */
   function markShortageIfLeaving(currentPackageId, user) {
     if (!currentPackageId) return null;
     const pkg = db.prepare('SELECT * FROM packages WHERE id = ?').get(currentPackageId);
     if (!pkg) return null;
-    if (pkg.status === 'complete' || pkg.status === 'shortage') return pkg;
+    if (pkg.status === 'complete' || pkg.status === 'shortage') return null;
 
     const stats = db.prepare(`
       SELECT COUNT(*) AS total,
@@ -37,7 +41,21 @@ function scanRoutes(db) {
       FROM package_children WHERE package_id = ?
     `).get(pkg.id);
 
-    if (stats.total > 0 && stats.scanned < stats.total) {
+    const total = Number(stats.total) || 0;
+    const scanned = Number(stats.scanned) || 0;
+
+    // 子件已全部扫完但状态未更新时，补齐为已齐套，不报缺漏
+    if (total > 0 && scanned >= total) {
+      db.prepare(`
+        UPDATE packages SET status = 'complete',
+          completed_at = COALESCE(completed_at, datetime('now','localtime')),
+          last_scan_at = datetime('now','localtime')
+        WHERE id = ?
+      `).run(pkg.id);
+      return null;
+    }
+
+    if (total > 0 && scanned < total) {
       db.prepare(`UPDATE packages SET status = 'shortage', last_scan_at = datetime('now','localtime') WHERE id = ?`).run(pkg.id);
       addLog({
         packageId: pkg.id,
@@ -49,11 +67,17 @@ function scanRoutes(db) {
       });
       return db.prepare('SELECT * FROM packages WHERE id = ?').get(pkg.id);
     }
-    return pkg;
+    return null;
   }
 
   function packageDetail(pkgId) {
-    const pkg = db.prepare('SELECT * FROM packages WHERE id = ?').get(pkgId);
+    const pkg = db.prepare(`
+      SELECT p.*, b.name AS batch_name, m.mother_part_no, m.raw_json AS master_raw_json
+      FROM packages p
+      JOIN import_batches b ON b.id = p.batch_id
+      JOIN master_order_lines m ON m.id = p.master_line_id
+      WHERE p.id = ?
+    `).get(pkgId);
     if (!pkg) return null;
     const children = db.prepare(`
       SELECT pc.*, a.part_no, a.qty, a.order_no, a.raw_json
@@ -63,8 +87,11 @@ function scanRoutes(db) {
       ORDER BY a.line_no
     `).all(pkgId);
     const scanned = children.filter((c) => c.scanned).length;
+    let masterRaw = {};
+    try { masterRaw = JSON.parse(pkg.master_raw_json || '{}'); } catch { masterRaw = {}; }
     return {
       ...pkg,
+      master_raw: masterRaw,
       children: children.map((c) => ({
         ...c,
         raw: JSON.parse(c.raw_json)
@@ -73,6 +100,35 @@ function scanRoutes(db) {
       scanned_children: scanned,
       remaining: children.length - scanned
     };
+  }
+
+  function findMasterByScan(scanned) {
+    const exact = db.prepare('SELECT * FROM packages WHERE package_code = ?').get(scanned);
+    if (exact) return exact;
+    return db.prepare(`
+      SELECT * FROM packages
+      WHERE length(package_code) >= 6 AND ? LIKE '%' || package_code || '%'
+      ORDER BY length(package_code) DESC, rowid DESC
+      LIMIT 1
+    `).get(scanned);
+  }
+
+  function findChildByScan(scanned) {
+    const exact = db.prepare(`
+      SELECT pc.*, p.id AS pkg_id, p.package_code, p.status AS pkg_status
+      FROM package_children pc
+      JOIN packages p ON p.id = pc.package_id
+      WHERE pc.child_code = ?
+    `).get(scanned);
+    if (exact) return exact;
+    return db.prepare(`
+      SELECT pc.*, p.id AS pkg_id, p.package_code, p.status AS pkg_status
+      FROM package_children pc
+      JOIN packages p ON p.id = pc.package_id
+      WHERE length(pc.child_code) >= 6 AND ? LIKE '%' || pc.child_code || '%'
+      ORDER BY length(pc.child_code) DESC, pc.rowid DESC
+      LIMIT 1
+    `).get(scanned);
   }
 
   router.get('/packages', canScan, (req, res) => {
@@ -117,71 +173,119 @@ function scanRoutes(db) {
     res.json(detail);
   });
 
+  /** 扫码查单：不改变扫码状态，只返回订单/总包/配件信息 */
+  router.post('/lookup', canScan, (req, res) => {
+    const code = String(req.body?.code || '').trim();
+    if (!code) return res.status(400).json({ error: '请扫描条码内容' });
+
+    const masterPkg = findMasterByScan(code);
+    if (masterPkg) {
+      const detail = packageDetail(masterPkg.id);
+      return res.json({
+        ok: true,
+        match_type: 'master',
+        message: '已匹配总包订单',
+        package: detail
+      });
+    }
+
+    const child = findChildByScan(code);
+    if (child) {
+      const detail = packageDetail(child.pkg_id);
+      const childRow = (detail.children || []).find((c) => c.id === child.id) || null;
+      return res.json({
+        ok: true,
+        match_type: 'child',
+        message: '已匹配配件订单（所属总包如下）',
+        package: detail,
+        child: childRow
+      });
+    }
+
+    return res.status(404).json({ ok: false, error: '未识别的条码，无法查询订单信息' });
+  });
+
   router.post('/scan', canScan, (req, res) => {
     const code = String(req.body?.code || '').trim();
     const currentPackageId = req.body?.current_package_id || null;
     if (!code) return res.status(400).json({ error: '请扫描条码内容' });
 
-    // 精确匹配，或条码自定义内容中包含唯一码（取最长匹配，避免短码误伤）
-    function findMasterByScan(scanned) {
-      const exact = db.prepare('SELECT * FROM packages WHERE package_code = ?').get(scanned);
-      if (exact) return exact;
-      return db.prepare(`
-        SELECT * FROM packages
-        WHERE length(package_code) >= 6 AND ? LIKE '%' || package_code || '%'
-        ORDER BY length(package_code) DESC, rowid DESC
-        LIMIT 1
-      `).get(scanned);
-    }
-
-    function findChildByScan(scanned) {
-      const exact = db.prepare(`
-        SELECT pc.*, p.id AS pkg_id, p.package_code, p.status AS pkg_status
-        FROM package_children pc
-        JOIN packages p ON p.id = pc.package_id
-        WHERE pc.child_code = ?
-      `).get(scanned);
-      if (exact) return exact;
-      return db.prepare(`
-        SELECT pc.*, p.id AS pkg_id, p.package_code, p.status AS pkg_status
-        FROM package_children pc
-        JOIN packages p ON p.id = pc.package_id
-        WHERE length(pc.child_code) >= 6 AND ? LIKE '%' || pc.child_code || '%'
-        ORDER BY length(pc.child_code) DESC, pc.rowid DESC
-        LIMIT 1
-      `).get(scanned);
-    }
-
     // Try master first
     const masterPkg = findMasterByScan(code);
     if (masterPkg) {
+      // 已齐套：直接提示，不切换上下文去扫子件
+      if (masterPkg.status === 'complete') {
+        let leftShortage = null;
+        if (currentPackageId && currentPackageId !== masterPkg.id) {
+          leftShortage = markShortageIfLeaving(currentPackageId, req.user);
+        }
+        addLog({
+          packageId: masterPkg.id,
+          user: req.user,
+          scanType: 'error',
+          code,
+          success: false,
+          message: '总包已齐套，重复扫描'
+        });
+        return res.status(400).json({
+          ok: false,
+          error: '该总包已齐套，无需再扫',
+          scan_type: 'master',
+          package: packageDetail(masterPkg.id),
+          previous_shortage: leftShortage ? packageDetail(leftShortage.id) : null
+        });
+      }
+
+      // 同一总包重复扫（当前上下文已是该总包）
+      if (currentPackageId && currentPackageId === masterPkg.id) {
+        addLog({
+          packageId: masterPkg.id,
+          user: req.user,
+          scanType: 'error',
+          code,
+          success: false,
+          message: '总包重复扫描'
+        });
+        return res.status(400).json({
+          ok: false,
+          error: '请勿重复扫描同一总包，请继续扫描配件',
+          scan_type: 'master',
+          package: packageDetail(masterPkg.id)
+        });
+      }
+
       let leftShortage = null;
       if (currentPackageId && currentPackageId !== masterPkg.id) {
         leftShortage = markShortageIfLeaving(currentPackageId, req.user);
       }
 
-      if (masterPkg.status === 'unscanned') {
+      if (masterPkg.status === 'unscanned' || masterPkg.status === 'shortage') {
         db.prepare(`
-          UPDATE packages SET status = 'scanning', started_at = datetime('now','localtime'), last_scan_at = datetime('now','localtime')
+          UPDATE packages SET status = 'scanning',
+            started_at = COALESCE(started_at, datetime('now','localtime')),
+            last_scan_at = datetime('now','localtime')
           WHERE id = ?
         `).run(masterPkg.id);
       } else {
         db.prepare(`UPDATE packages SET last_scan_at = datetime('now','localtime') WHERE id = ?`).run(masterPkg.id);
       }
 
+      const resumed = masterPkg.status === 'shortage';
       addLog({
         packageId: masterPkg.id,
         user: req.user,
         scanType: 'master',
         code,
         success: true,
-        message: '总包扫描成功'
+        message: resumed ? '总包曾缺漏，继续补扫' : '总包扫描成功'
       });
 
       return res.json({
         ok: true,
         scan_type: 'master',
-        message: '总包扫描成功，请继续扫描子件',
+        message: resumed
+          ? '总包曾标记缺漏，可继续扫描未齐配件'
+          : '总包扫描成功，请继续扫描子件',
         package: packageDetail(masterPkg.id),
         previous_shortage: leftShortage ? packageDetail(leftShortage.id) : null
       });
@@ -212,6 +316,35 @@ function scanRoutes(db) {
         message: '请先扫描总包标签'
       });
       return res.status(400).json({ ok: false, error: '请先扫描总包标签' });
+    }
+
+    const currentPkg = db.prepare('SELECT * FROM packages WHERE id = ?').get(currentPackageId);
+    if (!currentPkg) {
+      return res.status(400).json({ ok: false, error: '当前无进行中的总包，请先扫描总包' });
+    }
+    if (currentPkg.status === 'complete') {
+      addLog({
+        packageId: currentPackageId,
+        user: req.user,
+        scanType: 'error',
+        code,
+        success: false,
+        message: '当前总包已齐套仍扫配件'
+      });
+      return res.status(400).json({
+        ok: false,
+        error: '当前总包已齐套，请扫描下一个总包',
+        code: 'complete',
+        package: packageDetail(currentPackageId)
+      });
+    }
+    if (currentPkg.status === 'shortage') {
+      return res.status(400).json({
+        ok: false,
+        error: '当前总包已标记缺漏，请重新扫描该总包继续，或扫描下一个总包',
+        code: 'shortage',
+        package: packageDetail(currentPackageId)
+      });
     }
 
     if (child.pkg_id !== currentPackageId) {
