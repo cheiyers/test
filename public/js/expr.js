@@ -61,7 +61,8 @@ function splitArgs(inner) {
     }
     if (ch === '(') depth += 1;
     if (ch === ')') depth = Math.max(0, depth - 1);
-    if (ch === ',' && depth === 0) {
+    // support Chinese comma as argument separator
+    if ((ch === ',' || ch === '，') && depth === 0) {
       args.push(buf.trim());
       buf = '';
       continue;
@@ -186,38 +187,88 @@ function looksLikeExcelExpr(formula) {
   return false;
 }
 
+/** Normalize date separators (fullwidth slash/dash etc.) */
+function normalizeDateString(s) {
+  return String(s || '')
+    .trim()
+    .replace(/[\uFF0F\u2215\u2044]/g, '/') // fullwidth / fraction slashes
+    .replace(/[\uFF0D\u2013\u2014]/g, '-') // fullwidth / en / em dash
+    .replace(/\./g, '/')
+    .replace(/\s+/g, ' ');
+}
+
+function dateFromYmd(y, m, d, hh = 0, mi = 0, ss = 0) {
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return null;
+  if (y < 100) y += y >= 70 ? 1900 : 2000; // 26 → 2026, 99 → 1999
+  if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+  // noon avoids DST edge cases
+  const dt = new Date(y, m - 1, d, hh || 0, mi || 0, ss || 0, 0);
+  if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) return null;
+  return dt;
+}
+
 /** Parse loose dates: Excel serial, ISO, slash/dash, YYYYMMDD, 中文年月日 */
 function parseDateLoose(val) {
-  if (val instanceof Date && !Number.isNaN(val.getTime())) return val;
+  if (val instanceof Date && !Number.isNaN(val.getTime())) {
+    return dateFromYmd(val.getFullYear(), val.getMonth() + 1, val.getDate(),
+      val.getHours(), val.getMinutes(), val.getSeconds());
+  }
   if (val == null || val === '') return null;
-  const s = String(val).trim();
-  if (!s) return null;
+  const s0 = String(val).trim();
+  if (!s0) return null;
+  const s = normalizeDateString(s0);
 
   const n = toNumber(s);
-  // Excel serial date (roughly 1900–2100)
+  // Excel serial date (roughly 1900–2100). Build with UTC then read UTC parts.
   if (n != null && n > 20000 && n < 80000 && !/[\/\-年月日]/.test(s) && !/^\d{8}$/.test(s)) {
     const epoch = Date.UTC(1899, 11, 30);
-    const d = new Date(epoch + Math.round(n) * 86400000);
-    if (!Number.isNaN(d.getTime())) return d;
+    const utc = new Date(epoch + Math.round(n) * 86400000);
+    if (!Number.isNaN(utc.getTime())) {
+      return dateFromYmd(utc.getUTCFullYear(), utc.getUTCMonth() + 1, utc.getUTCDate());
+    }
   }
 
-  let m = s.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+  // 2026/7/25 or 2026-07-25 10:30:00
+  let m = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
   if (m) {
-    return new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+    return dateFromYmd(+m[1], +m[2], +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
   }
-  m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+
+  // 7/25/2026 or 25/7/2026 (if day>12 treat as D/M/Y)
+  m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
   if (m) {
-    return new Date(+m[3], +m[1] - 1, +m[2], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+    let a = +m[1];
+    let b = +m[2];
+    let y = +m[3];
+    let month;
+    let day;
+    if (a > 12 && b <= 12) {
+      day = a;
+      month = b; // D/M/Y
+    } else {
+      month = a;
+      day = b; // M/D/Y default
+    }
+    return dateFromYmd(y, month, day, +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
   }
+
   m = s.match(/^(\d{4})年(\d{1,2})月(\d{1,2})日?(?:\s*(\d{1,2})[点时:](\d{1,2})分?(?::?(\d{1,2})秒?)?)?/);
   if (m) {
-    return new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+    return dateFromYmd(+m[1], +m[2], +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
   }
-  m = s.match(/^(\d{4})(\d{2})(\d{2})$/);
-  if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
 
-  const parsed = Date.parse(s);
-  if (!Number.isNaN(parsed)) return new Date(parsed);
+  m = s.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (m) return dateFromYmd(+m[1], +m[2], +m[3]);
+
+  // Avoid locale-unstable Date.parse for bare numeric-looking strings
+  if (/[A-Za-z]/.test(s) || s.includes('T')) {
+    const parsed = Date.parse(s0);
+    if (!Number.isNaN(parsed)) {
+      const dt = new Date(parsed);
+      return dateFromYmd(dt.getFullYear(), dt.getMonth() + 1, dt.getDate(),
+        dt.getHours(), dt.getMinutes(), dt.getSeconds());
+    }
+  }
   return null;
 }
 
@@ -225,47 +276,59 @@ function pad2(n) {
   return String(n).padStart(2, '0');
 }
 
+/**
+ * Excel-like date format. Uses longest-token regex (yyyy before yy, mm before m)
+ * to avoid the old placeholder bug that could scramble digits.
+ */
 function formatDateExcel(d, pattern) {
+  const y = d.getFullYear();
+  const m = d.getMonth() + 1;
+  const day = d.getDate();
+  const h = d.getHours();
+  const mi = d.getMinutes();
+  const sec = d.getSeconds();
   const map = {
-    yyyy: String(d.getFullYear()),
-    YYYY: String(d.getFullYear()),
-    yy: String(d.getFullYear()).slice(-2),
-    YY: String(d.getFullYear()).slice(-2),
-    mm: pad2(d.getMonth() + 1),
-    MM: pad2(d.getMonth() + 1),
-    m: String(d.getMonth() + 1),
-    dd: pad2(d.getDate()),
-    DD: pad2(d.getDate()),
-    d: String(d.getDate()),
-    hh: pad2(d.getHours()),
-    HH: pad2(d.getHours()),
-    h: String(d.getHours()),
-    mi: pad2(d.getMinutes()),
-    ss: pad2(d.getSeconds()),
-    SS: pad2(d.getSeconds())
+    yyyy: String(y),
+    YYYY: String(y),
+    yy: String(y).slice(-2),
+    YY: String(y).slice(-2),
+    mm: pad2(m),
+    MM: pad2(m),
+    m: String(m),
+    dd: pad2(day),
+    DD: pad2(day),
+    d: String(day),
+    hh: pad2(h),
+    HH: pad2(h),
+    h: String(h),
+    mi: pad2(mi),
+    ss: pad2(sec),
+    SS: pad2(sec)
   };
-  // Protect tokens then replace longest first
-  let out = String(pattern);
-  const keys = Object.keys(map).sort((a, b) => b.length - a.length);
-  const slots = [];
-  keys.forEach((k, idx) => {
-    const token = `__D${idx}__`;
-    if (out.includes(k)) {
-      out = out.split(k).join(token);
-      slots.push([token, map[k]]);
-    }
-  });
-  slots.forEach(([token, val]) => {
-    out = out.split(token).join(val);
-  });
-  return out;
+  // Longest alternatives first — critical so yyyy wins over yy
+  return String(pattern).replace(
+    /yyyy|YYYY|yy|YY|mm|MM|dd|DD|hh|HH|mi|ss|SS|m|d|h/g,
+    (tok) => (Object.prototype.hasOwnProperty.call(map, tok) ? map[tok] : tok)
+  );
 }
 
 function isDatePattern(pattern) {
   const p = String(pattern || '');
   if (!p) return false;
   if (/^[#0,\.Ee%]+$/.test(p)) return false;
-  return /y|Y|年|月|日|m{1,2}|d{1,2}|h{1,2}|mi|ss|SS/.test(p);
+  // must contain a date token, not just any letter m/d from random text
+  return /yyyy|YYYY|yy|YY|mm|MM|dd|DD|年|月|日|(?:^|[^a-zA-Z])m(?:[^a-zA-Z]|$)|(?:^|[^a-zA-Z])d(?:[^a-zA-Z]|$)/.test(p)
+    || /^(y|m|d|Y|M|D|h|H|s|S|年|月|日|\/|\-|:|\s)+$/.test(p);
+}
+
+/** True when text is a FORMAT/TEXT pattern literal, not an expression */
+function isFormatPatternLiteral(s) {
+  const t = unquote(String(s || '').trim());
+  if (!t) return false;
+  if (isDatePattern(t)) return true;
+  if (/^[#0,\.Ee%]+$/.test(t)) return true;
+  if (/^0+\.0+$/.test(t) || t === '0.00' || t === '#,##0.00') return true;
+  return false;
 }
 
 function formatNumberExcel(n, pattern) {
@@ -509,8 +572,24 @@ function evalExpr(input, ctx) {
       const elseV = evalExpr(parts[2] != null ? parts[2] : '', ctx);
       return callFunc('IF', [cond, thenV, elseV], ctx);
     }
+    // FORMAT/TEXT: last argument is always a pattern literal (yyyy-mm-dd / 0000), never an expression
+    if (/^(format|text)$/i.test(call.name)) {
+      const parts = splitArgs(call.inner);
+      if (parts.length >= 2) {
+        const valueExpr = parts[0];
+        const patternLit = unquote(parts[parts.length - 1] || '');
+        const value = valueExpr === '' ? (ctx.value == null ? '' : String(ctx.value)) : evalExpr(valueExpr, ctx);
+        return formatValue(value, patternLit);
+      }
+      if (parts.length === 1) {
+        return formatValue(ctx.value, unquote(parts[0] || ''));
+      }
+      return ctx.value == null ? '' : String(ctx.value);
+    }
     const argVals = splitArgs(call.inner).map((a) => {
-      if (a === '') return ''; // explicit empty = current value placeholder for FORMAT(,pat)
+      if (a === '') return ''; // explicit empty = current value placeholder
+      // format-like literals kept as-is when passed into other funcs
+      if (isFormatPatternLiteral(a)) return unquote(a);
       return evalExpr(a, ctx);
     });
     // For unary text funcs with empty first arg, callFunc uses current value
@@ -829,10 +908,7 @@ function buildPrintCode(tpl, data, uniqueId, labelType) {
             r, c, rowspan: 1, colspan: 1,
             contentType: 'text',
             segments: [{ type: 'text', value: '' }],
-            text: '',
-            fontSize: 10,
-            align: 'center',
-            bold: false
+            text: '', fontSize: 10, align: 'center', bold: false
           });
         }
       }
@@ -853,9 +929,7 @@ function buildPrintCode(tpl, data, uniqueId, labelType) {
 
   function resizePercents(arr, count) {
     const n = Math.max(1, Number(count) || 1);
-    const cur = Array.isArray(arr)
-      ? arr.map(Number).filter((v) => Number.isFinite(v) && v > 0)
-      : [];
+    const cur = Array.isArray(arr) ? arr.map(Number).filter((v) => Number.isFinite(v) && v > 0) : [];
     if (!cur.length) return Array.from({ length: n }, () => 100 / n);
     if (cur.length === n) return normalizePercents(cur, n);
     if (cur.length > n) return normalizePercents(cur.slice(0, n), n);
@@ -871,9 +945,7 @@ function buildPrintCode(tpl, data, uniqueId, labelType) {
     const v = Math.max(5, Math.min(95, Number(value) || 5));
     const others = next.reduce((s, x, i) => (i === idx ? s : s + x), 0);
     const remain = 100 - v;
-    if (others <= 0) {
-      return next.map((_, i) => (i === idx ? v : remain / (n - 1)));
-    }
+    if (others <= 0) return next.map((_, i) => (i === idx ? v : remain / (n - 1)));
     return next.map((x, i) => (i === idx ? v : (x / others) * remain));
   }
 
@@ -887,27 +959,11 @@ function buildPrintCode(tpl, data, uniqueId, labelType) {
   }
 
   global.Expr = {
-    FORMULA_CATALOG,
-    getField,
-    applyFormula,
-    evalSegments,
-    evalTemplateText,
-    resolveElementContent,
-    resolveCellContent,
-    segmentsPreview,
-    scanIdField,
-    segmentsIncludeScanId,
-    ensureScanIdInSegments,
-    buildPrintCode,
-    formatValue,
-    parseDateLoose,
-    evalExpr,
-    buildOccupiedMap,
-    ensureTableCells,
-    normalizePercents,
-    resizePercents,
-    setPercentAt,
-    ensureTableLayout
+    FORMULA_CATALOG, getField, applyFormula, evalSegments, evalTemplateText,
+    resolveElementContent, resolveCellContent, segmentsPreview, scanIdField,
+    segmentsIncludeScanId, ensureScanIdInSegments, buildPrintCode, formatValue,
+    parseDateLoose, evalExpr, buildOccupiedMap, ensureTableCells, normalizePercents,
+    resizePercents, setPercentAt, ensureTableLayout
   };
 
 })(window);
