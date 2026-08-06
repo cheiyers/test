@@ -7,13 +7,15 @@ echo ========================================
 echo   BOM 扫码质量监管系统 - 一键配置环境
 echo ========================================
 echo.
-echo 本脚本将自动完成:
-echo   1) 检查 Node.js (需要 22 或更高)
-echo   2) 配置 npm 国内镜像
-echo   3) 清理并安装项目依赖
+echo 通用版说明:
+echo   - 使用 Node 内置 SQLite，无需 Visual Studio
+echo   - 无需编译 better-sqlite3 原生模块
+echo   - 需要 Node.js 22.5 或更高 (x64)
 echo.
-echo 说明: 已改用 better-sqlite3 v13 (N-API)，
-echo       一般无需安装 Visual Studio 编译工具。
+echo 本脚本将自动完成:
+echo   1) 检查 / 安装 Node.js
+echo   2) 配置 npm 国内镜像
+echo   3) 安装项目依赖 (纯 JS)
 echo.
 
 call :RefreshPath
@@ -30,7 +32,7 @@ call npm config set registry https://registry.npmmirror.com >nul 2>nul
 echo [OK] registry = https://registry.npmmirror.com
 echo.
 
-echo [3/3] 安装项目依赖，首次可能需要几分钟，请勿关闭窗口...
+echo [3/3] 安装项目依赖...
 echo.
 
 if exist "node_modules" (
@@ -39,27 +41,17 @@ if exist "node_modules" (
   if exist "node_modules" (
     echo.
     echo [错误] 无法删除 node_modules，文件被占用。
-    echo 请关闭所有黑窗口 / 杀毒软件扫描后，手动删除该文件夹，再重试。
+    echo 请关闭所有黑窗口后，手动删除该文件夹再重试。
     echo 路径: %CD%\node_modules
     goto FAIL
   )
-)
-if exist "package-lock.json" (
-  REM keep lockfile from repo; do not delete
-  echo 将使用项目自带的 package-lock.json
 )
 
 call npm install
 if errorlevel 1 (
   echo.
-  echo [错误] 依赖安装失败。
-  echo.
-  echo 若仍出现 better-sqlite3 / node-gyp / Visual Studio 错误:
-  echo   1) 确认已拉取最新代码 (better-sqlite3 应为 13.x)
-  echo   2) 删除 node_modules 后重试本脚本
-  echo   3) Node 需要 22 或更高 (你当前是 !NODE_VER!)
-  echo.
-  echo 若出现 EPERM 删除失败: 关闭占用文件的程序后重试
+  echo [错误] 依赖安装失败。请检查网络后重试。
+  echo 也可手动执行: npm install
   goto FAIL
 )
 
@@ -94,10 +86,17 @@ where node >nul 2>nul
 if errorlevel 1 goto InstallNode
 
 for /f "tokens=1 delims=v" %%a in ('node -v') do set "VER_BODY=%%a"
-for /f "tokens=1 delims=." %%a in ("!VER_BODY!") do set "MAJOR=%%a"
+for /f "tokens=1,2 delims=." %%a in ("!VER_BODY!") do (
+  set "MAJOR=%%a"
+  set "MINOR=%%b"
+)
 if "!MAJOR!"=="" set MAJOR=0
-if !MAJOR! LSS 22 (
-  echo [警告] 当前 Node.js 版本过低，需要 22 或更高，尝试安装/升级...
+if "!MINOR!"=="" set MINOR=0
+set NEED_INSTALL=0
+if !MAJOR! LSS 22 set NEED_INSTALL=1
+if !MAJOR! EQU 22 if !MINOR! LSS 5 set NEED_INSTALL=1
+if !NEED_INSTALL! EQU 1 (
+  echo [警告] 当前 Node.js 版本过低，需要 22.5+，尝试安装/升级...
   goto InstallNode
 )
 echo [1/3] 已检测到可用 Node.js，跳过安装
@@ -124,20 +123,13 @@ if errorlevel 1 (
   echo 请关闭本窗口后，重新双击 一键配置环境.bat 继续。
   exit /b 1
 )
-
-for /f "tokens=1 delims=v" %%a in ('node -v') do set "VER_BODY=%%a"
-for /f "tokens=1 delims=." %%a in ("!VER_BODY!") do set "MAJOR=%%a"
-if !MAJOR! LSS 22 (
-  echo [错误] 安装后 Node 版本仍低于 22，请手动安装: https://nodejs.org
-  exit /b 1
-)
 exit /b 0
 
 :ManualNode
 echo 无法自动安装，正在打开 Node.js 官网下载页...
 start "" "https://nodejs.org/zh-cn/download"
 echo.
-echo 请下载并安装 Windows x64 版本 (22 LTS 或更新)，勾选 Add to PATH，
+echo 请下载并安装 Windows x64 (22.5 或更高)，勾选 Add to PATH，
 echo 安装完成后重新双击 一键配置环境.bat。
 exit /b 1
 

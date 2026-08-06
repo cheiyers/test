@@ -2,19 +2,9 @@
 
 const fs = require('fs');
 const path = require('path');
-let Database;
-try {
-  Database = require('better-sqlite3');
-} catch (err) {
-  console.error('');
-  console.error('[错误] 无法加载 better-sqlite3（数据库驱动）。');
-  console.error('请删除项目中的 node_modules 后，双击「一键配置环境.bat」重新安装。');
-  console.error('需要 Node.js 22 或更高。原始错误:', err.message);
-  console.error('');
-  process.exit(1);
-}
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
+const { openDatabase } = require('./sqlite');
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const DB_PATH = path.join(DATA_DIR, 'qc.db');
@@ -27,7 +17,7 @@ function ensureDirs() {
 
 function openDb() {
   ensureDirs();
-  const db = new Database(DB_PATH);
+  const db = openDatabase(DB_PATH);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   return db;
