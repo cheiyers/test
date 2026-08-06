@@ -1,10 +1,10 @@
 (function (global) {
 const FORMULA_CATALOG = [
   { value: '', label: '无（原值）', hint: '不做变换' },
-  { value: 'FORMAT(,"yyyy-mm-dd")', label: '日期格式 FORMAT(,"yyyy-mm-dd")', hint: '不规范日期→标准日期，同 Excel TEXT' },
-  { value: 'FORMAT(,"yyyy/mm/dd")', label: '日期 FORMAT(,"yyyy/mm/dd")', hint: '输出 2024/01/05' },
-  { value: 'FORMAT(,"yyyy年mm月dd日")', label: '中文日期 FORMAT(,"yyyy年mm月dd日")', hint: '输出 2024年01月05日' },
-  { value: 'FORMAT(,"yyyymmdd")', label: '紧凑日期 FORMAT(,"yyyymmdd")', hint: '输出 20240105' },
+  { value: 'FORMAT(,"yyyy-mm-dd")', label: '日期格式 FORMAT(,"yyyy-mm-dd")', hint: '2026/7/25 → 2026-07-25' },
+  { value: 'FORMAT(,"yyyy/mm/dd")', label: '日期 FORMAT(,"yyyy/mm/dd")', hint: '2026/7/25 → 2026/07/25' },
+  { value: 'FORMAT(,"yyyy年mm月dd日")', label: '中文日期 FORMAT(,"yyyy年mm月dd日")', hint: '2026/7/25 → 2026年07月25日' },
+  { value: 'FORMAT(,"yyyymmdd")', label: '紧凑日期 FORMAT(,"yyyymmdd")', hint: '2026/7/25 → 20260725（不会错成 2001…）' },
   { value: 'FORMAT(,"0000")', label: '数字补零 FORMAT(,"0000")', hint: '同 Excel 数字格式' },
   { value: 'FORMAT(,"0.00")', label: '小数 FORMAT(,"0.00")', hint: '保留两位小数' },
   { value: 'TEXT(,"yyyy-mm-dd")', label: 'TEXT(,"yyyy-mm-dd")', hint: 'FORMAT 同义，贴近 Excel' },
@@ -872,7 +872,6 @@ function buildPrintCode(tpl, data, uniqueId, labelType) {
 }
 
 
-
   function segmentsPreview(segments) {
     if (!Array.isArray(segments) || !segments.length) return '';
     return segments.map((s) => {
@@ -965,5 +964,6 @@ function buildPrintCode(tpl, data, uniqueId, labelType) {
     parseDateLoose, evalExpr, buildOccupiedMap, ensureTableCells, normalizePercents,
     resizePercents, setPercentAt, ensureTableLayout
   };
+
 
 })(window);
