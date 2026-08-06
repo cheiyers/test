@@ -7,7 +7,6 @@
     "prestart": "node scripts/ensure-deps.js",
     "start": "node server/index.js",
     "dev": "node scripts/ensure-deps.js && node server/index.js",
-    "init-db": "node server/init-db.js",
     "check": "node scripts/ensure-deps.js"
   },
   "engines": {
