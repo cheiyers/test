@@ -9,6 +9,7 @@ const path = require('path');
 const root = path.join(__dirname, '..');
 const nodeModules = path.join(root, 'node_modules');
 const sqlitePkg = path.join(nodeModules, 'better-sqlite3');
+const MIN_NODE = 22;
 
 function fail(lines) {
   console.error('');
@@ -22,20 +23,17 @@ function fail(lines) {
 }
 
 const major = Number(process.versions.node.split('.')[0]);
-if (!Number.isFinite(major) || major < 18) {
+if (!Number.isFinite(major) || major < MIN_NODE) {
   fail([
-    `当前 Node.js 版本为 ${process.version}，需要 18 或更高。`,
-    '请到 https://nodejs.org 下载安装 LTS 版本后重开终端再试。'
+    `当前 Node.js 版本为 ${process.version}，需要 ${MIN_NODE} 或更高。`,
+    '请双击「一键配置环境.bat」，或到 https://nodejs.org 安装 LTS / 当前版本后重开终端。'
   ]);
 }
 
 if (!fs.existsSync(nodeModules) || !fs.existsSync(sqlitePkg)) {
   fail([
     '尚未安装依赖（缺少 node_modules）。',
-    '请在项目根目录依次执行：',
-    '  1) npm install',
-    '  2) npm start',
-    'Windows 也可双击 start.bat（会自动安装依赖）。'
+    '请双击「一键配置环境.bat」，或在项目根目录执行 npm install。'
   ]);
 }
 
@@ -48,19 +46,17 @@ try {
     '依赖 better-sqlite3（SQLite）加载失败。',
     `详情: ${msg}`,
     '',
-    '常见原因与处理：',
-    '1) 从别的电脑直接拷贝了 node_modules → 请删除本机 node_modules 后重新 npm install',
-    '2) npm install 未成功完成 → 在项目根目录重新执行 npm install',
-    '3) Windows 缺少编译环境且无匹配预编译包 → 安装「Visual Studio Build Tools」',
-    '   （勾选“使用 C++ 的桌面开发”），或改用官方 Node.js LTS x64 安装包后再 npm install',
-    '4) Node 版本刚升级 → 删除 node_modules 后重新 npm install'
+    '请关闭所有相关窗口后：',
+    '1) 删除项目里的 node_modules 文件夹',
+    '2) 再双击「一键配置环境.bat」重新安装',
+    '（不要从别的电脑直接拷贝 node_modules）'
   ]);
 }
 
 if (!fs.existsSync(path.join(nodeModules, 'express'))) {
   fail([
     '依赖不完整（缺少 express 等包）。',
-    '请删除 node_modules 后重新执行：npm install'
+    '请删除 node_modules 后重新双击「一键配置环境.bat」。'
   ]);
 }
 

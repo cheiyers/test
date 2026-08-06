@@ -11,14 +11,14 @@
     "check": "node scripts/ensure-deps.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
-    "better-sqlite3": "^11.8.1",
+    "better-sqlite3": "^13.0.3",
     "cors": "^2.8.5",
     "express": "^4.21.2",
-    "multer": "^1.4.5-lts.1",
+    "multer": "^2.2.0",
     "uuid": "^11.0.5",
     "xlsx": "^0.18.5"
   }

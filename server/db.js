@@ -8,9 +8,8 @@ try {
 } catch (err) {
   console.error('');
   console.error('[错误] 无法加载 better-sqlite3（数据库驱动）。');
-  console.error('请在项目根目录删除 node_modules 后重新执行: npm install');
-  console.error('若在 Windows 上编译失败，请安装 Visual Studio Build Tools（勾选 C++ 桌面开发）。');
-  console.error('原始错误:', err.message);
+  console.error('请删除项目中的 node_modules 后，双击「一键配置环境.bat」重新安装。');
+  console.error('需要 Node.js 22 或更高。原始错误:', err.message);
   console.error('');
   process.exit(1);
 }
