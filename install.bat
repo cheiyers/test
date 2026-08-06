@@ -1,5 +1,16 @@
 @echo off
-REM 兼容旧入口：转到「一键配置环境.bat」
 cd /d "%~dp0"
-call "%~dp0一键配置环境.bat"
-exit /b %ERRORLEVEL%
+echo.
+echo Starting setup, please wait...
+echo.
+call "%~dp0setup-env.bat"
+set ERR=%ERRORLEVEL%
+echo.
+if "%ERR%"=="0" (
+  echo Setup finished.
+) else (
+  echo Setup failed. See messages above.
+)
+echo.
+pause
+exit /b %ERR%
