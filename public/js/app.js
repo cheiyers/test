@@ -10,8 +10,8 @@
   };
 
   const ROLE_MENUS = {
-    admin: ['home', 'bom', 'orders', 'templates', 'print', 'scan', 'history'],
-    importer: ['home', 'bom', 'orders', 'templates', 'print', 'history'],
+    admin: ['home', 'bom', 'orders', 'count', 'templates', 'print', 'scan', 'history'],
+    importer: ['home', 'bom', 'orders', 'count', 'templates', 'print', 'history'],
     scanner: ['home', 'scan', 'history']
   };
 
@@ -19,9 +19,10 @@
     home: '首页',
     bom: 'BOM 管理',
     orders: '订单关联',
+    count: '计数订单',
     templates: '标签模板',
     print: '生成打印',
-    scan: '扫码入库',
+    scan: '扫码',
     history: '记录报表'
   };
 
@@ -48,7 +49,11 @@
       unmatched: ['未匹配', 'warn'],
       draft: ['草稿', 'muted'],
       associated: ['已关联', 'info'],
-      labelled: ['已生成标签', 'ok']
+      labelled: ['已生成标签', 'ok'],
+      ready: ['可计数', 'info'],
+      done: ['已完成', 'ok'],
+      counting: ['计数中', 'info'],
+      skipped: ['已跳过', 'muted']
     };
     const [text, cls] = map[status] || [status, 'muted'];
     return `<span class="tag ${cls}">${text}</span>`;
@@ -163,6 +168,7 @@
       if (page === 'home') await renderHome(root);
       else if (page === 'bom') await renderBom(root);
       else if (page === 'orders') await renderOrders(root);
+      else if (page === 'count') await renderCount(root);
       else if (page === 'templates') await renderTemplates(root);
       else if (page === 'print') await renderPrint(root);
       else if (page === 'scan') await renderScan(root);
@@ -1040,9 +1046,309 @@
     }
   }
 
+  // ---------------- Count orders ----------------
+  async function renderCount(root) {
+    if (!canImport()) {
+      root.innerHTML = `<div class="card"><div class="flash warn">仅导入员/管理员可配置计数订单；扫码员请到「扫码 → 计数扫码」。</div></div>`;
+      return;
+    }
+
+    const list = await API.get('/count/batches');
+    root.innerHTML = `
+      <div class="card">
+        <h2>计数订单</h2>
+        <p class="muted">导入订单 → 配置公式衍生列（如数量÷箱规得整箱/余数）→ 指定识别列与目标数量列 → 到「扫码 / 计数扫码」按行累计。</p>
+        <div id="countFlash"></div>
+        <div class="row" style="align-items:end;gap:12px;flex-wrap:wrap">
+          <label class="field"><span>批次名称</span><input id="countName" placeholder="例如：8月出货计数" /></label>
+          <label class="field"><span>订单 Excel</span><input id="countFile" type="file" accept=".xlsx,.xls,.csv" /></label>
+          <button class="btn" id="countCreateBtn" type="button">导入创建</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>批次列表</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>名称</th><th>状态</th><th>进度</th><th>时间</th><th></th></tr></thead>
+            <tbody>
+              ${(list.items || []).map((b) => `
+                <tr>
+                  <td>${escapeHtml(b.name)}</td>
+                  <td>${statusTag(b.status)}</td>
+                  <td>${b.stats?.complete || 0}/${b.stats?.total || 0}</td>
+                  <td class="muted">${escapeHtml(b.created_at || '')}</td>
+                  <td><button class="btn secondary" data-open-count="${b.id}" type="button">配置</button></td>
+                </tr>`).join('') || '<tr><td colspan="5" class="muted">暂无计数批次</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div id="countDetail"></div>
+    `;
+
+    $('#countCreateBtn', root).addEventListener('click', async () => {
+      const file = $('#countFile', root).files?.[0];
+      if (!file) return flash($('#countFlash', root), '请选择 Excel 文件', 'error');
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('name', $('#countName', root).value.trim() || file.name);
+      try {
+        const res = await API.upload('/count/create', fd);
+        flash($('#countFlash', root), '导入成功，请配置公式列', 'success');
+        await openCountBatch(res.id);
+      } catch (err) {
+        flash($('#countFlash', root), err.message, 'error');
+      }
+    });
+
+    $$('[data-open-count]', root).forEach((btn) => {
+      btn.addEventListener('click', () => openCountBatch(btn.dataset.openCount));
+    });
+
+    async function openCountBatch(id) {
+      const detail = await API.get(`/count/batches/${id}`);
+      const batch = detail.batch;
+      const cfg = batch.config || {};
+      const derived = Array.isArray(cfg.derived) ? cfg.derived : [];
+      const headers = batch.headers || [];
+      const panel = $('#countDetail', root);
+      panel.innerHTML = `
+        <div class="card">
+          <div class="row" style="justify-content:space-between;align-items:center">
+            <h3>${escapeHtml(batch.name)} ${statusTag(batch.status)}</h3>
+            <div class="row">
+              <button class="btn secondary" id="countResetBtn" type="button">重置计数进度</button>
+              <button class="btn secondary" id="countDelBtn" type="button">删除批次</button>
+            </div>
+          </div>
+          <p class="muted">原列：${headers.map(escapeHtml).join('、') || '-'}</p>
+
+          <h4 style="margin-top:14px">1）公式衍生列</h4>
+          <p class="muted">可添加多组：按源列÷除数生成「整商列 + 余数列」；也可加表达式列。条件不满足时该衍生列为空。</p>
+          <div id="derivedList"></div>
+          <div class="row" style="margin-top:8px">
+            <button class="btn secondary" id="addDivModBtn" type="button">+ 整除拆分列</button>
+            <button class="btn secondary" id="addExprBtn" type="button">+ 表达式列</button>
+          </div>
+
+          <h4 style="margin-top:18px">2）计数扫码字段</h4>
+          <div class="row" style="flex-wrap:wrap;gap:12px">
+            <label class="field"><span>扫码识别列（匹配条码内容）</span>
+              <select id="scanCodeField"></select>
+            </label>
+            <label class="field"><span>目标数量列（累计到达即满足）</span>
+              <select id="qtyField"></select>
+            </label>
+          </div>
+
+          <div class="row" style="margin-top:14px">
+            <button class="btn" id="saveCountCfgBtn" type="button">保存并计算</button>
+          </div>
+          <div id="countCfgFlash" style="margin-top:10px"></div>
+
+          <h4 style="margin-top:18px">预览（最多 50 行）</h4>
+          <div class="table-wrap" id="countPreview"></div>
+        </div>
+      `;
+
+      let rules = derived.map((r) => ({ ...r }));
+
+      function fieldOptions(selected) {
+        const derivedNames = [];
+        rules.forEach((r) => {
+          if (r.type === 'div_mod') {
+            if (r.quotient_name) derivedNames.push(r.quotient_name);
+            if (r.remainder_name) derivedNames.push(r.remainder_name);
+          } else if (r.type === 'expr' && r.name) derivedNames.push(r.name);
+        });
+        const all = [...headers, ...derivedNames.filter((n, i, a) => n && a.indexOf(n) === i)];
+        return `<option value="">请选择</option>${all.map((h) =>
+          `<option value="${escapeHtml(h)}" ${h === selected ? 'selected' : ''}>${escapeHtml(h)}</option>`
+        ).join('')}`;
+      }
+
+      function refreshFieldSelects() {
+        const scanSel = $('#scanCodeField', panel);
+        const qtySel = $('#qtyField', panel);
+        const s = scanSel.value || cfg.scan_code_field || '';
+        const q = qtySel.value || cfg.qty_field || '';
+        scanSel.innerHTML = fieldOptions(s);
+        qtySel.innerHTML = fieldOptions(q);
+      }
+
+      function renderRules() {
+        const box = $('#derivedList', panel);
+        box.innerHTML = rules.map((r, idx) => {
+          if (r.type === 'div_mod') {
+            return `<div class="derived-card" data-idx="${idx}">
+              <div class="row" style="justify-content:space-between"><strong>整除拆分 #${idx + 1}</strong>
+                <button class="btn secondary" data-del="${idx}" type="button">删除</button></div>
+              <div class="row" style="flex-wrap:wrap;gap:8px;margin-top:8px">
+                <label class="field"><span>源列</span>
+                  <select data-k="source_field">${headers.map((h) =>
+                    `<option value="${escapeHtml(h)}" ${h === r.source_field ? 'selected' : ''}>${escapeHtml(h)}</option>`
+                  ).join('')}</select>
+                </label>
+                <label class="field"><span>除数</span><input data-k="divisor" type="number" value="${escapeHtml(r.divisor ?? 1)}" /></label>
+                <label class="field"><span>商列名</span><input data-k="quotient_name" value="${escapeHtml(r.quotient_name || '')}" placeholder="如：整箱数" /></label>
+                <label class="field"><span>余数列名</span><input data-k="remainder_name" value="${escapeHtml(r.remainder_name || '')}" placeholder="如：余数" /></label>
+              </div>
+              <div class="row" style="flex-wrap:wrap;gap:8px;margin-top:8px">
+                <label class="field"><span>条件列（可选）</span>
+                  <select data-k="cond_field"><option value="">无条件</option>${headers.map((h) =>
+                    `<option value="${escapeHtml(h)}" ${r.condition?.field === h ? 'selected' : ''}>${escapeHtml(h)}</option>`
+                  ).join('')}</select>
+                </label>
+                <label class="field"><span>条件</span>
+                  <select data-k="cond_op">
+                    ${[['eq','等于'],['neq','不等于'],['contains','包含'],['gt','大于'],['gte','大于等于'],['lt','小于'],['lte','小于等于']].map(([v,l]) =>
+                      `<option value="${v}" ${(r.condition?.op || 'eq') === v ? 'selected' : ''}>${l}</option>`
+                    ).join('')}
+                  </select>
+                </label>
+                <label class="field"><span>条件值</span><input data-k="cond_value" value="${escapeHtml(r.condition?.value || '')}" /></label>
+              </div>
+            </div>`;
+          }
+          return `<div class="derived-card" data-idx="${idx}">
+            <div class="row" style="justify-content:space-between"><strong>表达式列 #${idx + 1}</strong>
+              <button class="btn secondary" data-del="${idx}" type="button">删除</button></div>
+            <div class="row" style="flex-wrap:wrap;gap:8px;margin-top:8px">
+              <label class="field"><span>列名</span><input data-k="name" value="${escapeHtml(r.name || '')}" placeholder="自定义列名" /></label>
+              <label class="field" style="flex:2"><span>公式（可用 FIELD("列名")）</span>
+                <input data-k="formula" value="${escapeHtml(r.formula || '')}" placeholder='例如 IF(FIELD("数量")>0,FIELD("数量"),0)' /></label>
+            </div>
+          </div>`;
+        }).join('') || '<div class="muted">尚未添加衍生列</div>';
+
+        $$('[data-del]', box).forEach((btn) => {
+          btn.addEventListener('click', () => {
+            rules.splice(Number(btn.dataset.del), 1);
+            renderRules();
+            refreshFieldSelects();
+          });
+        });
+        $$('.derived-card', box).forEach((card) => {
+          const idx = Number(card.dataset.idx);
+          card.addEventListener('change', syncRuleFromCard);
+          card.addEventListener('input', syncRuleFromCard);
+          function syncRuleFromCard() {
+            const r = rules[idx];
+            if (!r) return;
+            if (r.type === 'div_mod') {
+              r.source_field = $('[data-k="source_field"]', card)?.value || '';
+              r.divisor = $('[data-k="divisor"]', card)?.value || '';
+              r.quotient_name = $('[data-k="quotient_name"]', card)?.value || '';
+              r.remainder_name = $('[data-k="remainder_name"]', card)?.value || '';
+              const cf = $('[data-k="cond_field"]', card)?.value || '';
+              if (cf) {
+                r.condition = {
+                  field: cf,
+                  op: $('[data-k="cond_op"]', card)?.value || 'eq',
+                  value: $('[data-k="cond_value"]', card)?.value || ''
+                };
+              } else {
+                delete r.condition;
+              }
+            } else {
+              r.name = $('[data-k="name"]', card)?.value || '';
+              r.formula = $('[data-k="formula"]', card)?.value || '';
+            }
+            refreshFieldSelects();
+          }
+        });
+        refreshFieldSelects();
+      }
+
+      function renderPreview(rows) {
+        const cols = [];
+        headers.forEach((h) => cols.push(h));
+        rules.forEach((r) => {
+          if (r.type === 'div_mod') {
+            if (r.quotient_name) cols.push(r.quotient_name);
+            if (r.remainder_name) cols.push(r.remainder_name);
+          } else if (r.name) cols.push(r.name);
+        });
+        const uniq = [...new Set(cols)];
+        $('#countPreview', panel).innerHTML = `
+          <table>
+            <thead><tr><th>#</th>${uniq.map((c) => `<th>${escapeHtml(c)}</th>`).join('')}
+              <th>识别码</th><th>目标</th><th>已扫</th><th>状态</th></tr></thead>
+            <tbody>
+              ${(rows || []).map((row) => `
+                <tr>
+                  <td>${row.line_no}</td>
+                  ${uniq.map((c) => `<td>${escapeHtml(row.computed?.[c] ?? row.raw?.[c] ?? '')}</td>`).join('')}
+                  <td>${escapeHtml(row.scan_code || '')}</td>
+                  <td>${row.target_qty}</td>
+                  <td>${row.scanned_count}</td>
+                  <td>${statusTag(row.status)}</td>
+                </tr>`).join('') || '<tr><td class="muted" colspan="99">无数据</td></tr>'}
+            </tbody>
+          </table>`;
+      }
+
+      renderRules();
+      renderPreview(detail.rows || []);
+
+      $('#addDivModBtn', panel).addEventListener('click', () => {
+        rules.push({
+          type: 'div_mod',
+          source_field: headers[0] || '',
+          divisor: 1,
+          quotient_name: '整商',
+          remainder_name: '余数'
+        });
+        renderRules();
+      });
+      $('#addExprBtn', panel).addEventListener('click', () => {
+        rules.push({ type: 'expr', name: '', formula: '' });
+        renderRules();
+      });
+
+      $('#saveCountCfgBtn', panel).addEventListener('click', async () => {
+        // sync latest inputs
+        $$('.derived-card', panel).forEach((card) => {
+          card.dispatchEvent(new Event('change'));
+        });
+        try {
+          const res = await API.put(`/count/batches/${id}/config`, {
+            derived: rules,
+            scan_code_field: $('#scanCodeField', panel).value,
+            qty_field: $('#qtyField', panel).value
+          });
+          flash($('#countCfgFlash', panel), '已保存并重新计算', 'success');
+          renderPreview(res.rows || []);
+          // refresh list status lightly
+          await renderCount(root);
+          await openCountBatch(id);
+        } catch (err) {
+          flash($('#countCfgFlash', panel), err.message, 'error');
+        }
+      });
+
+      $('#countResetBtn', panel).addEventListener('click', async () => {
+        if (!confirm('确认重置本批次全部计数进度？')) return;
+        await API.post(`/count/batches/${id}/reset-progress`, {});
+        flash($('#countCfgFlash', panel), '进度已重置', 'info');
+        openCountBatch(id);
+      });
+      $('#countDelBtn', panel).addEventListener('click', async () => {
+        if (!confirm('确认删除该计数批次？')) return;
+        await API.del(`/count/batches/${id}`);
+        await renderCount(root);
+      });
+    }
+  }
+
   // ---------------- Scan ----------------
   async function renderScan(root) {
-    let mode = 'inbound'; // inbound | lookup
+    let mode = 'inbound'; // inbound | lookup | count
+    let countBatchId = state.countBatchId || null;
+    let countBusy = false;
+    let scanTimer = null;
+
+    const batches = await API.get('/count/batches').catch(() => ({ items: [] }));
 
     root.innerHTML = `
       <div class="card">
@@ -1050,16 +1356,27 @@
         <div class="mode-tabs" id="scanModeTabs">
           <button type="button" class="mode-tab active" data-mode="inbound">扫码入库</button>
           <button type="button" class="mode-tab" data-mode="lookup">扫码查单</button>
+          <button type="button" class="mode-tab" data-mode="count">计数扫码</button>
         </div>
-        <p class="muted" id="scanModeHint">先扫总包，再扫配件；配件无顺序、不可重复。齐套后扫下一总包不会再误报缺漏。同一总包勿重复扫；已齐套再扫会提示已齐套。</p>
+        <p class="muted" id="scanModeHint">扫描枪输入后回车自动提交，无需再点确认。</p>
         <div id="scanFlash"></div>
         <div class="scan-hero">
           <div>
-            <label class="field"><span>扫描枪输入（回车提交）</span>
+            <div id="countBatchBar" class="hidden" style="margin-bottom:10px">
+              <label class="field"><span>计数批次</span>
+                <select id="countBatchSel">
+                  <option value="">请选择批次</option>
+                  ${(batches.items || []).map((b) =>
+                    `<option value="${b.id}" ${b.id === countBatchId ? 'selected' : ''}>${escapeHtml(b.name)}（${b.stats?.complete || 0}/${b.stats?.total || 0}）</option>`
+                  ).join('')}
+                </select>
+              </label>
+            </div>
+            <label class="field"><span>扫描枪输入（回车自动提交）</span>
               <input class="scan-input" id="scanCode" placeholder="请扫描条码/二维码" autocomplete="off" />
             </label>
             <div class="row" style="margin-top:10px">
-              <button class="btn" id="scanBtn" type="button">确认</button>
+              <button class="btn secondary hidden" id="scanBtn" type="button">手动确认</button>
               <button class="btn secondary" id="clearPkgBtn" type="button">清空当前总包</button>
             </div>
           </div>
@@ -1078,13 +1395,21 @@
       });
       const hint = $('#scanModeHint', root);
       const clearBtn = $('#clearPkgBtn', root);
+      const batchBar = $('#countBatchBar', root);
       if (mode === 'lookup') {
-        hint.textContent = '扫码查单：扫描总包或配件码，查看订单信息与齐套进度，不改变入库状态。';
+        hint.textContent = '扫码查单：扫描后自动查询，不改变入库状态。';
         clearBtn.style.display = 'none';
+        batchBar.classList.add('hidden');
         renderLookup(null);
+      } else if (mode === 'count') {
+        hint.textContent = '计数扫码：按当前订单行识别码累计；达到目标数量后提示「已满足」并自动进入下一行。扫码回车即提交。';
+        clearBtn.style.display = 'none';
+        batchBar.classList.remove('hidden');
+        loadCountCurrent();
       } else {
-        hint.textContent = '先扫总包，再扫配件；配件无顺序、不可重复。齐套后扫下一总包不会再误报缺漏。同一总包勿重复扫；已齐套再扫会提示已齐套。';
+        hint.textContent = '扫码入库：先扫总包再扫配件。扫描枪回车自动提交，无需点确认。';
         clearBtn.style.display = '';
+        batchBar.classList.add('hidden');
         if (state.currentPackageId) {
           API.get(`/scan/packages/${state.currentPackageId}`).then(renderPkg).catch(() => {
             state.currentPackageId = null;
@@ -1094,17 +1419,73 @@
           renderPkg(null);
         }
       }
+      input.value = '';
       input.focus();
+    }
+
+    async function loadCountCurrent() {
+      countBatchId = $('#countBatchSel', root).value || null;
+      state.countBatchId = countBatchId;
+      if (!countBatchId) {
+        $('#pkgPanel', root).innerHTML = '<div class="muted">请先选择计数批次（在「计数订单」中导入并配置）</div>';
+        return;
+      }
+      try {
+        const res = await API.get(`/count/batches/${countBatchId}/current`);
+        renderCountPanel(res);
+      } catch (err) {
+        $('#pkgPanel', root).innerHTML = `<div class="flash error">${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    function renderCountPanel(res) {
+      const batch = res.batch;
+      const cur = res.current;
+      if (!cur) {
+        $('#pkgPanel', root).innerHTML = `
+          <div>
+            <div class="count-big ok">本批次已全部满足</div>
+            <div class="muted" style="margin-top:8px">${escapeHtml(batch?.name || '')} · 完成 ${batch?.stats?.complete || 0}/${batch?.stats?.total || 0}</div>
+          </div>`;
+        return;
+      }
+      const progress = `${cur.scanned_count}/${cur.target_qty}`;
+      const pct = cur.target_qty > 0 ? Math.min(100, Math.round((cur.scanned_count / cur.target_qty) * 100)) : 0;
+      $('#pkgPanel', root).innerHTML = `
+        <div>
+          <div class="row" style="gap:8px;align-items:center;margin-bottom:8px">
+            ${statusTag(cur.status)}
+            <strong>第 ${cur.line_no} 行</strong>
+          </div>
+          <div class="count-big">${progress}</div>
+          <div class="count-bar"><span style="width:${pct}%"></span></div>
+          <div style="margin-top:10px"><strong>应扫识别码：</strong>${escapeHtml(cur.scan_code || '-')}</div>
+          <div class="muted" style="margin-top:6px">批次：${escapeHtml(batch?.name || '')}（${batch?.stats?.complete || 0}/${batch?.stats?.total || 0}）</div>
+          <div class="kv-list" style="margin-top:10px;max-height:220px;overflow:auto">
+            ${Object.entries(cur.computed || {}).slice(0, 12).map(([k, v]) =>
+              `<div><span class="muted">${escapeHtml(k)}</span>：${escapeHtml(v)}</div>`
+            ).join('')}
+          </div>
+        </div>`;
     }
 
     const doScan = async () => {
       const code = input.value.trim();
-      if (!code) return;
+      if (!code || countBusy) return;
+      countBusy = true;
       try {
         if (mode === 'lookup') {
           const res = await API.post('/scan/lookup', { code });
           flash($('#scanFlash', root), res.message, 'success');
           renderLookup(res);
+        } else if (mode === 'count') {
+          if (!countBatchId) {
+            flash($('#scanFlash', root), '请先选择计数批次', 'error');
+            return;
+          }
+          const res = await API.post('/count/scan', { code, batch_id: countBatchId });
+          flash($('#scanFlash', root), res.message, res.row_completed ? 'success' : 'info');
+          renderCountPanel(res);
         } else {
           const res = await API.post('/scan/scan', {
             code,
@@ -1127,13 +1508,14 @@
         input.focus();
       } catch (err) {
         const data = err.data || {};
-        // 已齐套 / 重复扫等：仍展示对应总包信息
         if (mode === 'inbound' && data.package) {
           if (data.package.status === 'complete') {
-            // 已齐套不作为当前入库上下文
             if (state.currentPackageId === data.package.id) state.currentPackageId = null;
           }
           renderPkg(data.package);
+        }
+        if (mode === 'count' && data.current) {
+          renderCountPanel({ batch: data.batch, current: data.current });
         }
         if (data.previous_shortage) {
           flash($('#scanFlash', root), `${err.message}；上一总包未齐套已标记缺漏：${data.previous_shortage.package_code}`, 'warn');
@@ -1141,6 +1523,8 @@
           flash($('#scanFlash', root), err.message, 'error');
         }
         input.select();
+      } finally {
+        countBusy = false;
       }
     };
 
@@ -1221,7 +1605,7 @@
       `;
     }
 
-    if (state.currentPackageId) {
+    if (state.currentPackageId && mode === 'inbound') {
       try {
         const pkg = await API.get(`/scan/packages/${state.currentPackageId}`);
         renderPkg(pkg);
@@ -1237,9 +1621,11 @@
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
+        clearTimeout(scanTimer);
         doScan();
       }
     });
+    $('#countBatchSel', root)?.addEventListener('change', loadCountCurrent);
     $('#clearPkgBtn', root).addEventListener('click', () => {
       state.currentPackageId = null;
       renderPkg(null);

@@ -296,6 +296,20 @@ tr:hover td { background: #f8fbf9; }
 }
 .child-item.done { background: #eaf8ef; border-color: #b7e0c4; }
 
+.derived-card {
+  border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 10px; background: #fbfcfb;
+}
+.count-big {
+  font-size: 42px; font-weight: 800; letter-spacing: 1px; line-height: 1.1; color: var(--brand);
+}
+.count-big.ok { color: #1f7a3f; font-size: 28px; }
+.count-bar {
+  height: 10px; border-radius: 999px; background: #e6eee8; overflow: hidden; margin-top: 8px;
+}
+.count-bar > span {
+  display: block; height: 100%; background: var(--brand); border-radius: 999px;
+}
+
 .print-sheet { display: none; }
 @media print {
   body * { visibility: hidden; }

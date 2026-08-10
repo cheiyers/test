@@ -177,6 +177,48 @@ function initSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_accessory_order_no ON accessory_order_lines(order_no);
     CREATE INDEX IF NOT EXISTS idx_packages_order ON packages(order_no);
     CREATE INDEX IF NOT EXISTS idx_scan_logs_created ON scan_logs(created_at);
+
+    CREATE TABLE IF NOT EXISTS count_batches (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'draft'
+        CHECK(status IN ('draft', 'ready', 'done')),
+      headers_json TEXT NOT NULL DEFAULT '[]',
+      config_json TEXT NOT NULL DEFAULT '{}',
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    );
+
+    CREATE TABLE IF NOT EXISTS count_rows (
+      id TEXT PRIMARY KEY,
+      batch_id TEXT NOT NULL REFERENCES count_batches(id) ON DELETE CASCADE,
+      line_no INTEGER NOT NULL,
+      raw_json TEXT NOT NULL,
+      computed_json TEXT NOT NULL DEFAULT '{}',
+      scan_code TEXT,
+      target_qty INTEGER NOT NULL DEFAULT 0,
+      scanned_count INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK(status IN ('pending', 'counting', 'complete', 'skipped')),
+      completed_at TEXT,
+      last_scan_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS count_scan_logs (
+      id TEXT PRIMARY KEY,
+      batch_id TEXT NOT NULL REFERENCES count_batches(id) ON DELETE CASCADE,
+      row_id TEXT REFERENCES count_rows(id) ON DELETE SET NULL,
+      user_id TEXT,
+      username TEXT,
+      code_content TEXT,
+      success INTEGER NOT NULL DEFAULT 0,
+      message TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_count_rows_batch ON count_rows(batch_id, line_no);
+    CREATE INDEX IF NOT EXISTS idx_count_scan_logs_batch ON count_scan_logs(batch_id, created_at);
   `);
 
   const tplCols = db.prepare('PRAGMA table_info(label_templates)').all().map((c) => c.name);

@@ -13,6 +13,7 @@ const { batchRoutes } = require('./routes/batches');
 const { templateRoutes } = require('./routes/templates');
 const { labelRoutes } = require('./routes/labels');
 const { scanRoutes } = require('./routes/scan');
+const { countRoutes } = require('./routes/count');
 
 const PORT = Number(process.env.PORT) || 3789;
 const db = initDb();
@@ -34,6 +35,7 @@ app.use('/api/batches', authRequired(db), batchRoutes(db));
 app.use('/api/templates', authRequired(db), templateRoutes(db));
 app.use('/api/labels', authRequired(db), labelRoutes(db));
 app.use('/api/scan', authRequired(db), scanRoutes(db));
+app.use('/api/count', authRequired(db), countRoutes(db));
 
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
