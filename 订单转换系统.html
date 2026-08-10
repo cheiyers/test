@@ -1450,6 +1450,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
 
   function generateResult() {
     ensureTemplate();
+    syncTemplateOrderSources();
     readMatchCfgFromUI();
     const merge = $('optMerge').checked;
     const skipZero = $('optSkipZero').checked;
@@ -1498,14 +1499,21 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
         state.template.header.forEach(col => {
           headerVals[col.name] = resolveTemplateHeader(col, orderRow, m.parent);
         });
+        // Ensure document-no header cells are filled even if template source was stale
+        state.template.header.forEach(col => {
+          if (!isDocNoTemplateCol(col)) return;
+          if (str(headerVals[col.name]) !== '') return;
+          headerVals[col.name] = getRowDocNo(orderRow, headerVals) || resolveOrderField(orderRow, col.source);
+        });
         const bodyVals = {};
         state.template.body.forEach(col => {
           bodyVals[col.name] = resolveTemplateBody(col, ch, stdQty, formula, orderRow, m.parent);
         });
 
+        const docNo = getRowDocNo(orderRow, headerVals);
         flat.push({
           orderIdx: m.orderIdx,
-          docNo: headerVals['单据编号'] || getOrderValue(orderRow, findCol(state.order.headers, ['单据编号', '订单号', '单号'])),
+          docNo,
           materialCode: bodyVals['物料代码'] || ch.code,
           orderQty,
           headerVals,
@@ -1543,9 +1551,23 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
               g.headerVals[col.name] = g._orderQtySum;
             }
           });
+          // keep a non-empty doc no on the group
+          if (!str(g.docNo) && str(r.docNo)) g.docNo = r.docNo;
+          state.template.header.forEach(col => {
+            if (!isDocNoTemplateCol(col)) return;
+            if (str(g.headerVals[col.name]) === '' && str(r.headerVals[col.name]) !== '') {
+              g.headerVals[col.name] = r.headerVals[col.name];
+            }
+          });
         }
       });
       rows = Array.from(map.values());
+      // keep same document numbers contiguous so preview header dedupe works
+      rows.sort((a, b) => {
+        const d = String(a.docNo).localeCompare(String(b.docNo), 'zh');
+        if (d) return d;
+        return String(a.materialCode).localeCompare(String(b.materialCode), 'zh');
+      });
     }
 
     state.resultRows = rows;
@@ -1563,7 +1585,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
 
   function resolveTemplateHeader(col, orderRow, parent) {
     if (col.sourceType === 'fixed') return col.source;
-    if (col.sourceType === 'order') return orderRow[col.source] != null ? orderRow[col.source] : '';
+    if (col.sourceType === 'order') return resolveOrderField(orderRow, col.source);
     if (col.sourceType === 'bom') {
       if (col.source === 'code') return parent.code;
       if (col.source === 'name') return parent.name;
@@ -1586,9 +1608,86 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       if (col.source === 'baseQty') return child.baseQty;
       return child.row && child.row[col.source] != null ? child.row[col.source] : (child[col.source] || '');
     }
-    if (col.sourceType === 'order') return orderRow[col.source] != null ? orderRow[col.source] : '';
+    if (col.sourceType === 'order') return resolveOrderField(orderRow, col.source);
     if (col.sourceType === 'fixed') return col.source;
     return '';
+  }
+
+  /** Prefer exact column, else fuzzy match common aliases / contains. */
+  function resolveOrderField(orderRow, preferred) {
+    if (!orderRow) return '';
+    const pref = str(preferred);
+    if (pref && orderRow[pref] != null && str(orderRow[pref]) !== '') return orderRow[pref];
+    if (pref && Object.prototype.hasOwnProperty.call(orderRow, pref)) return orderRow[pref] == null ? '' : orderRow[pref];
+    // fuzzy: exact header name among order headers
+    const headers = state.order.headers || [];
+    if (pref) {
+      const exact = headers.find(h => str(h) === pref);
+      if (exact && orderRow[exact] != null) return orderRow[exact];
+      const loose = headers.find(h => str(h).includes(pref) || pref.includes(str(h)));
+      if (loose && orderRow[loose] != null && str(orderRow[loose]) !== '') return orderRow[loose];
+    }
+    return '';
+  }
+
+  function findDocNoColumn() {
+    return findCol(state.order.headers || [], [
+      '单据编号', '订单号', '销售订单号', '订单编号', '单号', '单据号', 'OrderNo', 'order_no', 'SO'
+    ]);
+  }
+
+  function isDocNoTemplateCol(col) {
+    const n = str(col.name);
+    const s = str(col.source);
+    return /单据编号|订单号|销售订单号|订单编号|单号|单据号/i.test(n + s);
+  }
+
+  function getRowDocNo(orderRow, headerVals) {
+    // 1) from template header columns that represent document no
+    for (const col of (state.template.header || [])) {
+      if (!isDocNoTemplateCol(col)) continue;
+      const v = headerVals[col.name];
+      if (v != null && str(v) !== '') return str(v);
+    }
+    // 2) direct order column
+    const docCol = findDocNoColumn();
+    const fromOrder = getOrderValue(orderRow, docCol);
+    if (fromOrder) return fromOrder;
+    // 3) any header value named like doc no
+    for (const k of Object.keys(headerVals || {})) {
+      if (/单据编号|订单号|单号/i.test(k) && str(headerVals[k]) !== '') return str(headerVals[k]);
+    }
+    return '';
+  }
+
+  /** Keep template order-column sources aligned with actual uploaded headers. */
+  function syncTemplateOrderSources() {
+    ensureTemplate();
+    const headers = state.order.headers || [];
+    if (!headers.length) return;
+    const docCol = findDocNoColumn();
+    state.template.header.forEach(col => {
+      if (col.sourceType !== 'order') return;
+      if (col.source && headers.includes(col.source)) return;
+      if (isDocNoTemplateCol(col) && docCol) {
+        col.source = docCol;
+        return;
+      }
+      // try match by column name
+      const hit = headers.find(h => str(h) === str(col.name)) ||
+        headers.find(h => str(h).includes(str(col.name)) || str(col.name).includes(str(h)));
+      if (hit) col.source = hit;
+      else if (/日期|date/i.test(col.name + col.source)) {
+        const d = findCol(headers, ['日期', '订单日期', '单据日期', '交货日期']);
+        if (d) col.source = d;
+      } else if (/数量|qty/i.test(col.name + col.source)) {
+        const q = findCol(headers, ['数量', '订单数量', '台数', 'QTY']);
+        if (q) col.source = q;
+      } else if (/规格/i.test(col.name + col.source)) {
+        const s = findCol(headers, ['规格型号', '规格', '型号']);
+        if (s) col.source = s;
+      }
+    });
   }
 
   // ===================== Export =====================
@@ -2091,11 +2190,17 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     $('previewHead').innerHTML = '<tr>' + cols.map(c => `<th>${esc(c)}</th>`).join('') + '</tr>';
     let lastDoc = null;
     $('previewBody').innerHTML = state.resultRows.map(r => {
-      const hideHeader = merge && lastDoc != null && String(r.docNo) === String(lastDoc);
+      const sameDoc = merge && lastDoc != null && String(r.docNo) === String(lastDoc);
+      const hideHeader = sameDoc;
       lastDoc = r.docNo;
       const tds = state.template.header.map(c => {
-        const v = hideHeader ? '' : r.headerVals[c.name];
-        return `<td class="${hideHeader ? '' : 'merge-header'}">${esc(v)}</td>`;
+        // 合并模式下：单据编号始终显示；其他表头字段同单号只显示一次
+        const alwaysShow = isDocNoTemplateCol(c);
+        const raw = r.headerVals[c.name];
+        const fallbackDoc = alwaysShow ? (r.docNo || '') : '';
+        const v = hideHeader && !alwaysShow ? '' : (raw != null && str(raw) !== '' ? raw : fallbackDoc);
+        const cls = (!hideHeader || alwaysShow) ? 'merge-header' : '';
+        return `<td class="${cls}">${esc(v)}</td>`;
       }).concat(state.template.body.map(c => `<td>${esc(r.bodyVals[c.name])}</td>`));
       return '<tr>' + tds.join('') + '</tr>';
     }).join('') || '<tr><td class="muted">暂无数据</td></tr>';
