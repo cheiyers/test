@@ -77,6 +77,44 @@ function toOutputNumber(val) {
 }
 
 /**
+ * 计数表达式列求值：比标签公式更宽松，支持拼接识别码等常见写法。
+ */
+function evalCountExpression(formula, data) {
+  const f = String(formula || '').trim();
+  if (!f) return '';
+  const row = data || {};
+
+  // 1) {列名} 模板
+  if (/\{[^}]+\}/.test(f) && !/^[A-Za-z_][A-Za-z0-9_]*\(/.test(f)) {
+    return f.replace(/\{([^}]+)\}/g, (_, name) => String(getField(row, String(name).trim()) ?? ''));
+  }
+
+  // 2) 纯列名
+  const bare = Object.keys(row).find((k) => k === f || k.toLowerCase() === f.toLowerCase());
+  if (bare && !/[()"'&=<>+\-*/{}]/.test(f)) {
+    return String(row[bare] ?? '');
+  }
+
+  // 3) 直接 evalExpr（引号常量、& 拼接、FIELD 等）
+  try {
+    const out = evalExpr(f, { value: '', data: row });
+    if (out != null && String(out) !== '') return typeof out === 'boolean' ? (out ? 'TRUE' : 'FALSE') : String(out);
+    // 空串也可能是合法结果；若公式明显不是“取空”，继续尝试 applyFormula
+    if (out === '' && (/^["']/.test(f) || f.includes('&') || /FIELD\s*\(/i.test(f))) {
+      return '';
+    }
+    if (out != null && typeof out !== 'string') return String(out);
+  } catch { /* continue */ }
+
+  // 4) applyFormula 兜底
+  try {
+    return String(applyFormula('', f, row) ?? '');
+  } catch {
+    return '';
+  }
+}
+
+/**
  * rules: [
  *  {
  *    type:'div_mod', source_field, divisor, condition?,
@@ -113,20 +151,7 @@ function applyDerivedRules(raw, rules) {
       if (rule.quotient_name) data[rule.quotient_name] = quotient;
       if (rule.remainder_name) data[rule.remainder_name] = remainder;
     } else if (rule.type === 'expr' && rule.name) {
-      const formula = String(rule.formula || '').trim();
-      if (!formula) {
-        data[rule.name] = '';
-      } else {
-        try {
-          data[rule.name] = applyFormula('', formula, data);
-        } catch {
-          try {
-            data[rule.name] = evalExpr(formula, { value: '', data });
-          } catch {
-            data[rule.name] = '';
-          }
-        }
-      }
+      data[rule.name] = evalCountExpression(rule.formula, data);
     }
   }
   return data;
@@ -183,6 +208,7 @@ module.exports = {
   matchCondition,
   intDivMod,
   applyAdjustFormula,
+  evalCountExpression,
   applyDerivedRules,
   resolveFieldValue,
   resolveTargetQty,

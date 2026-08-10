@@ -244,8 +244,12 @@ function looksLikeExcelExpr(formula) {
   const f = String(formula || '').trim();
   if (!f) return false;
   if (matchFuncCall(f)) return true;
+  if ((f.startsWith('"') && f.endsWith('"')) || (f.startsWith("'") && f.endsWith("'"))) return true;
+  if (f.includes('&')) return true;
+  if (/\{[^}]+\}/.test(f)) return true;
   if (findTopLevelOp(f) && /[A-Za-z_(]/.test(f)) return true;
-  if (/^(IF|TEXT|FORMAT|LEFT|RIGHT|MID|TRIM|UPPER|LOWER|LEN|FIELD|VALUE)\b/i.test(f)) return true;
+  if (findTopLevelAddSub(f) || findTopLevelMulDiv(f)) return true;
+  if (/^(IF|TEXT|FORMAT|LEFT|RIGHT|MID|TRIM|UPPER|LOWER|LEN|FIELD|VALUE|CONCAT)\b/i.test(f)) return true;
   return false;
 }
 
@@ -855,6 +859,14 @@ function applyFormula(raw, formula, data) {
   const ctx = { value: raw == null ? '' : raw, data: data || {} };
   const f = String(formula).trim();
   if (!f) return String(ctx.value);
+
+  // {列名} 模板：可与固定文字混写，如 {订单号}-{料号}
+  if (/\{[^}]+\}/.test(f) && !matchFuncCall(f)) {
+    return f.replace(/\{([^}]+)\}/g, (_, name) => {
+      const v = getField(data, String(name || '').trim());
+      return v == null ? '' : String(v);
+    });
+  }
 
   // Prefer Excel-like nested expression when it looks like one
   if (looksLikeExcelExpr(f) && !f.includes('|')) {

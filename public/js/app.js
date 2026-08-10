@@ -1140,6 +1140,12 @@
             <option value="VALUE()+FIELD(&quot;调整数&quot;)"></option>
             <option value="IF(VALUE()>0,VALUE()-1,0)"></option>
           </datalist>
+          <datalist id="countExprHints">
+            <option value="{订单号}-{料号}"></option>
+            <option value="FIELD(&quot;订单号&quot;)&amp;&quot;-&quot;&amp;FIELD(&quot;料号&quot;)"></option>
+            <option value="CONCAT(FIELD(&quot;订单号&quot;),FIELD(&quot;料号&quot;))"></option>
+            <option value="&quot;前缀&quot;&amp;FIELD(&quot;订单号&quot;)"></option>
+          </datalist>
           <div class="row" style="margin-top:8px">
             <button class="btn secondary" id="addDivModBtn" type="button">+ 整除拆分列</button>
             <button class="btn secondary" id="addExprBtn" type="button">+ 表达式列</button>
@@ -1248,10 +1254,23 @@
             <div class="row" style="justify-content:space-between"><strong>表达式列 #${idx + 1}</strong>
               <button class="btn secondary" data-del="${idx}" type="button">删除</button></div>
             <div class="row" style="flex-wrap:wrap;gap:8px;margin-top:8px">
-              <label class="field"><span>列名</span><input data-k="name" value="${escapeHtml(r.name || '')}" placeholder="自定义列名" /></label>
-              <label class="field" style="flex:2"><span>公式（可用 FIELD("列名")）</span>
-                <input data-k="formula" value="${escapeHtml(r.formula || '')}" placeholder='例如 IF(FIELD("数量")>0,FIELD("数量"),0)' /></label>
+              <label class="field"><span>列名</span><input data-k="name" value="${escapeHtml(r.name || '')}" placeholder="如：识别码" /></label>
+              <label class="field" style="flex:2"><span>公式</span>
+                <input data-k="formula" value="${escapeHtml(r.formula || '')}" placeholder='{订单号}-{料号} 或 FIELD("订单号")&amp;"-"&amp;FIELD("料号")' list="countExprHints" /></label>
             </div>
+            <div class="formula-chips" data-expr-chips="${idx}">
+              <span class="muted">识别内容常用：</span>
+              ${[
+                '{订单号}',
+                '{订单号}-{料号}',
+                'FIELD("订单号")&"-"&FIELD("料号")',
+                'CONCAT(FIELD("订单号"),FIELD("料号"))',
+                '"固定前缀"&FIELD("订单号")'
+              ].map((s) => `<button type="button" class="chip" data-chip="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join('')}
+            </div>
+            <p class="muted" style="margin-top:8px;font-size:12px">
+              拼识别码请用 <code>&amp;</code> 连接（不要用 +）。也支持 <code>{列名}</code> 模板。保存后看下方「识别码」列是否已算出内容。
+            </p>
           </div>`;
         }).join('') || '<div class="muted">尚未添加衍生列</div>';
 
@@ -1294,16 +1313,16 @@
             refreshFieldSelects();
           }
         });
-        // 点选公式芯片 → 写入该卡片内最近聚焦的公式框，默认写入「除前调整」
+        // 点选公式芯片 → 写入该卡片内最近聚焦的公式框
         $$('.formula-chips', box).forEach((chips) => {
-          let lastInput = chips.closest('.derived-card')?.querySelector('[data-k="before_formula"]');
-          chips.closest('.derived-card')?.querySelectorAll('[data-k$="_formula"]').forEach((inp) => {
+          const card = chips.closest('.derived-card');
+          let lastInput = card?.querySelector('[data-k="before_formula"], [data-k="formula"]');
+          card?.querySelectorAll('[data-k$="_formula"], [data-k="formula"]').forEach((inp) => {
             inp.addEventListener('focus', () => { lastInput = inp; });
           });
           $$('[data-chip]', chips).forEach((btn) => {
             btn.addEventListener('click', () => {
-              const card = chips.closest('.derived-card');
-              const target = lastInput || card?.querySelector('[data-k="before_formula"]');
+              const target = lastInput || card?.querySelector('[data-k="before_formula"], [data-k="formula"]');
               if (!target) return;
               target.value = btn.dataset.chip || '';
               target.dispatchEvent(new Event('input', { bubbles: true }));
@@ -1324,7 +1343,10 @@
           } else if (r.name) cols.push(r.name);
         });
         const uniq = [...new Set(cols)];
+        const scanField = $('#scanCodeField', panel)?.value || cfg.scan_code_field || '';
+        const emptyScan = (rows || []).filter((row) => !String(row.scan_code || '').trim()).length;
         $('#countPreview', panel).innerHTML = `
+          ${scanField ? `<div class="muted" style="margin-bottom:8px">当前识别列：<strong>${escapeHtml(scanField)}</strong>${emptyScan ? ` <span class="tag warn">${emptyScan} 行识别码为空，请检查表达式</span>` : ' <span class="tag ok">已生成识别码</span>'}</div>` : '<div class="flash warn">请选择扫码识别列后再保存</div>'}
           <table>
             <thead><tr><th>#</th>${uniq.map((c) => `<th>${escapeHtml(c)}</th>`).join('')}
               <th>识别码</th><th>目标</th><th>已扫</th><th>状态</th></tr></thead>
@@ -1333,7 +1355,7 @@
                 <tr>
                   <td>${row.line_no}</td>
                   ${uniq.map((c) => `<td>${escapeHtml(row.computed?.[c] ?? row.raw?.[c] ?? '')}</td>`).join('')}
-                  <td>${escapeHtml(row.scan_code || '')}</td>
+                  <td>${row.scan_code ? escapeHtml(row.scan_code) : '<span class="tag warn">空</span>'}</td>
                   <td>${row.target_qty}</td>
                   <td>${row.scanned_count}</td>
                   <td>${statusTag(row.status)}</td>
