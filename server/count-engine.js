@@ -41,8 +41,48 @@ function intDivMod(value, divisor) {
 }
 
 /**
+ * 对当前值套用调整公式。
+ * 支持：
+ * - 快捷：+10  -5  *2  /3
+ * - 旧式：num+10
+ * - 完整：VALUE()+10、VALUE()*FIELD("箱规")、IF(VALUE()>0,VALUE()-1,0)
+ */
+function applyAdjustFormula(value, formula, data) {
+  const f = String(formula || '').trim();
+  if (!f) return value;
+
+  const quick = f.match(/^([+\-*/])\s*(-?\d+(?:\.\d+)?)$/);
+  if (quick) {
+    return applyFormula(value, `num${quick[1]}${quick[2]}`, data);
+  }
+
+  try {
+    return applyFormula(value, f, data);
+  } catch {
+    try {
+      return evalExpr(f, { value, data: data || {} });
+    } catch {
+      return value;
+    }
+  }
+}
+
+function toOutputNumber(val) {
+  const n = toNumber(val);
+  if (n == null) return val == null ? '' : val;
+  // 整除场景结果尽量保留整数观感
+  if (Number.isInteger(n)) return n;
+  if (Math.abs(n - Math.round(n)) < 1e-9) return Math.round(n);
+  return Math.round(n * 1000) / 1000;
+}
+
+/**
  * rules: [
- *  { type:'div_mod', source_field, divisor, condition?, quotient_name, remainder_name },
+ *  {
+ *    type:'div_mod', source_field, divisor, condition?,
+ *    before_formula?, quotient_name, remainder_name,
+ *    quotient_formula?, remainder_formula?
+ *  },
  *  { type:'expr', name, formula, condition? }
  * ]
  */
@@ -61,8 +101,15 @@ function applyDerivedRules(raw, rules) {
     }
 
     if (rule.type === 'div_mod') {
-      const src = getField(data, rule.source_field);
-      const { quotient, remainder } = intDivMod(src, rule.divisor);
+      let src = getField(data, rule.source_field);
+      src = applyAdjustFormula(src, rule.before_formula, data);
+      let { quotient, remainder } = intDivMod(src, rule.divisor);
+      if (quotient !== '' && rule.quotient_formula) {
+        quotient = toOutputNumber(applyAdjustFormula(quotient, rule.quotient_formula, data));
+      }
+      if (remainder !== '' && rule.remainder_formula) {
+        remainder = toOutputNumber(applyAdjustFormula(remainder, rule.remainder_formula, data));
+      }
       if (rule.quotient_name) data[rule.quotient_name] = quotient;
       if (rule.remainder_name) data[rule.remainder_name] = remainder;
     } else if (rule.type === 'expr' && rule.name) {
@@ -71,7 +118,6 @@ function applyDerivedRules(raw, rules) {
         data[rule.name] = '';
       } else {
         try {
-          // 无当前值时用空串，公式内用 FIELD("列名") 取订单列
           data[rule.name] = applyFormula('', formula, data);
         } catch {
           try {
@@ -121,12 +167,26 @@ function allColumnNames(headers, rules) {
   return names;
 }
 
+const DIV_MOD_FORMULA_HINTS = [
+  { sample: '+10', hint: '当前值加 10' },
+  { sample: '-5', hint: '当前值减 5' },
+  { sample: '*2', hint: '当前值乘 2' },
+  { sample: '/3', hint: '当前值除以 3' },
+  { sample: 'VALUE()+10', hint: '等价于 +10，可继续嵌套' },
+  { sample: 'VALUE()*2+1', hint: '先乘后加' },
+  { sample: 'VALUE()+FIELD("调整数")', hint: '再加上另一列' },
+  { sample: 'IF(VALUE()>0,VALUE()-1,0)', hint: '按条件再减 1' },
+  { sample: 'num+10', hint: '旧式写法，仍可用' }
+];
+
 module.exports = {
   matchCondition,
   intDivMod,
+  applyAdjustFormula,
   applyDerivedRules,
   resolveFieldValue,
   resolveTargetQty,
   matchScanCode,
-  allColumnNames
+  allColumnNames,
+  DIV_MOD_FORMULA_HINTS
 };

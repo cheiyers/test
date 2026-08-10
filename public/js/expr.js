@@ -178,6 +178,68 @@ function findTopLevelOp(s) {
   return found;
 }
 
+/** Find top-level + / - (binary), skip unary minus */
+function findTopLevelAddSub(s) {
+  let depth = 0;
+  let quote = null;
+  let lastFound = null;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (quote) {
+      if (ch === quote && s[i - 1] !== '\\') quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+    if (ch === '(') { depth += 1; continue; }
+    if (ch === ')') { depth = Math.max(0, depth - 1); continue; }
+    if (depth !== 0) continue;
+    if (ch === '+' || ch === '-') {
+      const prev = s.slice(0, i).trim().slice(-1);
+      if (i === 0 || prev === '' || /[+\-*/(=<>&,]/.test(prev)) continue;
+      lastFound = { op: ch, index: i, len: 1 };
+    }
+  }
+  return lastFound;
+}
+
+function findTopLevelMulDiv(s) {
+  let depth = 0;
+  let quote = null;
+  let lastFound = null;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (quote) {
+      if (ch === quote && s[i - 1] !== '\\') quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+    if (ch === '(') { depth += 1; continue; }
+    if (ch === ')') { depth = Math.max(0, depth - 1); continue; }
+    if (depth !== 0) continue;
+    if (ch === '*' || ch === '/') {
+      lastFound = { op: ch, index: i, len: 1 };
+    }
+  }
+  return lastFound;
+}
+
+function numOp(left, op, right) {
+  const a = toNumber(left);
+  const b = toNumber(right);
+  if (a == null || b == null) return '';
+  if (op === '+') return String(a + b);
+  if (op === '-') return String(a - b);
+  if (op === '*') return String(a * b);
+  if (op === '/') return b === 0 ? '' : String(a / b);
+  return '';
+}
+
 function looksLikeExcelExpr(formula) {
   const f = String(formula || '').trim();
   if (!f) return false;
@@ -545,6 +607,21 @@ function evalExpr(input, ctx) {
     return unquote(s);
   }
 
+  // Strip balanced outer parentheses: (VALUE()+1)
+  if (s.startsWith('(') && s.endsWith(')')) {
+    let depth = 0;
+    let balanced = true;
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i];
+      if (ch === '(') depth += 1;
+      else if (ch === ')') {
+        depth -= 1;
+        if (depth === 0 && i < s.length - 1) { balanced = false; break; }
+      }
+    }
+    if (balanced && depth === 0) return evalExpr(s.slice(1, -1), ctx);
+  }
+
   // Current value aliases
   if (s === '.' || s === 'value' || s === '$') return ctx.value == null ? '' : String(ctx.value);
 
@@ -559,6 +636,20 @@ function evalExpr(input, ctx) {
     const right = evalExpr(s.slice(opFound.index + opFound.len).trim(), ctx);
     if (opFound.op === '&') return `${left}${right}`;
     return compareValues(left, opFound.op, right);
+  }
+
+  // Arithmetic: + - then * / (left-associative via rightmost split)
+  const addSub = findTopLevelAddSub(s);
+  if (addSub) {
+    const left = evalExpr(s.slice(0, addSub.index).trim(), ctx);
+    const right = evalExpr(s.slice(addSub.index + addSub.len).trim(), ctx);
+    return numOp(left, addSub.op, right);
+  }
+  const mulDiv = findTopLevelMulDiv(s);
+  if (mulDiv) {
+    const left = evalExpr(s.slice(0, mulDiv.index).trim(), ctx);
+    const right = evalExpr(s.slice(mulDiv.index + mulDiv.len).trim(), ctx);
+    return numOp(left, mulDiv.op, right);
   }
 
   // Function call (possibly nested inside already handled by recursion on args)

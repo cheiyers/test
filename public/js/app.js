@@ -1124,8 +1124,22 @@
           <p class="muted">原列：${headers.map(escapeHtml).join('、') || '-'}</p>
 
           <h4 style="margin-top:14px">1）公式衍生列</h4>
-          <p class="muted">可添加多组：按源列÷除数生成「整商列 + 余数列」；也可加表达式列。条件不满足时该衍生列为空。</p>
+          <p class="muted">可添加多组整除拆分：源列可先加减乘除/公式调整，再÷除数得到商与余数；商/余数还可再自定义加减等。条件不满足时该衍生列为空。</p>
+          <div class="formula-hint-box">
+            <div><strong>公式提醒</strong>（VALUE=当前步骤的值）：</div>
+            <div class="muted" style="margin-top:4px">快捷：<code>+10</code> <code>-5</code> <code>*2</code> <code>/3</code>　完整：<code>VALUE()+10</code> <code>VALUE()*2+1</code> <code>VALUE()+FIELD("调整数")</code> <code>IF(VALUE()>0,VALUE()-1,0)</code></div>
+          </div>
           <div id="derivedList"></div>
+          <datalist id="countFormulaHints">
+            <option value="+10"></option>
+            <option value="-5"></option>
+            <option value="*2"></option>
+            <option value="/3"></option>
+            <option value="VALUE()+10"></option>
+            <option value="VALUE()*2+1"></option>
+            <option value="VALUE()+FIELD(&quot;调整数&quot;)"></option>
+            <option value="IF(VALUE()>0,VALUE()-1,0)"></option>
+          </datalist>
           <div class="row" style="margin-top:8px">
             <button class="btn secondary" id="addDivModBtn" type="button">+ 整除拆分列</button>
             <button class="btn secondary" id="addExprBtn" type="button">+ 表达式列</button>
@@ -1189,9 +1203,28 @@
                     `<option value="${escapeHtml(h)}" ${h === r.source_field ? 'selected' : ''}>${escapeHtml(h)}</option>`
                   ).join('')}</select>
                 </label>
+                <label class="field" style="flex:1.4"><span>除前调整公式（可选）</span>
+                  <input data-k="before_formula" value="${escapeHtml(r.before_formula || '')}" placeholder="如 +10 或 VALUE()*2" list="countFormulaHints" />
+                </label>
                 <label class="field"><span>除数</span><input data-k="divisor" type="number" value="${escapeHtml(r.divisor ?? 1)}" /></label>
+              </div>
+              <div class="row" style="flex-wrap:wrap;gap:8px;margin-top:8px">
                 <label class="field"><span>商列名</span><input data-k="quotient_name" value="${escapeHtml(r.quotient_name || '')}" placeholder="如：整箱数" /></label>
+                <label class="field" style="flex:1.4"><span>商结果调整公式（可选）</span>
+                  <input data-k="quotient_formula" value="${escapeHtml(r.quotient_formula || '')}" placeholder="如 -1 或 VALUE()+FIELD(&quot;补数&quot;)" list="countFormulaHints" />
+                </label>
+              </div>
+              <div class="row" style="flex-wrap:wrap;gap:8px;margin-top:8px">
                 <label class="field"><span>余数列名</span><input data-k="remainder_name" value="${escapeHtml(r.remainder_name || '')}" placeholder="如：余数" /></label>
+                <label class="field" style="flex:1.4"><span>余数结果调整公式（可选）</span>
+                  <input data-k="remainder_formula" value="${escapeHtml(r.remainder_formula || '')}" placeholder="如 +0 或留空" list="countFormulaHints" />
+                </label>
+              </div>
+              <div class="formula-chips" data-chip-target="${idx}">
+                <span class="muted">点选插入：</span>
+                ${['+1','-1','+10','-10','*2','/2','VALUE()+1','VALUE()-1','VALUE()*2','VALUE()+FIELD("调整数")'].map((s) =>
+                  `<button type="button" class="chip" data-chip="${escapeHtml(s)}">${escapeHtml(s)}</button>`
+                ).join('')}
               </div>
               <div class="row" style="flex-wrap:wrap;gap:8px;margin-top:8px">
                 <label class="field"><span>条件列（可选）</span>
@@ -1208,6 +1241,7 @@
                 </label>
                 <label class="field"><span>条件值</span><input data-k="cond_value" value="${escapeHtml(r.condition?.value || '')}" /></label>
               </div>
+              <p class="muted" style="margin-top:8px;font-size:12px">计算顺序：源列 → 除前公式 → ÷除数 → 得到商/余数 → 再分别套用商/余数调整公式</p>
             </div>`;
           }
           return `<div class="derived-card" data-idx="${idx}">
@@ -1237,9 +1271,12 @@
             if (!r) return;
             if (r.type === 'div_mod') {
               r.source_field = $('[data-k="source_field"]', card)?.value || '';
+              r.before_formula = $('[data-k="before_formula"]', card)?.value || '';
               r.divisor = $('[data-k="divisor"]', card)?.value || '';
               r.quotient_name = $('[data-k="quotient_name"]', card)?.value || '';
+              r.quotient_formula = $('[data-k="quotient_formula"]', card)?.value || '';
               r.remainder_name = $('[data-k="remainder_name"]', card)?.value || '';
+              r.remainder_formula = $('[data-k="remainder_formula"]', card)?.value || '';
               const cf = $('[data-k="cond_field"]', card)?.value || '';
               if (cf) {
                 r.condition = {
@@ -1256,6 +1293,23 @@
             }
             refreshFieldSelects();
           }
+        });
+        // 点选公式芯片 → 写入该卡片内最近聚焦的公式框，默认写入「除前调整」
+        $$('.formula-chips', box).forEach((chips) => {
+          let lastInput = chips.closest('.derived-card')?.querySelector('[data-k="before_formula"]');
+          chips.closest('.derived-card')?.querySelectorAll('[data-k$="_formula"]').forEach((inp) => {
+            inp.addEventListener('focus', () => { lastInput = inp; });
+          });
+          $$('[data-chip]', chips).forEach((btn) => {
+            btn.addEventListener('click', () => {
+              const card = chips.closest('.derived-card');
+              const target = lastInput || card?.querySelector('[data-k="before_formula"]');
+              if (!target) return;
+              target.value = btn.dataset.chip || '';
+              target.dispatchEvent(new Event('input', { bubbles: true }));
+              target.focus();
+            });
+          });
         });
         refreshFieldSelects();
       }
