@@ -576,9 +576,32 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     });
   }
 
+  function cellDisplayValue(cell) {
+    if (!cell) return '';
+    // Prefer Excel formula text so BOM remark aliases (LHLB/DD/BB...) are preserved
+    if (cell.f) {
+      const f = String(cell.f).trim();
+      return f.startsWith('=') ? f : ('=' + f);
+    }
+    if (cell.w != null && cell.w !== '') return cell.w;
+    if (cell.v == null) return '';
+    return cell.v;
+  }
+
   function sheetToMatrix(wb) {
     const sheet = wb.Sheets[wb.SheetNames[0]];
-    return XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
+    if (!sheet || !sheet['!ref']) return [];
+    const range = XLSX.utils.decode_range(sheet['!ref']);
+    const matrix = [];
+    for (let r = range.s.r; r <= range.e.r; r++) {
+      const row = [];
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        const addr = XLSX.utils.encode_cell({ r, c });
+        row.push(cellDisplayValue(sheet[addr]));
+      }
+      matrix.push(row);
+    }
+    return matrix;
   }
 
   function detectHeaderRow(matrix) {
@@ -833,24 +856,59 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
   }
 
   function extractAliasesFromFormula(formula) {
-    const f = normalizeFormula(formula);
+    let f = str(formula);
+    if (!f) return [];
+    // Convert Chinese rule text first so aliases like DD/N1 are taken from IF(...) form
+    if (/[≤＜＞≥]|时[：:]/.test(f) && !/^=?IF\(/i.test(f)) {
+      f = chineseRuleToFormula(f);
+    }
+    f = normalizeFormula(f);
     if (!f) return [];
     // remove quoted strings
     const noStr = f.replace(/"[^"]*"/g, '""').replace(/'[^']*'/g, "''");
-    // remove assignment left-hand names for discovery from RHS only? Spec: ignore assignment variable names
+    // ignore assignment variable names (LHS); keep RHS aliases
     const { assigns, resultExpr } = parseAssignments(noStr);
     const assigned = new Set(assigns.map(a => a.name));
     const body = assigns.map(a => a.expr).concat([resultExpr]).join(' ');
-    const names = body.match(/[A-Za-z_\u4e00-\u9fa5][\w\u4e00-\u9fa5]*/g) || [];
+    const names = body.match(/[A-Za-z_][\w]*/g) || [];
+    const stop = new Set(['时', '当', '则', '否则', 'TRUE', 'FALSE']);
     const out = [];
     names.forEach(n => {
       const up = n.toUpperCase();
       if (EXCEL_FUNCS.has(up)) return;
       if (assigned.has(n)) return;
-      if (up === 'TRUE' || up === 'FALSE') return;
+      if (stop.has(up) || stop.has(n)) return;
       if (!out.includes(n)) out.push(n);
     });
     return out;
+  }
+
+  /** Collect aliases from all BOM child remark formulas (not only matched rows). */
+  function collectBomFormulasAndAliases() {
+    const formulaMap = {};
+    const aliasSet = new Set();
+    const parents = state.bom.childrenByParent || {};
+    Object.keys(parents).forEach(pc => {
+      (parents[pc] || []).forEach(ch => {
+        const key = pc + '||' + ch.code;
+        let formula = '';
+        if (state.formulas[key] != null && str(state.formulas[key]) !== '') {
+          formula = state.formulas[key];
+        } else {
+          formula = ch.formula || extractFormulaFromRemark(ch.remark || '') || '';
+          if (formula) state.formulas[key] = formula;
+        }
+        formulaMap[key] = formula;
+        extractAliasesFromFormula(formula).forEach(a => aliasSet.add(a));
+        // also scan raw remark in case formula field missed text aliases
+        extractAliasesFromFormula(ch.remark || '').forEach(a => aliasSet.add(a));
+      });
+    });
+    // matched-only formulas (manual edits)
+    Object.keys(state.formulas).forEach(k => {
+      extractAliasesFromFormula(state.formulas[k]).forEach(a => aliasSet.add(a));
+    });
+    return { formulaMap, aliases: Array.from(aliasSet).sort() };
   }
 
   function tokenize(expr) {
@@ -1160,21 +1218,31 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
 
   // ===================== Param mapping =====================
   function extractAliases() {
-    const set = new Set();
-    Object.values(state.formulas).forEach(f => extractAliasesFromFormula(f).forEach(a => set.add(a)));
-    // also from all child formulas in matches
-    state.matches.forEach(m => m.children.forEach(ch => extractAliasesFromFormula(ch.formula || '').forEach(a => set.add(a))));
-    state.aliases = Array.from(set).sort();
+    const { aliases } = collectBomFormulasAndAliases();
+    // also from currently matched children (covers stale structure)
+    state.matches.forEach(m => {
+      (m.children || []).forEach(ch => {
+        extractAliasesFromFormula(ch.formula || ch.remark || '').forEach(a => {
+          if (!aliases.includes(a)) aliases.push(a);
+        });
+      });
+    });
+    state.aliases = aliases.sort();
     state.aliases.forEach(a => {
       if (!state.paramMap[a]) state.paramMap[a] = { type: 'order', value: '' };
     });
     return state.aliases;
   }
 
-  function autoMapParams() {
+  function autoMapParams(silent) {
     extractAliases();
     const headers = state.order.headers || [];
+    let mapped = 0;
     state.aliases.forEach(alias => {
+      const conf = state.paramMap[alias];
+      // keep user-chosen mapping unless empty
+      if (conf && conf.type === 'order' && conf.value) return;
+      if (conf && conf.type !== 'order' && str(conf.value)) return;
       const up = alias.toUpperCase();
       // exact / includes
       let hit = headers.find(h => str(h).toUpperCase() === up) ||
@@ -1183,10 +1251,10 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       // keyword map
       if (!hit) {
         const rules = [
-          [/LENGTH|LEN|长度|DD/i, ['长度', '轿厢深度', 'DD', 'DEPTH', '长']],
+          [/LENGTH|LEN|长度|^DD$/i, ['长度', '轿厢深度', 'DD', 'DEPTH', '长']],
           [/^BB$|宽度|WIDTH/i, ['宽度', '轿厢宽度', 'BB', '宽']],
           [/高度|HH|HEIGHT/i, ['高度', '轿厢高度', 'HH', '高']],
-          [/数量|QTY|QTY|NUM/i, ['数量', '订单数量', '台数', 'QTY']],
+          [/数量|QTY|NUM/i, ['数量', '订单数量', '台数', 'QTY']],
           [/LHLB|类别|型号/i, ['类别', '型号', 'LHLB', '规格型号']]
         ];
         for (const [re, keys] of rules) {
@@ -1196,10 +1264,14 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
           }
         }
       }
-      if (hit) state.paramMap[alias] = { type: 'order', value: hit };
+      if (hit) {
+        state.paramMap[alias] = { type: 'order', value: hit };
+        mapped++;
+      }
     });
     refreshParamUI();
-    toast('已自动映射参数', 'ok');
+    if (!silent) toast(`已自动映射 ${mapped} 个参数`, 'ok');
+    return mapped;
   }
 
   function resolveParamValue(alias, orderRow, envExtra) {
@@ -1456,7 +1528,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     if (!file) return;
     try {
       const buf = await readFileAsArrayBuffer(file);
-      const wb = XLSX.read(buf, { type: 'array' });
+      const wb = XLSX.read(buf, { type: 'array', cellFormula: true, cellText: true });
       const matrix = sheetToMatrix(wb);
       const headerRow = detectHeaderRow(matrix);
       const table = matrixToTable(matrix, headerRow);
@@ -1464,9 +1536,13 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       $('orderMeta').textContent = `${file.name} · ${table.rows.length} 行 · ${table.headers.length} 列`;
       autoGuessOrderCols();
       updateUploadSummary();
-      // refresh dependent UIs immediately
+      // refresh dependent UIs immediately (each step isolated)
       try { fillOrderSelects(); } catch (e) { console.warn(e); }
-      try { refreshParamUI(); } catch (e) { console.warn(e); }
+      try {
+        extractAliases();
+        if (state.aliases.length && state.order.headers.length) autoMapParams(true);
+        else refreshParamUI();
+      } catch (e) { console.warn(e); }
       try { renderVarChips(); } catch (e) { console.warn(e); }
       try { renderTemplateEditor(); } catch (e) { console.warn(e); }
       toast('订单已加载', 'ok');
@@ -1485,7 +1561,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
         name = fromStorage.name || '已保存BOM';
       } else {
         const buf = await readFileAsArrayBuffer(file);
-        const wb = XLSX.read(buf, { type: 'array' });
+        const wb = XLSX.read(buf, { type: 'array', cellFormula: true, cellText: true });
         matrix = sheetToMatrix(wb);
         name = file.name;
       }
@@ -1511,7 +1587,27 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       autoGuessBomCols();
       updateUploadSummary();
       try { fillBomSelects(); } catch (e) {}
-      toast(fromStorage ? '已加载本地 BOM' : 'BOM 已加载', 'ok');
+      // Immediately extract remark-formula aliases into parameter map UI
+      try {
+        state.formulas = state.formulas || {};
+        const collected = collectBomFormulasAndAliases();
+        state.aliases = collected.aliases;
+        state.aliases.forEach(a => {
+          if (!state.paramMap[a]) state.paramMap[a] = { type: 'order', value: '' };
+        });
+        if (state.order.headers.length) autoMapParams(true);
+        else refreshParamUI();
+        const aliasPreview = state.aliases.slice(0, 8).join(', ');
+        toast(
+          state.aliases.length
+            ? `BOM 已加载，提取别名 ${state.aliases.length} 个：${aliasPreview}${state.aliases.length > 8 ? '…' : ''}`
+            : (fromStorage ? '已加载本地 BOM' : 'BOM 已加载'),
+          'ok'
+        );
+      } catch (e) {
+        console.warn(e);
+        toast(fromStorage ? '已加载本地 BOM' : 'BOM 已加载', 'ok');
+      }
     } catch (e) {
       console.error(e);
       toast('BOM 解析失败: ' + (e.message || e), 'err');
@@ -1662,7 +1758,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     const headers = state.order.headers || [];
     const row0 = state.order.rows[0] || {};
     if (!state.aliases.length) {
-      tb.innerHTML = '<tr><td colspan="4" class="muted">暂无参数别名，请先配置公式并提取</td></tr>';
+      tb.innerHTML = '<tr><td colspan="4" class="muted">暂无参数别名。请确认 BOM 备注列含公式（如 =IF(LHLB="LF18",2,1)），或在「公式配置」中提取。</td></tr>';
       return;
     }
     tb.innerHTML = state.aliases.map(alias => {
