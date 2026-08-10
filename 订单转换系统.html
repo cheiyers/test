@@ -322,9 +322,13 @@ tr:hover td { background: #f7fbf9; }
     <p class="desc">从 BOM 备注列提取公式；支持中文描述转换与变量赋值。点击下方变量可插入公式。</p>
     <div class="section-title">变量提示（点击插入）</div>
     <div class="chips" id="varChips"></div>
-    <div class="section-title">子件公式</div>
+    <div class="row" style="margin:12px 0 8px; justify-content:space-between">
+      <div class="section-title" style="margin:0">子件公式 <span class="muted" id="formulaCountHint"></span></div>
+      <label class="checkline"><input type="checkbox" id="optFormulaMatchedOnly" /> 仅显示已匹配母件</label>
+    </div>
     <div id="formulaList"></div>
     <div class="row" style="margin-top:8px">
+      <button class="btn secondary" id="btnReloadBomFormulas">从 BOM 备注重新载入</button>
       <button class="btn secondary" id="btnAutoConvertCn">中文公式自动转换</button>
       <button class="btn secondary" id="btnExtractAliases">提取参数别名</button>
     </div>
@@ -1189,15 +1193,8 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
         reason: m.reason || ''
       };
     });
-    // init formulas from children remarks
-    state.formulas = {};
-    state.matches.forEach(m => {
-      if (!m.ok) return;
-      m.children.forEach(ch => {
-        const key = m.parentCode + '||' + ch.code;
-        if (!state.formulas[key]) state.formulas[key] = ch.formula || String(ch.baseQty || '');
-      });
-    });
+    // merge formulas from all BOM remarks (do not wipe manual edits)
+    try { syncFormulasFromBom(false); } catch (e) { console.warn(e); }
     renderMatchTable();
     const ok = state.matches.filter(m => m.ok).length;
     const bad = state.matches.length - ok;
@@ -1587,21 +1584,22 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       autoGuessBomCols();
       updateUploadSummary();
       try { fillBomSelects(); } catch (e) {}
-      // Immediately extract remark-formula aliases into parameter map UI
+      // Sync remark formulas + extract aliases into parameter map UI
       try {
-        state.formulas = state.formulas || {};
+        state.formulas = {};
+        const loaded = syncFormulasFromBom(true);
         const collected = collectBomFormulasAndAliases();
         state.aliases = collected.aliases;
         state.aliases.forEach(a => {
           if (!state.paramMap[a]) state.paramMap[a] = { type: 'order', value: '' };
         });
+        try { renderFormulaList(); } catch (e2) { console.warn(e2); }
         if (state.order.headers.length) autoMapParams(true);
         else refreshParamUI();
         const aliasPreview = state.aliases.slice(0, 8).join(', ');
         toast(
-          state.aliases.length
-            ? `BOM 已加载，提取别名 ${state.aliases.length} 个：${aliasPreview}${state.aliases.length > 8 ? '…' : ''}`
-            : (fromStorage ? '已加载本地 BOM' : 'BOM 已加载'),
+          `BOM 已加载：载入 ${loaded} 条备注公式` +
+            (state.aliases.length ? `，别名 ${state.aliases.length} 个（${aliasPreview}${state.aliases.length > 8 ? '…' : ''}）` : ''),
           'ok'
         );
       } catch (e) {
@@ -1721,28 +1719,103 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     });
   }
 
-  function renderFormulaList() {
-    const wrap = $('formulaList');
-    const items = [];
-    const seen = new Set();
-    state.matches.filter(m => m.ok).forEach(m => {
-      m.children.forEach(ch => {
-        const key = m.parentCode + '||' + ch.code;
-        if (seen.has(key)) return;
-        seen.add(key);
-        if (state.formulas[key] == null) state.formulas[key] = ch.formula || String(ch.baseQty || '');
-        items.push({ key, parent: m.parentCode, child: ch, formula: state.formulas[key] });
+  /** Build/refresh state.formulas from every BOM child remark. */
+  function syncFormulasFromBom(overwrite) {
+    const parents = state.bom.childrenByParent || {};
+    let n = 0;
+    Object.keys(parents).forEach(pc => {
+      (parents[pc] || []).forEach(ch => {
+        const key = pc + '||' + ch.code;
+        const fromRemark = str(ch.formula) || extractFormulaFromRemark(ch.remark || '') || '';
+        if (overwrite || state.formulas[key] == null || str(state.formulas[key]) === '') {
+          state.formulas[key] = fromRemark;
+          if (fromRemark) n++;
+        } else if (fromRemark && !str(state.formulas[key])) {
+          state.formulas[key] = fromRemark;
+          n++;
+        }
+        // keep child.formula in sync for later matching/generation
+        if (!str(ch.formula) && fromRemark) ch.formula = fromRemark;
       });
     });
-    if (!items.length) {
-      wrap.innerHTML = '<div class="muted">请先完成匹配</div>';
+    return n;
+  }
+
+  function getMatchedParentCodes() {
+    return new Set(state.matches.filter(m => m.ok && m.parentCode).map(m => m.parentCode));
+  }
+
+  function renderFormulaList() {
+    const wrap = $('formulaList');
+    const hint = $('formulaCountHint');
+    // Ensure formulas exist even before matching
+    try { syncFormulasFromBom(false); } catch (e) { console.warn(e); }
+
+    const matchedOnly = $('optFormulaMatchedOnly') && $('optFormulaMatchedOnly').checked;
+    const matchedParents = getMatchedParentCodes();
+    const items = [];
+    const parents = state.bom.childrenByParent || {};
+    const parentCodes = Object.keys(parents);
+
+    if (!parentCodes.length) {
+      wrap.innerHTML = '<div class="muted">请先上传 BOM 文件；子件备注列中的公式将显示在这里。</div>';
+      if (hint) hint.textContent = '';
       return;
     }
-    wrap.innerHTML = items.map(it => `<div class="formula-item">
-      <div class="title">${esc(it.parent)} → ${esc(it.child.code)} <span class="muted">${esc(it.child.name || '')}</span></div>
-      <div class="muted" style="margin-bottom:6px">原备注：${esc(it.child.remark || '')}</div>
-      <textarea data-fkey="${esc(it.key)}">${esc(it.formula)}</textarea>
-    </div>`).join('');
+
+    parentCodes.forEach(pc => {
+      if (matchedOnly && matchedParents.size && !matchedParents.has(pc)) return;
+      (parents[pc] || []).forEach(ch => {
+        const key = pc + '||' + ch.code;
+        if (state.formulas[key] == null) {
+          state.formulas[key] = str(ch.formula) || extractFormulaFromRemark(ch.remark || '') || '';
+        }
+        items.push({
+          key,
+          parent: pc,
+          child: ch,
+          formula: state.formulas[key],
+          remark: ch.remark || '',
+          matched: matchedParents.has(pc)
+        });
+      });
+    });
+
+    // If "matched only" but no matches yet, fall back to all and hint user
+    if (matchedOnly && !matchedParents.size && items.length === 0) {
+      wrap.innerHTML = '<div class="muted">尚未匹配订单。取消勾选「仅显示已匹配母件」，或先到「匹配配置」执行匹配。</div>';
+      if (hint) hint.textContent = '';
+      return;
+    }
+
+    if (!items.length) {
+      wrap.innerHTML = '<div class="muted">BOM 中未解析到子件。请检查级次列/备注列是否识别正确。</div>';
+      if (hint) hint.textContent = '';
+      return;
+    }
+
+    const withFormula = items.filter(it => str(it.formula) || str(it.remark)).length;
+    if (hint) {
+      hint.textContent = `（共 ${items.length} 条子件，其中 ${withFormula} 条含备注/公式` +
+        (matchedOnly ? '；已按匹配母件过滤' : '；显示全部 BOM') + '）';
+    }
+
+    wrap.innerHTML = items.map(it => {
+      const remarkText = str(it.remark) || '(空)';
+      const hasRemarkFormula = /^=/.test(str(it.remark)) || /IF\(|ROUND|≤|＞|N\d\s*=|时[：:]/.test(str(it.remark));
+      return `<div class="formula-item">
+      <div class="title">
+        ${esc(it.parent)} → ${esc(it.child.code)}
+        <span class="muted child-name">${esc(it.child.name || '')}</span>
+        ${it.matched ? '<span class="tag ok">已匹配</span>' : '<span class="tag">未匹配订单</span>'}
+        ${hasRemarkFormula ? '<span class="tag info">备注含公式</span>' : ''}
+      </div>
+      <div class="remark-line muted" style="margin-bottom:6px; white-space:pre-wrap; font-family:var(--mono); background:#fff; border:1px dashed var(--border); border-radius:8px; padding:8px">原备注（${esc(state.bom.remarkCol || '备注')}）：${esc(remarkText)}</div>
+      <label class="label">编辑公式</label>
+      <textarea data-fkey="${esc(it.key)}" placeholder="从 BOM 备注提取，可手动修改">${esc(it.formula)}</textarea>
+    </div>`;
+    }).join('');
+
     wrap.querySelectorAll('textarea').forEach(ta => {
       ta.addEventListener('focus', () => { state.activeFormulaInput = ta; });
       ta.addEventListener('input', () => {
@@ -2025,6 +2098,15 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     $('btnRunMatch').onclick = () => runMatch();
     $('btnAutoConvertCn').onclick = () => convertAllChineseFormulas();
     $('btnExtractAliases').onclick = () => { extractAliases(); refreshParamUI(); toast('已提取别名 ' + state.aliases.length + ' 个', 'ok'); goStep(4); };
+    $('btnReloadBomFormulas').onclick = () => {
+      const n = syncFormulasFromBom(true);
+      renderFormulaList();
+      try { extractAliases(); refreshParamUI(); } catch (e) {}
+      toast(`已从 BOM 备注重新载入 ${n} 条公式`, 'ok');
+    };
+    if ($('optFormulaMatchedOnly')) {
+      $('optFormulaMatchedOnly').onchange = () => renderFormulaList();
+    }
 
     $('btnAutoMap').onclick = () => autoMapParams();
     $('btnSaveMap').onclick = () => {
