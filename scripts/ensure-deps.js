@@ -33,8 +33,11 @@ if (!Number.isFinite(major) || major < MIN_NODE || (major === 22 && minor < 5)) 
 
 if (!fs.existsSync(nodeModules) || !fs.existsSync(path.join(nodeModules, 'express'))) {
   fail([
-    '尚未安装依赖（缺少 node_modules）。',
-    '请双击「一键配置环境.bat」，或在项目根目录执行 npm install。'
+    '项目依赖尚未安装（缺少 node_modules / express）。',
+    '说明：CMD 里能 node -v 只表示 Node 已安装；',
+    '      还需要在本项目目录安装依赖。',
+    '请双击「一键配置环境.bat」，或在项目根目录执行：',
+    '  npm install'
   ]);
 }
 

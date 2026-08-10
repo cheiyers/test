@@ -12,19 +12,25 @@ call :RefreshPath
 
 where node >nul 2>nul
 if errorlevel 1 (
-  echo 未检测到 Node.js，先执行一键配置环境...
+  echo [提示] 当前窗口未检测到 Node.js。
+  echo 若你在 CMD 里能运行 node -v，请关闭本窗口后重开，或先运行 一键配置环境.bat
   echo.
   call "%~dp0setup-env.bat"
   if errorlevel 1 (
     echo.
-    echo 环境配置失败，无法启动。请先单独运行“一键配置环境.bat”。
+    echo 环境配置失败，无法启动。请先单独运行 一键配置环境.bat
     exit /b 1
   )
   call :RefreshPath
 )
 
-if not exist "node_modules\better-sqlite3" (
-  echo 检测到尚未安装依赖，先执行一键配置环境...
+for /f "tokens=*" %%v in ('node -v 2^>nul') do echo [OK] 检测到 Node.js %%v
+
+REM 通用版已不再使用 better-sqlite3，以 express 是否存在判断依赖是否装好
+if not exist "node_modules\express" (
+  echo.
+  echo [提示] 项目依赖尚未安装 ^(缺少 node_modules^)。
+  echo 说明: 只安装 Node.js 不等于项目已配置，还需要执行一键配置安装依赖。
   echo.
   call "%~dp0setup-env.bat"
   if errorlevel 1 (
@@ -37,7 +43,7 @@ if not exist "node_modules\better-sqlite3" (
 call node scripts\ensure-deps.js
 if errorlevel 1 (
   echo.
-  echo 环境检查未通过，请先双击“一键配置环境.bat”。
+  echo 环境检查未通过。请把上方中文提示完整截图，或先双击 一键配置环境.bat
   exit /b 1
 )
 
@@ -71,4 +77,5 @@ if defined SYS_PATH if defined USR_PATH (
 )
 if exist "%ProgramFiles%\nodejs\node.exe" set "PATH=%ProgramFiles%\nodejs;!PATH!"
 if exist "%LocalAppData%\Programs\nodejs\node.exe" set "PATH=%LocalAppData%\Programs\nodejs;!PATH!"
+if exist "E:\nodejs\node.exe" set "PATH=E:\nodejs;!PATH!"
 exit /b 0
