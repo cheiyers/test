@@ -611,88 +611,177 @@ tr:hover td { background: #f7fbf9; }
     return { headers, rows };
   }
 
+  function looksLikeFormulaText(v) {
+    const s = str(v);
+    if (!s) return false;
+    return /^=/.test(s) ||
+      /N\d\s*=/.test(s) ||
+      /IF\s*\(/i.test(s) ||
+      /ROUNDUP?\s*\(/i.test(s) ||
+      /[≤＜＞≥].*时\s*[：:]/.test(s);
+  }
+
   function detectLevelCol(headers, rows) {
-    const cands = headers.filter(h => /级次|层级|层次|level|LVL|母件|子件/i.test(h));
-    if (cands.length) return cands[0];
-    // heuristic: column with 0/1 or 母件/子件 values
+    // Prefer numeric 级次/层级 columns over 母件/子件 type columns
+    const preferred = headers.filter(h => /级次|层级|层次|level|LVL/i.test(h));
+    const typeLike = headers.filter(h => /子项类型|物料属性|母件|子件|类型/i.test(h) && !/级次|层级|层次|level/i.test(h));
+    const scoreCol = (h) => {
+      const vals = rows.slice(0, 80).map(r => str(r[h]));
+      const numHit = vals.filter(v => /^(0|1|2|3)(?:\.0+)?$/.test(v)).length;
+      const typeHit = vals.filter(v => /^(母件|子件|parent|child)$/i.test(v)).length;
+      return numHit * 3 + typeHit * 2;
+    };
+    if (preferred.length) {
+      return preferred.slice().sort((a, b) => scoreCol(b) - scoreCol(a))[0];
+    }
+    let best = '', bestScore = -1;
+    headers.forEach(h => {
+      const s = scoreCol(h);
+      if (s > bestScore) { bestScore = s; best = h; }
+    });
+    if (bestScore >= 3) return best;
+    return typeLike[0] || headers[0] || '';
+  }
+
+  function detectTypeCol(headers, rows) {
+    const cands = headers.filter(h => /子项类型|物料属性|项次类型|类型|母件子件/i.test(h));
+    for (const h of cands) {
+      const vals = rows.slice(0, 60).map(r => str(r[h]));
+      if (vals.some(v => /母件|子件|parent|child/i.test(v))) return h;
+    }
+    // any column dominated by 母件/子件 labels
     for (const h of headers) {
-      const vals = rows.slice(0, 40).map(r => str(r[h]));
-      const hit = vals.filter(v => /^(0|1|母件|子件|parent|child)$/i.test(v)).length;
+      const vals = rows.slice(0, 60).map(r => str(r[h]));
+      const hit = vals.filter(v => /^(母件|子件|parent|child)$/i.test(v)).length;
       if (hit >= 3) return h;
     }
-    return headers[0] || '';
+    return '';
   }
 
   function detectRemarkCol(headers, rows) {
     const cands = headers.filter(h => /备注|公式|用量公式|remark|formula|说明/i.test(h));
     if (cands.length) {
-      // prefer the one that actually contains formulas
       let best = cands[0], score = -1;
       for (const h of cands) {
-        const s = rows.slice(0, 80).filter(r => {
-          const v = str(r[h]);
-          return /^=/.test(v) || /IF\(|ROUND|≤|＞|>=|N\d\s*=/.test(v);
-        }).length;
+        const s = rows.slice(0, 120).filter(r => looksLikeFormulaText(r[h])).length;
         if (s > score) { score = s; best = h; }
       }
       return best;
     }
     let best = '', score = -1;
     for (const h of headers) {
-      const s = rows.slice(0, 80).filter(r => {
-        const v = str(r[h]);
-        return /^=/.test(v) || /IF\(|ROUNDUP|≤|＞|N\d\s*=/.test(v);
-      }).length;
+      const s = rows.slice(0, 120).filter(r => looksLikeFormulaText(r[h])).length;
       if (s > score) { score = s; best = h; }
     }
     return best || headers[headers.length - 1] || '';
   }
 
-  function isParentLevel(v) {
-    const s = str(v).toLowerCase();
-    return s === '0' || s === '母件' || s === 'parent' || s === 'p';
+  /** Normalize level values like 2 / 2.0 / "2.00" -> integer or NaN */
+  function levelNumber(v) {
+    const s = str(v);
+    if (!s) return NaN;
+    if (/^母件|parent$/i.test(s)) return 1;
+    if (/^子件|child$/i.test(s)) return 2;
+    const n = Number(s);
+    if (!isFinite(n)) return NaN;
+    return Math.round(n);
   }
-  function isChildLevel(v) {
-    const s = str(v).toLowerCase();
-    return s === '1' || s === '子件' || s === 'child' || s === 'c' || s === '2';
+
+  /**
+   * Detect whether BOM uses 0=母件/1=子件 or 1=母件/2=子件 (common ERP).
+   * Returns { parentLevel, childMin }.
+   */
+  function detectLevelScheme(rows, levelCol, typeCol) {
+    const nums = rows.map(r => levelNumber(r[levelCol])).filter(n => isFinite(n));
+    const has0 = nums.includes(0);
+    const has1 = nums.includes(1);
+    const has2 = nums.includes(2);
+    // Explicit type column can confirm
+    if (typeCol) {
+      const typed = rows.filter(r => /母件|parent/i.test(str(r[typeCol])));
+      if (typed.length) {
+        const lv = levelNumber(typed[0][levelCol]);
+        if (isFinite(lv)) {
+          return { parentLevel: lv, childMin: lv + 1, mode: 'type+level' };
+        }
+      }
+    }
+    // 0 present => classic 0 parent / >=1 child
+    if (has0) return { parentLevel: 0, childMin: 1, mode: '0-1' };
+    // 1 and 2 present, no 0 => ERP style 1 parent / >=2 child
+    if (has1 && has2) return { parentLevel: 1, childMin: 2, mode: '1-2' };
+    // only 1/2 text labels in level col
+    if (rows.some(r => /母件/i.test(str(r[levelCol])))) {
+      return { parentLevel: 1, childMin: 2, mode: 'label' };
+    }
+    // fallback: smallest level is parent
+    if (nums.length) {
+      const min = Math.min(...nums);
+      return { parentLevel: min, childMin: min + 1, mode: 'min' };
+    }
+    return { parentLevel: 0, childMin: 1, mode: 'default' };
+  }
+
+  function isParentRow(row, levelCol, typeCol, scheme) {
+    const type = str(typeCol ? row[typeCol] : '');
+    if (/^母件|parent$/i.test(type)) return true;
+    if (/^子件|child$/i.test(type)) return false;
+    const lv = levelNumber(row[levelCol]);
+    if (!isFinite(lv)) return false;
+    return lv === scheme.parentLevel;
+  }
+
+  function isChildRow(row, levelCol, typeCol, scheme) {
+    const type = str(typeCol ? row[typeCol] : '');
+    if (/^子件|child$/i.test(type)) return true;
+    if (/^母件|parent$/i.test(type)) return false;
+    const lv = levelNumber(row[levelCol]);
+    if (!isFinite(lv)) return false;
+    return lv >= scheme.childMin;
   }
 
   function parseBomStructure(headers, rows) {
     const levelCol = detectLevelCol(headers, rows);
+    const typeCol = detectTypeCol(headers, rows);
     const remarkCol = detectRemarkCol(headers, rows);
     const codeCol = findCol(headers, ['物料代码', '母件物料代码', '子件物料代码', '物料编码', '料号', '代码']);
     const nameCol = findCol(headers, ['物料名称', '名称', '品名']);
     const specCol = findCol(headers, ['规格', '规格型号', '型号']);
     const qtyCol = findCol(headers, ['标准用量', '用量', '数量', '基本用量']);
+    const scheme = detectLevelScheme(rows, levelCol, typeCol);
 
     const parents = [];
     const childrenByParent = {};
     let currentParent = null;
 
     rows.forEach((row, idx) => {
-      const level = str(row[levelCol]);
       const code = str(row[codeCol]);
       const remark = str(row[remarkCol]);
-      if (isParentLevel(level) || (!level && !currentParent)) {
-        // treat as parent if level says so, or first rows without parent
-        if (isParentLevel(level) || (level === '' && code && !isChildLevel(level))) {
-          currentParent = {
-            code,
-            name: str(row[nameCol]),
-            spec: str(row[specCol]),
-            row,
-            rowIndex: idx
-          };
-          parents.push(currentParent);
-          childrenByParent[code] = childrenByParent[code] || [];
-          return;
-        }
+      const parentLike = isParentRow(row, levelCol, typeCol, scheme);
+      const childLike = isChildRow(row, levelCol, typeCol, scheme);
+
+      if (parentLike) {
+        currentParent = {
+          code,
+          name: str(row[nameCol]),
+          spec: str(row[specCol]),
+          row,
+          rowIndex: idx
+        };
+        parents.push(currentParent);
+        childrenByParent[code] = childrenByParent[code] || [];
+        return;
       }
-      if (!currentParent) return;
-      // child
-      if (isChildLevel(level) || level === '' || level === '1' || level === '2') {
-        // avoid treating next parent as child when level blank but looks like parent code group
-        if (level === '' && code && parents.some(p => p.code === code)) {
+
+      if (!currentParent) {
+        // orphan child before any parent: skip, or bootstrap if clearly child with formula
+        return;
+      }
+
+      if (childLike || (!parentLike && (looksLikeFormulaText(remark) || code))) {
+        // blank-level continuation rows under current parent count as children
+        // but skip if this row is actually another parent code already registered
+        if (!childLike && code && parents.some(p => p.code === code) && !looksLikeFormulaText(remark)) {
           currentParent = parents.find(p => p.code === code);
           return;
         }
@@ -710,25 +799,27 @@ tr:hover td { background: #f7fbf9; }
       }
     });
 
-    // If no parents detected via level, group by first column resembling parent repeating blocks
+    // Fallback: no parents parsed — group by remark/type heuristics
     if (!parents.length && rows.length) {
-      // fallback: every unique value in first code-like column that appears with children below
-      const allCodes = rows.map(r => str(r[codeCol])).filter(Boolean);
-      // treat rows with empty child-like remark as parents when previous pattern fails
       rows.forEach((row, idx) => {
         const code = str(row[codeCol]);
         if (!code) return;
-        const next = rows[idx + 1];
         const remark = str(row[remarkCol]);
-        const looksParent = !/^=/.test(remark) && next && str(next[remarkCol]);
-        if (looksParent || idx === 0) {
+        const type = str(typeCol ? row[typeCol] : '');
+        const isParent = /^母件|parent$/i.test(type) ||
+          (!looksLikeFormulaText(remark) && !/^子件|child$/i.test(type) &&
+            rows[idx + 1] && (looksLikeFormulaText(rows[idx + 1][remarkCol]) || /^子件|child$/i.test(str(typeCol ? rows[idx + 1][typeCol] : ''))));
+        if (isParent || (!parents.length && idx === 0 && !looksLikeFormulaText(remark))) {
           if (!childrenByParent[code]) {
             const p = { code, name: str(row[nameCol]), spec: str(row[specCol]), row, rowIndex: idx };
             parents.push(p);
             childrenByParent[code] = [];
+            currentParent = p;
+          } else {
+            currentParent = parents.find(p => p.code === code);
           }
         } else if (parents.length) {
-          const pc = parents[parents.length - 1].code;
+          const pc = (currentParent || parents[parents.length - 1]).code;
           childrenByParent[pc].push({
             code, name: str(row[nameCol]), spec: str(row[specCol]),
             baseQty: toNum(row[qtyCol]), remark, formula: extractFormulaFromRemark(remark),
@@ -738,17 +829,24 @@ tr:hover td { background: #f7fbf9; }
       });
     }
 
-    return { levelCol, remarkCol, codeCol, nameCol, specCol, qtyCol, parents, childrenByParent };
+    return {
+      levelCol, typeCol, remarkCol, codeCol, nameCol, specCol, qtyCol,
+      levelScheme: scheme,
+      parents, childrenByParent
+    };
   }
 
   // ===================== Formula extraction / Chinese convert =====================
   function extractFormulaFromRemark(remark) {
-    const r = str(remark);
+    let r = str(remark);
     if (!r) return '';
+    // normalize full-width punctuation often seen in ERP exports
+    r = r.replace(/；/g, ';').replace(/，/g, ',').replace(/（/g, '(').replace(/）/g, ')');
     if (r.startsWith('=')) return r;
-    // multi-line variable assignments
-    if (/N\d\s*=/.test(r) || /IF\s*\(/i.test(r) || /ROUNDUP?\s*\(/i.test(r)) {
-      return r.startsWith('=') ? r : r;
+    // variable assignments / Excel-like expressions without leading '='
+    // e.g. N1=ROUNDUP((DD-54)/250,0);N2=IF(N1=0,1,N1)
+    if (/[A-Za-z_]\w*\s*=/.test(r) || /IF\s*\(/i.test(r) || /ROUNDUP?\s*\(/i.test(r)) {
+      return r;
     }
     // Chinese descriptive rules
     if (/[≤＜＞≥<>]=?|时[：:]/.test(r)) {
@@ -1539,6 +1637,7 @@ tr:hover td { background: #f7fbf9; }
       const headerRow = detectHeaderRow(matrix);
       const table = matrixToTable(matrix, headerRow);
       const struct = parseBomStructure(table.headers, table.rows);
+      const childCount = Object.values(struct.childrenByParent).reduce((n, arr) => n + (arr ? arr.length : 0), 0);
       state.bom = {
         name,
         headers: table.headers,
@@ -1548,13 +1647,23 @@ tr:hover td { background: #f7fbf9; }
         raw: matrix,
         headerRow,
         levelCol: struct.levelCol,
+        typeCol: struct.typeCol || '',
+        levelScheme: struct.levelScheme || null,
         remarkCol: struct.remarkCol,
         codeCol: struct.codeCol,
         nameCol: struct.nameCol,
         specCol: struct.specCol,
         qtyCol: struct.qtyCol
       };
-      $('bomMeta').textContent = `${name} · 母件 ${struct.parents.length} · 表头行 ${headerRow + 1} · 级次列 ${struct.levelCol || '-'} · 备注列 ${struct.remarkCol || '-'}`;
+      const schemeLabel = struct.levelScheme
+        ? `级次${struct.levelScheme.parentLevel}=母件/${struct.levelScheme.childMin}+=子件`
+        : '';
+      $('bomMeta').textContent =
+        `${name} · 母件 ${struct.parents.length} · 子件 ${childCount}` +
+        ` · 表头行 ${headerRow + 1} · 级次列 ${struct.levelCol || '-'}` +
+        (struct.typeCol ? ` · 类型列 ${struct.typeCol}` : '') +
+        ` · 备注列 ${struct.remarkCol || '-'}` +
+        (schemeLabel ? ` · ${schemeLabel}` : '');
       autoGuessBomCols();
       updateUploadSummary();
       try { fillBomSelects(); } catch (e) {}
