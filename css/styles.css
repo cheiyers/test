@@ -347,6 +347,10 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .el-table .tbl-wrap {
   overflow: hidden;
   background: #fff;
+  border-radius: 0;
+}
+.el-table.selected .tbl-wrap {
+  overflow: visible;
 }
 .el-table table {
   width: 100%;
@@ -375,21 +379,25 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
   position: absolute;
   left: 0;
   right: 0;
-  top: -16px;
-  height: 16px;
+  top: -18px;
+  height: 18px;
   display: none;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  font-size: 10px;
-  color: #d7ffe9;
-  background: linear-gradient(180deg, #1fb8a8, #179e90);
+  font-size: 11px;
+  color: #06201d;
+  font-weight: 600;
+  background: linear-gradient(180deg, #2ad0bf, #1fb8a8);
   border-radius: 4px 4px 0 0;
   cursor: move;
-  z-index: 25;
+  z-index: 28;
   letter-spacing: 0.04em;
   user-select: none;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+  pointer-events: auto;
 }
+.el-table.selected > .tbl-move-grip,
 .el-table.selected .tbl-move-grip { display: flex; }
 .tbl-cell-active {
   outline: 2px solid #1fb8a8;

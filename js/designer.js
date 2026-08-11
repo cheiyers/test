@@ -490,17 +490,15 @@
     const wrap = root.querySelector('.tbl-wrap');
     if (!wrap) return;
 
-    if (!wrap.querySelector('.tbl-move-grip')) {
+    if (!root.querySelector(':scope > .tbl-move-grip')) {
       const grip = document.createElement('div');
       grip.className = 'tbl-move-grip';
-      grip.textContent = '⋮⋮ 拖动移动表格 · 右下角缩放';
-      wrap.insertBefore(grip, wrap.firstChild);
+      grip.textContent = '⋮⋮ 拖动移动 · 右下角缩放整表';
+      root.insertBefore(grip, root.firstChild);
     }
 
     if (wrap.querySelector('.tbl-col-resizer') || wrap.querySelector('.tbl-row-resizer')) return;
 
-    const s = this._scale();
-    const tablePxH = Math.max(1, el.h * s);
     let acc = 0;
     for (let c = 0; c < el.cols - 1; c++) {
       acc += el.colWidths[c];
@@ -893,8 +891,9 @@
 
     const grip = document.createElement('div');
     grip.className = 'tbl-move-grip';
-    grip.textContent = '⋮⋮ 拖动移动表格 · 右下角缩放';
-    wrap.appendChild(grip);
+    grip.textContent = '⋮⋮ 拖动移动 · 右下角缩放整表';
+    // Grip is a direct child of .el so it isn't clipped by .tbl-wrap overflow
+    node.appendChild(grip);
 
     const defaultPt = Number(el.tableFontSize) || 8;
     table.style.fontSize = (defaultPt * (96 / 72) * this.zoom) + 'px';
