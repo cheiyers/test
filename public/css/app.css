@@ -325,6 +325,16 @@ tr:hover td { background: #f8fbf9; }
 }
 
 .print-sheet { display: none; }
+.print-preview-grid {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start;
+}
+.print-thumb {
+  border: 1px solid #c9d8cf; border-radius: 10px; padding: 8px; background: #fff;
+  transform: scale(0.85); transform-origin: top left; margin-right: -20px; margin-bottom: -10px;
+}
+.manual-fields {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px;
+}
 @media print {
   body * { visibility: hidden; }
   .print-sheet, .print-sheet * { visibility: visible; }
@@ -333,8 +343,13 @@ tr:hover td { background: #f8fbf9; }
   }
   .no-print { display: none !important; }
   .print-label {
+    position: relative; overflow: hidden; background: #fff;
+  }
+  .print-label.solo {
     page-break-after: always; break-after: page;
-    position: relative; overflow: hidden;
+  }
+  .print-page {
+    page-break-after: always; break-after: page;
   }
 }
 

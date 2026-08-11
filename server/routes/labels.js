@@ -123,8 +123,9 @@ function labelRoutes(db) {
   });
 
   router.get('/print-data', canImport, (req, res) => {
-    const { batch_id, master_template_id, child_template_id } = req.query;
+    const { batch_id, master_template_id, child_template_id, label_type } = req.query;
     if (!batch_id) return res.status(400).json({ error: '缺少 batch_id' });
+    const want = String(label_type || 'all').toLowerCase(); // all | master | child
 
     const masterTpl = master_template_id
       ? db.prepare('SELECT * FROM label_templates WHERE id = ?').get(master_template_id)
@@ -132,6 +133,13 @@ function labelRoutes(db) {
     const childTpl = child_template_id
       ? db.prepare('SELECT * FROM label_templates WHERE id = ?').get(child_template_id)
       : db.prepare('SELECT * FROM label_templates WHERE label_type = ? ORDER BY updated_at DESC LIMIT 1').get('child');
+
+    if ((want === 'all' || want === 'master') && !masterTpl) {
+      return res.status(400).json({ error: '未找到总包标签模板' });
+    }
+    if ((want === 'all' || want === 'child') && !childTpl) {
+      return res.status(400).json({ error: '未找到配件标签模板' });
+    }
 
     const packages = db.prepare(`
       SELECT p.*, m.raw_json AS master_raw, m.mother_part_no, m.line_no AS master_line_no
@@ -150,52 +158,150 @@ function labelRoutes(db) {
         mother_part_no: pkg.mother_part_no,
         package_code: pkg.package_code
       };
-      const masterTplFmt = formatTpl(masterTpl);
-      const masterPrintCode = buildPrintCode(masterTplFmt, masterData, pkg.package_code, 'master');
-      labels.push({
-        type: 'master',
-        code: masterPrintCode,
-        scan_id: pkg.package_code,
-        order_no: pkg.order_no,
-        data: masterData,
-        template: masterTplFmt
-      });
 
-      const children = db.prepare(`
-        SELECT pc.*, a.raw_json, a.part_no, a.qty, a.line_no
-        FROM package_children pc
-        JOIN accessory_order_lines a ON a.id = pc.accessory_line_id
-        WHERE pc.package_id = ?
-        ORDER BY a.line_no
-      `).all(pkg.id);
-
-      for (const ch of children) {
-        const raw = JSON.parse(ch.raw_json);
-        const childData = {
-          ...raw,
-          order_no: pkg.order_no,
-          part_no: ch.part_no,
-          qty: ch.qty,
-          child_code: ch.child_code,
-          package_code: pkg.package_code
-        };
-        const childTplFmt = formatTpl(childTpl);
-        const childPrintCode = buildPrintCode(childTplFmt, childData, ch.child_code, 'child');
+      if (want === 'all' || want === 'master') {
+        const masterTplFmt = formatTpl(masterTpl);
+        const masterPrintCode = buildPrintCode(masterTplFmt, masterData, pkg.package_code, 'master');
         labels.push({
-          type: 'child',
-          code: childPrintCode,
-          scan_id: ch.child_code,
+          type: 'master',
+          code: masterPrintCode,
+          scan_id: pkg.package_code,
           order_no: pkg.order_no,
-          data: childData,
-          template: childTplFmt
+          data: masterData,
+          template: masterTplFmt
         });
+      }
+
+      if (want === 'all' || want === 'child') {
+        const children = db.prepare(`
+          SELECT pc.*, a.raw_json, a.part_no, a.qty, a.line_no
+          FROM package_children pc
+          JOIN accessory_order_lines a ON a.id = pc.accessory_line_id
+          WHERE pc.package_id = ?
+          ORDER BY a.line_no
+        `).all(pkg.id);
+
+        for (const ch of children) {
+          const raw = JSON.parse(ch.raw_json);
+          const childData = {
+            ...raw,
+            order_no: pkg.order_no,
+            part_no: ch.part_no,
+            qty: ch.qty,
+            child_code: ch.child_code,
+            package_code: pkg.package_code
+          };
+          const childTplFmt = formatTpl(childTpl);
+          const childPrintCode = buildPrintCode(childTplFmt, childData, ch.child_code, 'child');
+          labels.push({
+            type: 'child',
+            code: childPrintCode,
+            scan_id: ch.child_code,
+            order_no: pkg.order_no,
+            data: childData,
+            template: childTplFmt
+          });
+        }
       }
     }
 
-    res.json({ labels, count: labels.length });
+    res.json({ labels, count: labels.length, label_type: want });
+  });
+
+  /** 无订单/BOM 时：按模板 + 人工填写字段生成可打印标签 */
+  router.post('/manual-preview', canImport, (req, res) => {
+    const body = req.body || {};
+    const templateId = body.template_id;
+    if (!templateId) return res.status(400).json({ error: '请选择标签模板' });
+    const row = db.prepare('SELECT * FROM label_templates WHERE id = ?').get(templateId);
+    if (!row) return res.status(404).json({ error: '模板不存在' });
+
+    const tpl = formatTpl(row);
+    const data = { ...(body.data && typeof body.data === 'object' ? body.data : {}) };
+    const copies = Math.max(1, Math.min(200, Number(body.copies) || 1));
+    const scanId = String(body.scan_id || body.code || '').trim() || shortCode(tpl.label_type === 'child' ? 'C' : 'M');
+
+    if (tpl.label_type === 'child') {
+      if (!data.child_code) data.child_code = scanId;
+    } else if (!data.package_code) {
+      data.package_code = scanId;
+    }
+
+    let printCode = String(body.code || '').trim();
+    if (!printCode) {
+      try {
+        printCode = buildPrintCode(tpl, data, scanId, tpl.label_type);
+      } catch {
+        printCode = scanId;
+      }
+    }
+
+    const labels = [];
+    for (let i = 0; i < copies; i++) {
+      labels.push({
+        type: tpl.label_type,
+        code: printCode,
+        scan_id: scanId,
+        order_no: data.order_no || '',
+        data: { ...data },
+        template: tpl,
+        manual: true
+      });
+    }
+
+    res.json({
+      labels,
+      count: labels.length,
+      fields: collectTemplateFields(tpl)
+    });
+  });
+
+  router.get('/templates/:id/fields', canImport, (req, res) => {
+    const row = db.prepare('SELECT * FROM label_templates WHERE id = ?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: '模板不存在' });
+    const tpl = formatTpl(row);
+    res.json({ template: tpl, fields: collectTemplateFields(tpl) });
   });
 
   return router;
+}
+
+function collectTemplateFields(tpl) {
+  const set = new Set();
+  const add = (f) => {
+    const name = String(f || '').trim();
+    if (name) set.add(name);
+  };
+  const scanText = (text) => {
+    String(text || '').replace(/\{([^}]+)\}/g, (_, n) => add(n));
+  };
+  const scanSegments = (segments) => {
+    (segments || []).forEach((seg) => {
+      if (seg && seg.type === 'field') add(seg.field);
+      if (seg && seg.type === 'text') scanText(seg.value);
+    });
+  };
+
+  (tpl.elements || []).forEach((el) => {
+    if (!el) return;
+    add(el.bind);
+    scanText(el.text);
+    scanSegments(el.segments);
+    if (el.type === 'table') {
+      (el.cells || []).forEach((cell) => {
+        if (!cell) return;
+        add(cell.bind);
+        scanText(cell.text);
+        scanSegments(cell.segments);
+      });
+    }
+  });
+  scanSegments(tpl.code_segments);
+  (tpl.code_fields || []).forEach(add);
+
+  // 常用兜底字段，方便手工填写
+  ['order_no', 'mother_part_no', 'part_no', 'qty', 'package_code', 'child_code'].forEach(add);
+  return [...set];
 }
 
 function formatTpl(row) {

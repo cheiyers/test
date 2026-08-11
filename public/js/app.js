@@ -947,42 +947,124 @@
 
   // ---------------- Print ----------------
   async function renderPrint(root) {
-    const [batches, masterTpls, childTpls] = await Promise.all([
+    const [batches, masterTpls, childTpls, allTpls] = await Promise.all([
       API.get('/batches'),
       API.get('/templates?label_type=master'),
-      API.get('/templates?label_type=child')
+      API.get('/templates?label_type=child'),
+      API.get('/templates')
     ]);
     const labelled = (batches.items || []).filter((b) => b.status === 'associated' || b.status === 'labelled');
+    const templates = allTpls.items || [...(masterTpls.items || []), ...(childTpls.items || [])];
+    let printMode = 'order'; // order | manual
+    let lastLabels = [];
+
     root.innerHTML = `
       <div class="card">
         <h2>生成并打印标签</h2>
+        <div class="mode-tabs" id="printModeTabs">
+          <button type="button" class="mode-tab active" data-pmode="order">订单打印</button>
+          <button type="button" class="mode-tab" data-pmode="manual">自定义打印</button>
+        </div>
         <div id="printFlash"></div>
-        <div class="row">
-          <label class="field"><span>订单批次</span>
-            <select id="printBatch">
-              <option value="">请选择</option>
-              ${labelled.map((b) => `<option value="${b.id}" ${state.printBatchId === b.id ? 'selected' : ''}>${escapeHtml(b.name)}（成功 ${b.master_ok || 0}）</option>`).join('')}
+
+        <div id="orderPrintPane">
+          <div class="row" style="flex-wrap:wrap;gap:12px">
+            <label class="field"><span>订单批次</span>
+              <select id="printBatch">
+                <option value="">请选择</option>
+                ${labelled.map((b) => `<option value="${b.id}" ${state.printBatchId === b.id ? 'selected' : ''}>${escapeHtml(b.name)}（成功 ${b.master_ok || 0}）</option>`).join('')}
+              </select>
+            </label>
+            <label class="field"><span>打印范围</span>
+              <select id="printScope">
+                <option value="all">总包 + 配件</option>
+                <option value="master">仅总包标签</option>
+                <option value="child">仅配件标签</option>
+              </select>
+            </label>
+            <label class="field"><span>总包模板</span>
+              <select id="printMasterTpl">${(masterTpls.items || []).map((t) => `<option value="${t.id}">${escapeHtml(t.name)}（${t.width_mm}×${t.height_mm}mm）</option>`).join('')}</select>
+            </label>
+            <label class="field"><span>配件模板</span>
+              <select id="printChildTpl">${(childTpls.items || []).map((t) => `<option value="${t.id}">${escapeHtml(t.name)}（${t.width_mm}×${t.height_mm}mm）</option>`).join('')}</select>
+            </label>
+          </div>
+          <div class="row" style="margin-top:12px;flex-wrap:wrap;gap:8px">
+            <button class="btn" id="genLabelsBtn" type="button">生成标签码</button>
+            <button class="btn secondary" id="loadPrintBtn" type="button">加载预览</button>
+          </div>
+        </div>
+
+        <div id="manualPrintPane" class="hidden">
+          <p class="muted">无需订单/BOM：选择模板后手工填写字段内容，即可预览并打印。</p>
+          <div class="row" style="flex-wrap:wrap;gap:12px">
+            <label class="field"><span>标签模板</span>
+              <select id="manualTpl">
+                <option value="">请选择</option>
+                ${templates.map((t) => `<option value="${t.id}" data-type="${t.label_type}">${escapeHtml(t.name)}（${t.label_type === 'child' ? '配件' : '总包'} · ${t.width_mm}×${t.height_mm}mm）</option>`).join('')}
+              </select>
+            </label>
+            <label class="field"><span>打印份数</span><input id="manualCopies" type="number" min="1" max="200" value="1" /></label>
+            <label class="field"><span>条码/唯一码（可选）</span><input id="manualScanId" placeholder="留空则自动生成" /></label>
+          </div>
+          <div id="manualFields" class="manual-fields" style="margin-top:12px"></div>
+          <div class="row" style="margin-top:12px">
+            <button class="btn" id="manualPreviewBtn" type="button">生成预览</button>
+            <button class="btn secondary" id="manualAddFieldBtn" type="button">+ 自定义字段</button>
+          </div>
+        </div>
+
+        <hr style="border:none;border-top:1px solid var(--line);margin:16px 0" />
+        <div class="row" style="flex-wrap:wrap;gap:12px;align-items:end">
+          <label class="field"><span>打印纸张</span>
+            <select id="printPaper">
+              <option value="label">标签纸（按模板尺寸）</option>
+              <option value="a4">A4 纵向</option>
+              <option value="a4-landscape">A4 横向</option>
+              <option value="letter">Letter</option>
+              <option value="custom">自定义毫米</option>
             </select>
           </label>
-          <label class="field"><span>总包模板</span>
-            <select id="printMasterTpl">${(masterTpls.items || []).map((t) => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('')}</select>
+          <label class="field hidden" id="customPaperBox"><span>自定义宽×高 mm</span>
+            <div class="row" style="gap:6px">
+              <input id="paperW" type="number" placeholder="宽" style="width:90px" value="210" />
+              <input id="paperH" type="number" placeholder="高" style="width:90px" value="297" />
+            </div>
           </label>
-          <label class="field"><span>子件模板</span>
-            <select id="printChildTpl">${(childTpls.items || []).map((t) => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('')}</select>
+          <label class="field"><span>排版</span>
+            <select id="printLayout">
+              <option value="one">一页一张（居中）</option>
+              <option value="fit">一页多张（自动排布，适合 A4）</option>
+            </select>
           </label>
-        </div>
-        <div class="row" style="margin-top:12px">
-          <button class="btn" id="genLabelsBtn" type="button">仅对匹配成功行生成标签</button>
-          <button class="btn secondary" id="loadPrintBtn" type="button">加载打印预览</button>
           <button class="btn warn" id="doPrintBtn" type="button">打印</button>
         </div>
-        <p class="muted" style="margin-top:8px">支持浏览器连接普通打印机或标签打印机；请在打印对话框中选择正确纸张/标签尺寸。</p>
+        <p class="muted" style="margin-top:8px">打印时会按所选纸张适配电脑打印机对话框；标签纸模式会按模板毫米尺寸设置页面。</p>
       </div>
       <div class="card">
         <h3>预览</h3>
-        <div id="printPreview" class="row" style="align-items:start"></div>
+        <div id="printPreview" class="print-preview-grid"></div>
       </div>
     `;
+
+    function setPrintMode(mode) {
+      printMode = mode;
+      $$('#printModeTabs .mode-tab', root).forEach((b) => b.classList.toggle('active', b.dataset.pmode === mode));
+      $('#orderPrintPane', root).classList.toggle('hidden', mode !== 'order');
+      $('#manualPrintPane', root).classList.toggle('hidden', mode !== 'manual');
+    }
+
+    $$('#printModeTabs .mode-tab', root).forEach((btn) => {
+      btn.addEventListener('click', () => setPrintMode(btn.dataset.pmode));
+    });
+
+    $('#printPaper', root).addEventListener('change', () => {
+      $('#customPaperBox', root).classList.toggle('hidden', $('#printPaper', root).value !== 'custom');
+      if (lastLabels.length) renderLabels(lastLabels);
+    });
+    $('#printLayout', root).addEventListener('change', () => {
+      if (lastLabels.length) renderLabels(lastLabels);
+    });
 
     $('#genLabelsBtn', root).addEventListener('click', async () => {
       try {
@@ -992,7 +1074,7 @@
           child_template_id: $('#printChildTpl', root).value,
           only_success: true
         });
-        flash($('#printFlash', root), `已生成总包 ${res.master_created} 张、子件 ${res.child_created} 张`, 'success');
+        flash($('#printFlash', root), `已生成总包 ${res.master_created} 张、配件 ${res.child_created} 张`, 'success');
       } catch (err) {
         flash($('#printFlash', root), err.message, 'error');
       }
@@ -1001,48 +1083,197 @@
     $('#loadPrintBtn', root).addEventListener('click', () => loadPreview());
     $('#doPrintBtn', root).addEventListener('click', () => {
       if (!$('#printSheet').innerHTML.trim()) {
-        flash($('#printFlash', root), '请先加载打印预览', 'error');
+        flash($('#printFlash', root), '请先加载/生成打印预览', 'error');
         return;
       }
+      applyPrintPageStyle(lastLabels);
       window.print();
+    });
+
+    async function loadManualFields() {
+      const id = $('#manualTpl', root).value;
+      const box = $('#manualFields', root);
+      if (!id) {
+        box.innerHTML = '<div class="muted">请先选择模板</div>';
+        return;
+      }
+      try {
+        const res = await API.get(`/labels/templates/${id}/fields`);
+        const fields = res.fields || [];
+        box.innerHTML = fields.map((f) => `
+          <label class="field"><span>${escapeHtml(f)}</span>
+            <input data-manual-field="${escapeHtml(f)}" placeholder="填写 ${escapeHtml(f)}" />
+          </label>`).join('') || '<div class="muted">模板无明显字段，可点“自定义字段”添加</div>';
+      } catch (err) {
+        box.innerHTML = `<div class="flash error">${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    $('#manualTpl', root).addEventListener('change', loadManualFields);
+    $('#manualAddFieldBtn', root).addEventListener('click', () => {
+      const name = prompt('自定义字段名（需与模板中 {字段名} / 绑定字段一致）');
+      if (!name || !name.trim()) return;
+      const box = $('#manualFields', root);
+      const f = name.trim();
+      if (box.querySelector(`[data-manual-field="${f.replace(/"/g, '')}"]`)) return;
+      const label = document.createElement('label');
+      label.className = 'field';
+      label.innerHTML = `<span>${escapeHtml(f)}</span><input data-manual-field="${escapeHtml(f)}" placeholder="填写 ${escapeHtml(f)}" />`;
+      box.appendChild(label);
+    });
+
+    $('#manualPreviewBtn', root).addEventListener('click', async () => {
+      const template_id = $('#manualTpl', root).value;
+      if (!template_id) return flash($('#printFlash', root), '请选择模板', 'error');
+      const data = {};
+      $$('[data-manual-field]', root).forEach((inp) => {
+        data[inp.dataset.manualField] = inp.value;
+      });
+      try {
+        const res = await API.post('/labels/manual-preview', {
+          template_id,
+          data,
+          copies: Number($('#manualCopies', root).value) || 1,
+          scan_id: $('#manualScanId', root).value.trim()
+        });
+        renderLabels(res.labels || []);
+        flash($('#printFlash', root), `已生成自定义标签 ${res.count} 张`, 'success');
+      } catch (err) {
+        flash($('#printFlash', root), err.message, 'error');
+      }
     });
 
     async function loadPreview() {
       const batchId = $('#printBatch', root).value;
       if (!batchId) return flash($('#printFlash', root), '请选择批次', 'error');
+      const scope = $('#printScope', root).value || 'all';
       try {
-        const data = await API.get(`/labels/print-data?batch_id=${batchId}&master_template_id=${$('#printMasterTpl', root).value}&child_template_id=${$('#printChildTpl', root).value}`);
+        const q = new URLSearchParams({
+          batch_id: batchId,
+          master_template_id: $('#printMasterTpl', root).value,
+          child_template_id: $('#printChildTpl', root).value,
+          label_type: scope
+        });
+        const data = await API.get(`/labels/print-data?${q.toString()}`);
         renderLabels(data.labels || []);
-        flash($('#printFlash', root), `已加载 ${data.count} 张标签`, 'success');
+        const tip = scope === 'master' ? '总包' : scope === 'child' ? '配件' : '全部';
+        flash($('#printFlash', root), `已加载 ${data.count} 张${tip}标签`, 'success');
       } catch (err) {
         flash($('#printFlash', root), err.message, 'error');
       }
     }
 
+    function paperOptions() {
+      return {
+        paper: $('#printPaper', root).value,
+        layout: $('#printLayout', root).value,
+        customW: Number($('#paperW', root).value) || 210,
+        customH: Number($('#paperH', root).value) || 297
+      };
+    }
+
+    function applyPrintPageStyle(labels) {
+      let styleEl = document.getElementById('printPageStyle');
+      if (!styleEl) {
+        styleEl = document.createElement('style');
+        styleEl.id = 'printPageStyle';
+        document.head.appendChild(styleEl);
+      }
+      const opts = paperOptions();
+      const sample = labels[0]?.template;
+      const lw = sample?.width_mm || 100;
+      const lh = sample?.height_mm || 60;
+      let pageCss = '';
+      if (opts.paper === 'label') {
+        pageCss = `@page { size: ${lw}mm ${lh}mm; margin: 0; }`;
+      } else if (opts.paper === 'a4') {
+        pageCss = '@page { size: A4 portrait; margin: 8mm; }';
+      } else if (opts.paper === 'a4-landscape') {
+        pageCss = '@page { size: A4 landscape; margin: 8mm; }';
+      } else if (opts.paper === 'letter') {
+        pageCss = '@page { size: letter portrait; margin: 0.4in; }';
+      } else {
+        pageCss = `@page { size: ${opts.customW}mm ${opts.customH}mm; margin: 5mm; }`;
+      }
+      styleEl.textContent = `
+        ${pageCss}
+        @media print {
+          .print-sheet { width: 100%; }
+          .print-label.solo { page-break-after: always; break-after: page; margin: 0 auto; }
+          .print-page { page-break-after: always; break-after: page; }
+          .print-page .print-label { page-break-after: auto; break-after: auto; }
+        }
+      `;
+    }
+
     function renderLabels(labels) {
+      lastLabels = labels || [];
       const preview = $('#printPreview', root);
       const sheet = $('#printSheet');
-      preview.innerHTML = `<p class="muted">共 ${labels.length} 张，已准备打印。</p>`;
+      const opts = paperOptions();
+      preview.innerHTML = `<p class="muted">共 ${lastLabels.length} 张，纸张=${opts.paper}，排版=${opts.layout === 'fit' ? '一页多张' : '一页一张'}。</p>`;
       sheet.innerHTML = '';
+      applyPrintPageStyle(lastLabels);
 
-      labels.forEach((label, idx) => {
-        const printWrap = document.createElement('div');
-        printWrap.className = 'print-label';
-        printWrap.style.pageBreakAfter = 'always';
-        LabelRender.renderLabelTo(printWrap, label);
-        sheet.appendChild(printWrap);
+      const useFit = opts.layout === 'fit' && opts.paper !== 'label';
+      if (!useFit) {
+        lastLabels.forEach((label, idx) => {
+          const printWrap = document.createElement('div');
+          printWrap.className = 'print-label solo';
+          LabelRender.renderLabelTo(printWrap, label);
+          sheet.appendChild(printWrap);
+          if (idx < 8) appendPreviewThumb(preview, label);
+        });
+        return;
+      }
 
-        if (idx < 6) {
-          const screenWrap = document.createElement('div');
-          screenWrap.style.border = '1px solid #c9d8cf';
-          screenWrap.style.borderRadius = '10px';
-          screenWrap.style.margin = '8px';
-          screenWrap.style.transform = 'scale(0.85)';
-          screenWrap.style.transformOrigin = 'top left';
-          LabelRender.renderLabelTo(screenWrap, label);
-          preview.appendChild(screenWrap);
-        }
-      });
+      // A4 等大纸：按模板尺寸估算每页可排数量
+      const sample = lastLabels[0]?.template;
+      const lw = Number(sample?.width_mm) || 100;
+      const lh = Number(sample?.height_mm) || 60;
+      let pageW = 210;
+      let pageH = 297;
+      if (opts.paper === 'a4-landscape') { pageW = 297; pageH = 210; }
+      else if (opts.paper === 'letter') { pageW = 216; pageH = 279; }
+      else if (opts.paper === 'custom') { pageW = opts.customW; pageH = opts.customH; }
+      const usableW = Math.max(lw, pageW - 16);
+      const usableH = Math.max(lh, pageH - 16);
+      const cols = Math.max(1, Math.floor(usableW / (lw + 4)));
+      const rows = Math.max(1, Math.floor(usableH / (lh + 4)));
+      const perPage = Math.max(1, cols * rows);
+
+      for (let i = 0; i < lastLabels.length; i += perPage) {
+        const page = document.createElement('div');
+        page.className = 'print-page';
+        page.style.display = 'grid';
+        page.style.gridTemplateColumns = `repeat(${cols}, ${lw}mm)`;
+        page.style.gap = '4mm';
+        page.style.justifyContent = 'start';
+        page.style.alignContent = 'start';
+        lastLabels.slice(i, i + perPage).forEach((label) => {
+          const printWrap = document.createElement('div');
+          printWrap.className = 'print-label';
+          LabelRender.renderLabelTo(printWrap, label);
+          page.appendChild(printWrap);
+        });
+        sheet.appendChild(page);
+      }
+      lastLabels.slice(0, 8).forEach((label) => appendPreviewThumb(preview, label));
+    }
+
+    function appendPreviewThumb(preview, label) {
+      const screenWrap = document.createElement('div');
+      screenWrap.className = 'print-thumb';
+      const tag = document.createElement('div');
+      tag.className = 'muted';
+      tag.style.fontSize = '12px';
+      tag.style.marginBottom = '4px';
+      tag.textContent = label.type === 'child' ? '配件' : (label.manual ? '自定义' : '总包');
+      screenWrap.appendChild(tag);
+      const inner = document.createElement('div');
+      LabelRender.renderLabelTo(inner, label);
+      screenWrap.appendChild(inner);
+      preview.appendChild(screenWrap);
     }
   }
 
