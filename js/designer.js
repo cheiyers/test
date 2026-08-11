@@ -957,6 +957,8 @@
         if (shown && shown === rawText && /\{\{/.test(rawText)) {
           td.style.opacity = '0.72';
           td.title = '未匹配到订单列，请检查字段名或导入订单';
+        } else if (shown) {
+          td.title = shown;
         }
         if (selected && this.selectedCell && this.selectedCell.r === r && this.selectedCell.c === c) {
           td.classList.add('tbl-cell-active');
@@ -968,6 +970,18 @@
     }
     table.appendChild(tbody);
     wrap.appendChild(table);
+    node.appendChild(wrap);
+
+    // After layout: shrink font so long content stays visible inside the cell
+    requestAnimationFrame(() => {
+      wrap.querySelectorAll('.tbl-cell').forEach((td) => {
+        const r = Number(td.dataset.r);
+        const c = Number(td.dataset.c);
+        const cell = el.cells[r] && el.cells[r][c];
+        const basePt = (cell && cell.fontSize != null) ? Number(cell.fontSize) : defaultPt;
+        fitCellFont(td, basePt, this.zoom);
+      });
+    });
 
     if (selected) {
       let acc = 0;
@@ -989,9 +1003,23 @@
         wrap.appendChild(handle);
       }
     }
-
-    node.appendChild(wrap);
   };
+
+  function fitCellFont(td, basePt, zoom) {
+    if (!td || !td.clientHeight) return;
+    let pt = Number(basePt) || 8;
+    const minPt = 4.5;
+    const toPx = (p) => (p * (96 / 72) * zoom);
+    td.style.fontSize = toPx(pt) + 'px';
+    // Allow a few shrink steps for long labels / values
+    let guard = 16;
+    while (guard-- > 0 && pt > minPt) {
+      const overflow = td.scrollHeight > td.clientHeight + 1 || td.scrollWidth > td.clientWidth + 1;
+      if (!overflow) break;
+      pt -= 0.5;
+      td.style.fontSize = toPx(pt) + 'px';
+    }
+  }
 
   Designer.prototype._renderLine = function (node, el, s) {
     const line = document.createElement('div');

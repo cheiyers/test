@@ -43,7 +43,7 @@
       cols: 2,
       borderColor: '#000000',
       tableFontSize: 7,
-      colWidths: [40, 60],
+      colWidths: [44, 56],
       rowHeights: global.LabelTable.normalizeWeights(Array(7).fill(1)),
       merges: [],
       cells,

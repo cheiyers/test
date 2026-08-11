@@ -242,18 +242,29 @@
       case 'CONCAT_OP':
         return String(evalNode(node.left, row) ?? '') + String(evalNode(node.right, row) ?? '');
       case 'ARITH': {
-        const a = toNumber(evalNode(node.left, row));
-        const b = toNumber(evalNode(node.right, row));
+        const leftVal = evalNode(node.left, row);
+        const rightVal = evalNode(node.right, row);
+        const a = toNumber(leftVal);
+        const b = toNumber(rightVal);
         if (node.op === '+') {
-          // if either side looks non-numeric originally, concat
           if (!Number.isFinite(a) || !Number.isFinite(b)) {
-            return String(evalNode(node.left, row) ?? '') + String(evalNode(node.right, row) ?? '');
+            return String(leftVal ?? '') + String(rightVal ?? '');
           }
           return a + b;
         }
-        if (node.op === '-') return a - b;
+        if (node.op === '-') {
+          if (!Number.isFinite(a) || !Number.isFinite(b)) {
+            return String(leftVal ?? '') + '-' + String(rightVal ?? '');
+          }
+          return a - b;
+        }
         if (node.op === '*') return a * b;
-        if (node.op === '/') return b === 0 ? '' : a / b;
+        if (node.op === '/') {
+          if (Number.isFinite(a) && Number.isFinite(b) && String(leftVal).trim() !== '' && String(rightVal).trim() !== '') {
+            return b === 0 ? '' : a / b;
+          }
+          return String(leftVal ?? '') + '/' + String(rightVal ?? '');
+        }
         if (node.op === '%') return a % b;
         return '';
       }
@@ -281,13 +292,45 @@
     return String(template ?? '').replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, name) => getField(row, name));
   }
 
+  /** True only when expression clearly uses formula syntax (not plain labels like "Customer P/N"). */
+  function isFormulaExpression(src) {
+    const s = String(src || '');
+    if (/\b(IF|CONCAT|JOIN)\s*\(/i.test(s)) return true;
+
+    const hasFields = /\{\{/.test(s);
+    // Replace fields/strings with tokens so P/N style labels are not treated as division
+    const code = s
+      .replace(/\{\{[^}]*\}\}/g, ' ¶ ')
+      .replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g, ' § ');
+
+    if (/\b(AND|OR|NOT)\b/i.test(code)) return true;
+    // Concat operators with fields or strings
+    if (/[&+]/.test(code) && (hasFields || /§/.test(code))) return true;
+    // Comparisons
+    if (/<=|>=|!=|<>|==|[<>]/.test(code)) return true;
+    // Arithmetic with field placeholders
+    if (hasFields && /[+\-*/%]/.test(code)) return true;
+    // Pure numeric expression: 10/2, 3+4
+    if (/^\s*\d+(\.\d+)?\s*[+\-*/%]\s*\d+(\.\d+)?\s*$/.test(s)) return true;
+    // Spaced operators (a + b)
+    if (/\s[+\-*/%]\s/.test(code)) return true;
+    return false;
+  }
+
   function evaluate(expression, row) {
     const src = String(expression ?? '').trim();
     if (!src) return '';
-    // Fast path: only placeholders / plain text without operators
-    if (!/[()&+\-*/%<>=!,]|IF|CONCAT|JOIN|AND|OR|NOT/i.test(src.replace(/\{\{[^}]+\}\}/g, ''))) {
+
+    // Plain labels / text (e.g. "Customer P/N", "Order No.") — never parse as formula
+    if (!/\{\{/.test(src) && !isFormulaExpression(src)) {
+      return src;
+    }
+
+    // Only field placeholders + literal text, no operators
+    if (/\{\{/.test(src) && !isFormulaExpression(src)) {
       return interpolate(src, row);
     }
+
     try {
       const tokens = tokenize(src);
       if (!tokens.length) return '';
@@ -325,5 +368,6 @@
     interpolate,
     resolveBinding,
     getField,
+    isFormulaExpression,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

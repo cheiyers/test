@@ -65,6 +65,7 @@
         LabelTable.ensureGrid(el);
         const map = LabelTable.getVisibleCellMap(el);
         const table = document.createElement('table');
+        const tbody = document.createElement('tbody');
         table.style.width = '100%';
         table.style.height = '100%';
         table.style.borderCollapse = 'collapse';
@@ -95,13 +96,20 @@
             td.style.fontWeight = cell.fontWeight || '400';
             td.style.fontStyle = cell.fontStyle || 'normal';
             td.style.color = cell.color || '#000';
+            td.style.overflow = 'hidden';
+            td.style.overflowWrap = 'anywhere';
+            td.style.wordBreak = 'break-word';
+            td.style.whiteSpace = 'pre-wrap';
+            td.style.lineHeight = '1.15';
+            td.style.maxWidth = '0';
             const pt = cell.fontSize != null ? Number(cell.fontSize) : defaultPt;
             td.style.fontSize = pt + 'pt';
             td.textContent = LabelTable.evaluateCellText(cell, snapshot.order || {});
             tr.appendChild(td);
           }
-          table.appendChild(tr);
+          tbody.appendChild(tr);
         }
+        table.appendChild(tbody);
         node.appendChild(table);
       } else if (el.type === 'barcode') {
         const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
