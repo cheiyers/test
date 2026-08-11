@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>标签设计器 · Label Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div class="brand-text">
+          <strong>标签设计器</strong>
+          <span>Label Studio</span>
+        </div>
+      </div>
+
+      <div class="top-actions">
+        <button type="button" class="btn ghost" id="btn-new" title="新建空白标签">新建</button>
+        <button type="button" class="btn ghost" id="btn-save" title="保存当前模板">保存模板</button>
+        <button type="button" class="btn ghost" id="btn-templates" title="管理已保存方案">方案库</button>
+        <div class="divider-v"></div>
+        <label class="btn ghost file-btn" title="导入订单 CSV / Excel">
+          导入订单
+          <input type="file" id="order-file" accept=".csv,.xlsx,.xls,.json" hidden />
+        </label>
+        <button type="button" class="btn ghost" id="btn-clear-orders">清空订单</button>
+        <div class="divider-v"></div>
+        <button type="button" class="btn primary" id="btn-print">打印</button>
+        <button type="button" class="btn accent" id="btn-export-excel">导出 Excel</button>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <!-- Left: tools -->
+      <aside class="panel tools-panel">
+        <h2>组件</h2>
+        <div class="tool-grid">
+          <button type="button" class="tool" data-type="text" title="文本">
+            <span class="tool-icon">T</span>
+            <span>文本</span>
+          </button>
+          <button type="button" class="tool" data-type="barcode" title="条码">
+            <span class="tool-icon">|||||</span>
+            <span>条码</span>
+          </button>
+          <button type="button" class="tool" data-type="qrcode" title="二维码">
+            <span class="tool-icon">▦</span>
+            <span>二维码</span>
+          </button>
+          <button type="button" class="tool" data-type="table" title="表格">
+            <span class="tool-icon">⊞</span>
+            <span>表格</span>
+          </button>
+          <button type="button" class="tool" data-type="line" title="线条">
+            <span class="tool-icon">—</span>
+            <span>线条</span>
+          </button>
+          <button type="button" class="tool" data-type="rect" title="矩形">
+            <span class="tool-icon">▭</span>
+            <span>矩形</span>
+          </button>
+          <button type="button" class="tool" data-type="image" title="图片">
+            <span class="tool-icon">▣</span>
+            <span>图片</span>
+          </button>
+        </div>
+
+        <h2>标签尺寸</h2>
+        <div class="field-stack">
+          <label>
+            预设
+            <select id="label-preset">
+              <option value="40x30">40×30 mm</option>
+              <option value="50x30">50×30 mm</option>
+              <option value="60x40" selected>60×40 mm</option>
+              <option value="80x50">80×50 mm</option>
+              <option value="100x70">100×70 mm</option>
+              <option value="100x150">100×150 mm</option>
+              <option value="custom">自定义</option>
+            </select>
+          </label>
+          <div class="field-row">
+            <label>宽(mm)<input type="number" id="label-width" value="60" min="10" max="300" step="1" /></label>
+            <label>高(mm)<input type="number" id="label-height" value="40" min="10" max="400" step="1" /></label>
+          </div>
+          <label>
+            缩放
+            <input type="range" id="zoom" min="50" max="250" value="120" />
+            <span id="zoom-label">120%</span>
+          </label>
+        </div>
+
+        <h2>订单数据</h2>
+        <div class="order-summary" id="order-summary">
+          <p class="muted">尚未导入订单。可直接设计模板并空白打印，或导入 CSV / Excel。</p>
+        </div>
+        <div class="order-nav" id="order-nav" hidden>
+          <button type="button" class="btn tiny" id="prev-order">上一单</button>
+          <span id="order-index">1 / 1</span>
+          <button type="button" class="btn tiny" id="next-order">下一单</button>
+        </div>
+        <div class="columns-list" id="columns-list"></div>
+      </aside>
+
+      <!-- Center: canvas -->
+      <main class="canvas-area">
+        <div class="canvas-toolbar">
+          <span id="template-name" class="template-name">未命名模板</span>
+          <div class="canvas-hints">
+            <span>拖拽移动 · 边角缩放 · Delete 删除 · Ctrl+D 复制</span>
+          </div>
+        </div>
+        <div class="canvas-stage" id="canvas-stage">
+          <div class="label-canvas" id="label-canvas" tabindex="0"></div>
+        </div>
+      </main>
+
+      <!-- Right: properties -->
+      <aside class="panel props-panel">
+        <h2>属性</h2>
+        <div id="props-empty" class="muted props-empty">选中画布上的组件以编辑属性与数据绑定。</div>
+        <form id="props-form" class="props-form" hidden>
+          <label>名称<input type="text" name="name" /></label>
+          <div class="field-row">
+            <label>X(mm)<input type="number" name="x" step="0.1" /></label>
+            <label>Y(mm)<input type="number" name="y" step="0.1" /></label>
+          </div>
+          <div class="field-row">
+            <label>宽(mm)<input type="number" name="w" step="0.1" min="1" /></label>
+            <label>高(mm)<input type="number" name="h" step="0.1" min="1" /></label>
+          </div>
+
+          <div class="props-section" data-for="text,barcode,qrcode,table,image">
+            <h3>内容绑定</h3>
+            <label>
+              绑定模式
+              <select name="bindMode">
+                <option value="static">固定内容</option>
+                <option value="column">绑定订单列</option>
+                <option value="join">多列拼接</option>
+                <option value="formula">公式</option>
+              </select>
+            </label>
+
+            <div class="bind-block" data-mode="static">
+              <label>固定文本 / 内容
+                <textarea name="staticValue" rows="3" placeholder="输入固定文字或二维码内容"></textarea>
+              </label>
+            </div>
+
+            <div class="bind-block" data-mode="column" hidden>
+              <label>订单列
+                <select name="column"></select>
+              </label>
+              <label>前缀<input type="text" name="prefix" placeholder="可选" /></label>
+              <label>后缀<input type="text" name="suffix" placeholder="可选" /></label>
+            </div>
+
+            <div class="bind-block" data-mode="join" hidden>
+              <label>选择列（可多选）
+                <select name="joinColumns" multiple size="5"></select>
+              </label>
+              <label>拼接字符<input type="text" name="joinSep" value="-" placeholder="如 - / 空格" /></label>
+              <label class="check"><input type="checkbox" name="joinSkipEmpty" checked /> 跳过空值</label>
+            </div>
+
+            <div class="bind-block" data-mode="formula" hidden>
+              <label>公式表达式
+                <textarea name="formula" rows="4" placeholder='例: IF({{数量}}>10, "大单-"&{{订单号}}, {{订单号}})'></textarea>
+              </label>
+              <details class="formula-help">
+                <summary>公式说明</summary>
+                <ul>
+                  <li><code>{{列名}}</code> 引用订单列</li>
+                  <li><code>&amp;</code> 或 <code>+</code> 字符串拼接</li>
+                  <li><code>IF(条件, 真值, 假值)</code></li>
+                  <li><code>CONCAT(a, b, ...)</code></li>
+                  <li><code>JOIN("-", {{省}}, {{市}})</code></li>
+                  <li>比较：<code>= != &gt; &gt;= &lt; &lt;=</code></li>
+                  <li>逻辑：<code>AND OR NOT</code></li>
+                </ul>
+              </details>
+            </div>
+
+            <div class="preview-box">
+              <span class="muted">预览</span>
+              <div id="bind-preview">—</div>
+            </div>
+          </div>
+
+          <div class="props-section" data-for="text">
+            <h3>文本样式</h3>
+            <div class="field-row">
+              <label>字号(pt)<input type="number" name="fontSize" value="10" min="6" max="72" step="0.5" /></label>
+              <label>字重
+                <select name="fontWeight">
+                  <option value="400">常规</option>
+                  <option value="600">中粗</option>
+                  <option value="700">粗体</option>
+                </select>
+              </label>
+            </div>
+            <label>对齐
+              <select name="textAlign">
+                <option value="left">左</option>
+                <option value="center">中</option>
+                <option value="right">右</option>
+              </select>
+            </label>
+            <label>颜色<input type="color" name="color" value="#0f172a" /></label>
+          </div>
+
+          <div class="props-section" data-for="barcode">
+            <h3>条码</h3>
+            <label>格式
+              <select name="barcodeFormat">
+                <option value="CODE128">CODE128</option>
+                <option value="CODE39">CODE39</option>
+                <option value="EAN13">EAN13</option>
+                <option value="EAN8">EAN8</option>
+                <option value="UPC">UPC</option>
+                <option value="ITF14">ITF14</option>
+              </select>
+            </label>
+            <label class="check"><input type="checkbox" name="barcodeShowText" checked /> 显示文字</label>
+          </div>
+
+          <div class="props-section" data-for="qrcode">
+            <h3>二维码</h3>
+            <label>纠错级别
+              <select name="qrLevel">
+                <option value="L">L (低)</option>
+                <option value="M" selected>M</option>
+                <option value="Q">Q</option>
+                <option value="H">H (高)</option>
+              </select>
+            </label>
+            <p class="hint">内容可固定，也可绑定列 / 多列拼接 / 公式。</p>
+          </div>
+
+          <div class="props-section" data-for="table">
+            <h3>表格</h3>
+            <label>行数<input type="number" name="rows" min="1" max="20" value="3" /></label>
+            <label>列数<input type="number" name="cols" min="1" max="10" value="2" /></label>
+            <label>单元格公式（每行一格，用 | 分列）
+              <textarea name="tableCells" rows="5" placeholder="品名|{{品名}}&#10;数量|{{数量}}&#10;备注|{{备注}}"></textarea>
+            </label>
+            <div class="field-row">
+              <label>边框色<input type="color" name="borderColor" value="#334155" /></label>
+              <label>字号(pt)<input type="number" name="tableFontSize" value="8" min="5" max="24" step="0.5" /></label>
+            </div>
+          </div>
+
+          <div class="props-section" data-for="line">
+            <h3>线条</h3>
+            <label>粗细(mm)<input type="number" name="strokeWidth" value="0.3" min="0.1" max="5" step="0.1" /></label>
+            <label>颜色<input type="color" name="strokeColor" value="#0f172a" /></label>
+          </div>
+
+          <div class="props-section" data-for="rect">
+            <h3>矩形</h3>
+            <label>边框色<input type="color" name="rectStroke" value="#0f172a" /></label>
+            <label>边框粗细(mm)<input type="number" name="rectStrokeWidth" value="0.3" min="0" max="5" step="0.1" /></label>
+            <label>填充<input type="color" name="rectFill" value="#ffffff" /></label>
+            <label class="check"><input type="checkbox" name="rectTransparent" /> 透明填充</label>
+          </div>
+
+          <div class="props-section" data-for="image">
+            <h3>图片</h3>
+            <label class="btn ghost file-btn block">
+              上传图片
+              <input type="file" id="image-file" accept="image/*" hidden />
+            </label>
+            <label class="check"><input type="checkbox" name="imageFit" checked /> 等比适应</label>
+          </div>
+
+          <div class="props-actions">
+            <button type="button" class="btn danger tiny" id="btn-delete-el">删除</button>
+            <button type="button" class="btn ghost tiny" id="btn-duplicate-el">复制</button>
+            <button type="button" class="btn ghost tiny" id="btn-bring-front">置顶</button>
+            <button type="button" class="btn ghost tiny" id="btn-send-back">置底</button>
+          </div>
+        </form>
+      </aside>
+    </div>
+  </div>
+
+  <!-- Templates modal -->
+  <dialog id="templates-modal" class="modal">
+    <form method="dialog" class="modal-card">
+      <header>
+        <h2>方案 / 模板库</h2>
+        <button type="submit" class="icon-btn" aria-label="关闭">×</button>
+      </header>
+      <div class="modal-body">
+        <div class="save-row">
+          <input type="text" id="save-name" placeholder="输入方案名称后保存当前设计" />
+          <button type="button" class="btn primary" id="btn-save-named">保存</button>
+        </div>
+        <ul id="templates-list" class="templates-list"></ul>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Print modal -->
+  <dialog id="print-modal" class="modal">
+    <form method="dialog" class="modal-card">
+      <header>
+        <h2>打印设置</h2>
+        <button type="submit" class="icon-btn" aria-label="关闭">×</button>
+      </header>
+      <div class="modal-body field-stack">
+        <label>
+          打印范围
+          <select id="print-range">
+            <option value="current">当前预览订单</option>
+            <option value="all">全部订单（每单一张）</option>
+            <option value="blank">仅模板（无订单数据）</option>
+          </select>
+        </label>
+        <label>
+          打印机类型
+          <select id="print-mode">
+            <option value="label">标签打印机（按标签尺寸分页）</option>
+            <option value="a4">普通打印机 / A4 排版</option>
+          </select>
+        </label>
+        <label id="a4-cols-wrap" hidden>
+          A4 每行标签数
+          <input type="number" id="a4-cols" value="2" min="1" max="6" />
+        </label>
+        <p class="hint">提示：选择系统打印机时，标签机请在打印对话框中匹配纸张尺寸；普通打印机可选用 A4 排版。</p>
+        <div class="modal-actions">
+          <button type="button" class="btn primary" id="btn-do-print">开始打印</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Print root (hidden until print) -->
+  <div id="print-root" aria-hidden="true"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+  <script src="js/formula.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/designer.js"></script>
+  <script src="js/print.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
