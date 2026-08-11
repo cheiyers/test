@@ -1,5 +1,6 @@
 @echo off
 cd /d "%~dp0"
+title BOM run
 echo.
 echo Starting application, please wait...
 echo.

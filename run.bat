@@ -55,7 +55,7 @@ echo.
 
 start "" cmd /c "timeout /t 2 /nobreak >nul && start http://127.0.0.1:3789"
 
-call npm start
+cmd /c "npm start"
 set EXIT_CODE=%ERRORLEVEL%
 
 echo.

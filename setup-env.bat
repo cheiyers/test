@@ -9,13 +9,14 @@ echo ========================================
 echo.
 echo 通用版说明:
 echo   - 使用 Node 内置 SQLite，无需 Visual Studio
-echo   - 无需编译 better-sqlite3 原生模块
 echo   - 需要 Node.js 22.5 或更高 (x64)
 echo.
 echo 本脚本将自动完成:
 echo   1) 检查 / 安装 Node.js
 echo   2) 配置 npm 国内镜像
-echo   3) 安装项目依赖 (纯 JS)
+echo   3) 安装项目依赖
+echo.
+echo 提示: 本窗口不会自动关闭，结束时请按任意键。
 echo.
 
 call :RefreshPath
@@ -28,26 +29,32 @@ echo [OK] Node.js !NODE_VER! / npm !NPM_VER!
 echo.
 
 echo [2/3] 配置 npm 国内镜像...
-call npm config set registry https://registry.npmmirror.com >nul 2>nul
-echo [OK] registry = https://registry.npmmirror.com
+REM 必须用 cmd /c，避免 npm.cmd 的 exit 把本窗口直接关掉
+cmd /c "npm config set registry https://registry.npmmirror.com"
+if errorlevel 1 (
+  echo [警告] 镜像配置失败，将继续使用默认源安装
+) else (
+  echo [OK] registry = https://registry.npmmirror.com
+)
 echo.
 
 echo [3/3] 安装项目依赖...
 echo.
 
-if exist "node_modules" (
+if exist "node_modules\" (
   echo 正在删除旧的 node_modules ...
   rmdir /s /q "node_modules" 2>nul
-  if exist "node_modules" (
+  ping 127.0.0.1 -n 2 >nul
+  if exist "node_modules\" (
     echo.
     echo [错误] 无法删除 node_modules，文件被占用。
-    echo 请关闭所有黑窗口后，手动删除该文件夹再重试。
+    echo 请关闭所有黑窗口 / 杀毒软件后，手动删除该文件夹再重试。
     echo 路径: %CD%\node_modules
     goto FAIL
   )
 )
 
-call npm install
+cmd /c "npm install"
 if errorlevel 1 (
   echo.
   echo [错误] 依赖安装失败。请检查网络后重试。
@@ -57,7 +64,7 @@ if errorlevel 1 (
 
 echo.
 echo 正在验证环境...
-call node scripts\ensure-deps.js
+cmd /c "node scripts\ensure-deps.js"
 if errorlevel 1 goto FAIL
 
 echo.
