@@ -1,15 +1,20 @@
 @echo off
 cd /d "%~dp0"
-title BOM run
+if /I not "%~1"=="_KEEP" (
+  start "BOM-QC-Run" cmd.exe /k ""%~f0" _KEEP"
+  exit /b 0
+)
+
 echo.
-echo Starting application, please wait...
+echo BOM QC Run Window - stays open
 echo.
+
 call "%~dp0run.bat"
 set ERR=%ERRORLEVEL%
+
 echo.
-if not "%ERR%"=="0" (
-  echo Application exited with error %ERR%
-)
+if not "%ERR%"=="0" echo ERROR code=%ERR%
 echo.
-pause
+echo Press any key to close...
+pause >nul
 exit /b %ERR%

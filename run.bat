@@ -1,10 +1,10 @@
-@echo off
-chcp 936 >nul
+ï»¿@echo off
+chcp 65001 >nul 2>nul
 setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 
 echo ========================================
-echo   BOM É¨ÂëÖÊÁ¿¼à¹ÜÏµÍ³ - ¿ªÊ¼ÔËÐÐ
+echo   BOM æ‰«ç è´¨é‡ç›‘ç®¡ç³»ç»Ÿ - å¼€å§‹è¿è¡Œ
 echo ========================================
 echo.
 
@@ -12,69 +12,56 @@ call :RefreshPath
 
 where node >nul 2>nul
 if errorlevel 1 (
-  echo [ÌáÊ¾] µ±Ç°´°¿ÚÎ´¼ì²âµ½ Node.js¡£
-  echo ÈôÄãÔÚ CMD ÀïÄÜÔËÐÐ node -v£¬Çë¹Ø±Õ±¾´°¿ÚºóÖØ¿ª£¬»òÏÈÔËÐÐ Ò»¼üÅäÖÃ»·¾³.bat
-  echo.
+  echo æœªæ£€æµ‹åˆ° Node.jsï¼Œå…ˆæ‰§è¡Œé…ç½®...
   call "%~dp0setup-env.bat"
   if errorlevel 1 (
-    echo.
-    echo »·¾³ÅäÖÃÊ§°Ü£¬ÎÞ·¨Æô¶¯¡£ÇëÏÈµ¥¶ÀÔËÐÐ Ò»¼üÅäÖÃ»·¾³.bat
+    echo çŽ¯å¢ƒé…ç½®å¤±è´¥ï¼Œæ— æ³•å¯åŠ¨ã€‚
     exit /b 1
   )
   call :RefreshPath
 )
 
-for /f "tokens=*" %%v in ('node -v 2^>nul') do echo [OK] ¼ì²âµ½ Node.js %%v
+for /f "tokens=*" %%v in ('node -v 2^>nul') do echo [OK] Node.js %%v
 
-REM Í¨ÓÃ°æÒÑ²»ÔÙÊ¹ÓÃ better-sqlite3£¬ÒÔ express ÊÇ·ñ´æÔÚÅÐ¶ÏÒÀÀµÊÇ·ñ×°ºÃ
+REM Check express package folder (backslash is mid-path, not before closing quote)
 if not exist "node_modules\express" (
-  echo.
-  echo [ÌáÊ¾] ÏîÄ¿ÒÀÀµÉÐÎ´°²×° ^(È±ÉÙ node_modules^)¡£
-  echo ËµÃ÷: Ö»°²×° Node.js ²»µÈÓÚÏîÄ¿ÒÑÅäÖÃ£¬»¹ÐèÒªÖ´ÐÐÒ»¼üÅäÖÃ°²×°ÒÀÀµ¡£
-  echo.
+  echo æ£€æµ‹åˆ°å°šæœªå®‰è£…ä¾èµ–ï¼Œå…ˆæ‰§è¡Œé…ç½®...
   call "%~dp0setup-env.bat"
   if errorlevel 1 (
-    echo.
-    echo »·¾³ÅäÖÃÊ§°Ü£¬ÎÞ·¨Æô¶¯¡£
+    echo çŽ¯å¢ƒé…ç½®å¤±è´¥ï¼Œæ— æ³•å¯åŠ¨ã€‚
     exit /b 1
   )
 )
 
-call node scripts\ensure-deps.js
+cmd /c node scripts\ensure-deps.js
 if errorlevel 1 (
-  echo.
-  echo »·¾³¼ì²éÎ´Í¨¹ý¡£Çë°ÑÉÏ·½ÖÐÎÄÌáÊ¾ÍêÕû½ØÍ¼£¬»òÏÈË«»÷ Ò»¼üÅäÖÃ»·¾³.bat
+  echo çŽ¯å¢ƒæ£€æŸ¥æœªé€šè¿‡ï¼Œè¯·å…ˆè¿è¡Œä¸€é”®é…ç½®çŽ¯å¢ƒã€‚
   exit /b 1
 )
 
 echo.
-echo ÕýÔÚÆô¶¯·þÎñ...
-echo Ô¼ 2 Ãëºó×Ô¶¯´ò¿ªä¯ÀÀÆ÷: http://127.0.0.1:3789
-echo ¹Ø±Õ±¾´°¿Ú¼´Í£Ö¹·þÎñ¡£
+echo æ­£åœ¨å¯åŠ¨æœåŠ¡...
+echo çº¦ 2 ç§’åŽæ‰“å¼€æµè§ˆå™¨: http://127.0.0.1:3789
+echo å…³é—­æœ¬çª—å£å³åœæ­¢æœåŠ¡ã€‚
 echo.
 
 start "" cmd /c "timeout /t 2 /nobreak >nul && start http://127.0.0.1:3789"
 
-cmd /c "npm start"
+cmd /c npm start
 set EXIT_CODE=%ERRORLEVEL%
 
 echo.
 if not "%EXIT_CODE%"=="0" (
-  echo ·þÎñÒì³£ÍË³ö£¬´íÎóÂë %EXIT_CODE%
-  echo ÈôÌáÊ¾¶Ë¿ÚÕ¼ÓÃ£¬ÇëÏÈ¹Ø±ÕÆäËûÒÑÆô¶¯µÄÔËÐÐ´°¿ÚºóÖØÊÔ¡£
+  echo æœåŠ¡å¼‚å¸¸é€€å‡ºï¼Œé”™è¯¯ç  %EXIT_CODE%
 )
 exit /b %EXIT_CODE%
 
 :RefreshPath
 for /f "tokens=2*" %%A in ('reg query "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" /v Path 2^>nul') do set "SYS_PATH=%%B"
 for /f "tokens=2*" %%A in ('reg query "HKCU\Environment" /v Path 2^>nul') do set "USR_PATH=%%B"
-if defined SYS_PATH if defined USR_PATH (
-  set "PATH=!SYS_PATH!;!USR_PATH!"
-) else if defined SYS_PATH (
-  set "PATH=!SYS_PATH!"
-) else if defined USR_PATH (
-  set "PATH=!USR_PATH!"
-)
+if defined SYS_PATH if defined USR_PATH set "PATH=!SYS_PATH!;!USR_PATH!"
+if defined SYS_PATH if not defined USR_PATH set "PATH=!SYS_PATH!"
+if defined USR_PATH if not defined SYS_PATH set "PATH=!USR_PATH!"
 if exist "%ProgramFiles%\nodejs\node.exe" set "PATH=%ProgramFiles%\nodejs;!PATH!"
 if exist "%LocalAppData%\Programs\nodejs\node.exe" set "PATH=%LocalAppData%\Programs\nodejs;!PATH!"
 if exist "E:\nodejs\node.exe" set "PATH=E:\nodejs;!PATH!"
