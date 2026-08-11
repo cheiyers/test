@@ -3,7 +3,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 
 echo ========================================
-echo   BOM QC - Starting server
+echo   BOM QC - Start server
 echo ========================================
 echo.
 
@@ -11,47 +11,48 @@ call :RefreshPath
 
 where node >nul 2>nul
 if errorlevel 1 (
-  echo Node.js not found, running setup first...
-  call "%~dp0setup-env-en.bat"
-  if errorlevel 1 (
-    echo Setup failed, cannot start.
-    exit /b 1
-  )
-  call :RefreshPath
+  echo Node.js not found. Run setup.cmd first.
+  echo.
+  pause
+  exit /b 1
 )
-
-for /f "tokens=*" %%v in ('node -v 2^>nul') do echo [OK] Node.js %%v
 
 if not exist "node_modules\express" (
-  echo Dependencies missing, running setup first...
-  call "%~dp0setup-env-en.bat"
+  echo Dependencies missing. Running setup...
+  echo.
+  node "%~dp0scripts\windows-setup.js"
   if errorlevel 1 (
-    echo Setup failed, cannot start.
+    echo Setup failed.
+    echo.
+    pause
     exit /b 1
   )
 )
 
-cmd /c node scripts\ensure-deps.js
+node "%~dp0scripts\ensure-deps.js"
 if errorlevel 1 (
   echo Env check failed. Run setup.cmd first.
+  echo.
+  pause
   exit /b 1
 )
 
 echo.
 echo Starting service...
-echo Browser in ~2s: http://127.0.0.1:3789
-echo Closing this window stops the service.
+echo Browser: http://127.0.0.1:3789
+echo Close this window to stop the server.
 echo.
 
 start "" cmd /c "timeout /t 2 /nobreak >nul && start http://127.0.0.1:3789"
 
-cmd /c npm start
+REM Use node directly - do not use npm start (npm.cmd can kill this window)
+node "%~dp0server\index.js"
 set EXIT_CODE=%ERRORLEVEL%
 
 echo.
-if not "%EXIT_CODE%"=="0" (
-  echo Service exited with code %EXIT_CODE%
-)
+if not "%EXIT_CODE%"=="0" echo Server exited code %EXIT_CODE%
+echo.
+pause
 exit /b %EXIT_CODE%
 
 :RefreshPath

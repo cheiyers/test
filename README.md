@@ -8,10 +8,10 @@
 
 | 步骤 | 操作 | 说明 |
 |------|------|------|
-| ① 配置环境 | 双击 **`setup.cmd`** 或 **`一键配置环境.bat`** | 检查 Node.js（需 22.5+）、装依赖；结束后会停住等你按键，**不会一闪而过** |
-| ② 开始运行 | 双击 **`start.bat`** 或 **`开始运行.bat`** | 启动服务并自动打开浏览器 |
+| ① 配置环境 | 双击 **`setup.cmd`** 或 **`一键配置环境.bat`** | 由 Node 脚本执行 `npm install`（避免 Windows 下 `npm.cmd` 把窗口关掉）；结束会 `pause` 等按键 |
+| ② 开始运行 | 双击 **`start.bat`** 或 **`开始运行.bat`** | 直接用 `node` 启动服务（同样不经过 `npm start`） |
 
-推荐优先用 **`setup.cmd`** / **`start.bat`**（纯英文脚本，兼容性最好）。
+推荐优先用 **`setup.cmd`** / **`start.bat`**。
 
 启动成功后：
 
@@ -74,7 +74,7 @@ npm start
 | 现象 | 处理 |
 |------|------|
 | `node -v` 正常，但提示未配置 / 环境未就绪 | 多半是**项目依赖没装**（只有 Node 不够）。请在项目目录双击「一键配置环境.bat」，或执行 `npm install`。若已是最新通用版，不要再找 `better-sqlite3` 文件夹 |
-| 双击配置窗口一闪而过 | 请拉**最新**代码。启动器已改为同窗口 `call` + `pause`（不再用会失败的 `start /k` 重开窗口），脚本为纯 ASCII。请双击 **`setup.cmd`**；结束后应出现 `Press any key`，需按键才会关。若仍闪退，可能是杀毒/拦截，或未解压完整（确认同目录有 `setup-env-en.bat`、`package.json`） |
+| 双击配置后到 npm 安装就闪退 | 请拉**最新**代码。根因是 Windows 的 `npm.cmd` 会直接结束 CMD 窗口。现已改为 **`node scripts/windows-setup.js`** 安装依赖，批处理里**不再调用 npm**；结束后应停在 `Press any key`。请双击 **`setup.cmd`** |
 | 提示 Node 版本不够 | 安装 Node.js 22.5+（https://nodejs.org），重开脚本 |
 | `EPERM` 删不掉 node_modules | 关闭占用程序/杀毒后手动删除再配置 |
 | 端口被占用 | 关掉已打开的运行窗口 |

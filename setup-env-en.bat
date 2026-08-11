@@ -3,18 +3,17 @@ setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 
 echo ========================================
-echo   BOM Sao Ma Zhi Liang - Yi Jian Pei Zhi
+echo   BOM QC Setup
 echo ========================================
-echo.
 echo Work dir: %CD%
 echo.
 
 call :RefreshPath
 
-echo [1/3] Check Node.js ...
+echo Checking Node.js ...
 where node >nul 2>nul
 if errorlevel 1 (
-  echo Node not found, try winget ...
+  echo Node not found, trying winget ...
   where winget >nul 2>nul
   if errorlevel 1 goto NoNode
   winget install -e --id OpenJS.NodeJS.LTS --accept-package-agreements --accept-source-agreements
@@ -23,74 +22,36 @@ if errorlevel 1 (
   if errorlevel 1 goto NoNode
 )
 
-for /f "tokens=*" %%v in ('node -v 2^>nul') do set "NODE_VER=%%v"
-for /f "tokens=*" %%v in ('npm -v 2^>nul') do set "NPM_VER=%%v"
-echo [OK] Node.js !NODE_VER! / npm !NPM_VER!
-
-set MAJOR=0
-set MINOR=0
-for /f "tokens=1 delims=v" %%a in ("!NODE_VER!") do set "VER_BODY=%%a"
-for /f "tokens=1,2 delims=." %%a in ("!VER_BODY!") do (
-  set "MAJOR=%%a"
-  set "MINOR=%%b"
-)
-if "!MAJOR!"=="" set MAJOR=0
-if "!MINOR!"=="" set MINOR=0
-set NEED=0
-if !MAJOR! LSS 22 set NEED=1
-if !MAJOR! EQU 22 if !MINOR! LSS 5 set NEED=1
-if !NEED! EQU 1 (
-  echo [ERROR] Need Node.js 22.5+, current !NODE_VER!
-  goto NoNode
-)
+for /f "tokens=*" %%v in ('node -v 2^>nul') do echo [OK] %%v
+echo.
+echo Running Node setup script (npm install will NOT close this window^) ...
 echo.
 
-echo [2/3] Set npm mirror ...
-cmd /c npm config set registry https://registry.npmmirror.com
-if errorlevel 1 (
-  echo [WARN] mirror failed, continue with default
+REM IMPORTANT: do not call npm.cmd from this bat (it can kill the window).
+REM All npm work is done inside scripts\windows-setup.js
+node "%~dp0scripts\windows-setup.js"
+set ERR=%ERRORLEVEL%
+
+echo.
+if "%ERR%"=="0" (
+  echo RESULT: SETUP OK
+  echo Next: start.bat
 ) else (
-  echo [OK] registry = https://registry.npmmirror.com
+  echo RESULT: SETUP FAILED  code=%ERR%
 )
 echo.
-
-echo [3/3] npm install ...
-if exist "node_modules" (
-  echo Removing old node_modules ...
-  rmdir /s /q "node_modules" 2>nul
-  ping 127.0.0.1 -n 2 >nul
-)
-if exist "node_modules" (
-  echo [ERROR] Cannot delete node_modules, delete manually:
-  echo   %CD%\node_modules
-  exit /b 1
-)
-
-cmd /c npm install
-if errorlevel 1 (
-  echo [ERROR] npm install failed
-  exit /b 1
-)
-
-echo.
-echo Verifying ...
-cmd /c node scripts\ensure-deps.js
-if errorlevel 1 (
-  echo [ERROR] ensure-deps failed
-  exit /b 1
-)
-
-echo.
-echo ========================================
-echo   SETUP OK
-echo   Next: start.bat
-echo   URL: http://127.0.0.1:3789
-echo ========================================
-exit /b 0
+echo Press any key to close...
+pause
+exit /b %ERR%
 
 :NoNode
-echo Please install Node.js 22.5+ Windows x64, check Add to PATH
+echo.
+echo [ERROR] Node.js 22.5+ not found.
+echo Install from https://nodejs.org (check Add to PATH), then re-run.
 start "" "https://nodejs.org/zh-cn/download"
+echo.
+echo Press any key to close...
+pause
 exit /b 1
 
 :RefreshPath
