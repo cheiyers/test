@@ -148,8 +148,16 @@
         const rowResizer = e.target.closest('.tbl-row-resizer');
         const cellNode = e.target.closest('.tbl-cell');
         if (colResizer || rowResizer || cellNode) {
-          self.select(id);
           LabelTable.ensureGrid(el);
+          const firstSelect = self.selectedId !== id;
+          self.selectedId = id;
+          if (firstSelect) {
+            self.canvas.querySelectorAll('.el').forEach((n) => {
+              n.classList.toggle('selected', n.dataset.id === id);
+            });
+            self._ensureTableChrome(el);
+          }
+
           if (colResizer) {
             const ci = Number(colResizer.dataset.col);
             self._drag = {
@@ -160,6 +168,7 @@
               widths: el.colWidths.slice(),
               scale: self._scale(),
             };
+            self.onSelect(el);
             e.preventDefault();
             e.stopPropagation();
             return;
@@ -174,6 +183,7 @@
               heights: el.rowHeights.slice(),
               scale: self._scale(),
             };
+            self.onSelect(el);
             e.preventDefault();
             e.stopPropagation();
             return;
@@ -184,7 +194,6 @@
             const origin = LabelTable.findMergeAt(el, r, c);
             const rr = origin ? origin.r : r;
             const cc = origin ? origin.c : c;
-            self.select(id, { keepCell: true });
             if (e.shiftKey && self.selectedCell) {
               self.cellRange = { r1: self.selectedCell.r, c1: self.selectedCell.c, r2: rr, c2: cc };
             } else {
@@ -271,8 +280,7 @@
         widths[i + 1] = Math.round((pair - left) * 10) / 10;
         el.colWidths = widths;
         LabelTable.syncLegacyStrings(el);
-        self.render();
-        self.onChange();
+        self._applyTableMetrics(el);
         return;
       }
 
@@ -286,8 +294,7 @@
         heights[i] = Math.round(top * 10) / 10;
         heights[i + 1] = Math.round((pair - top) * 10) / 10;
         el.rowHeights = heights;
-        self.render();
-        self.onChange();
+        self._applyTableMetrics(el);
         return;
       }
 
@@ -305,7 +312,12 @@
       self.onSelect(el);
     };
 
-    const endDrag = () => { self._drag = null; };
+    const endDrag = () => {
+      if (self._drag && (self._drag.mode === 'col-resize' || self._drag.mode === 'row-resize')) {
+        self.onChange();
+      }
+      self._drag = null;
+    };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', endDrag);
     window.addEventListener('pointercancel', endDrag);
@@ -424,8 +436,7 @@
     this.selectedId = id;
     if (prev !== id) {
       this.render();
-    } else {
-      // ensure selected class
+    } else if (id) {
       this.canvas.querySelectorAll('.el').forEach((n) => {
         n.classList.toggle('selected', n.dataset.id === id);
       });
@@ -433,10 +444,66 @@
     this.onSelect(this.getSelected());
   };
 
+  /** Add row/col resize handles without rebuilding the whole table DOM. */
+  Designer.prototype._ensureTableChrome = function (el) {
+    if (!el || el.type !== 'table') return;
+    const root = this.canvas.querySelector(`.el[data-id="${el.id}"]`);
+    if (!root) return;
+    const wrap = root.querySelector('.tbl-wrap');
+    if (!wrap) return;
+    if (wrap.querySelector('.tbl-col-resizer') || wrap.querySelector('.tbl-row-resizer')) return;
+
+    let acc = 0;
+    for (let c = 0; c < el.cols - 1; c++) {
+      acc += el.colWidths[c];
+      const handle = document.createElement('div');
+      handle.className = 'tbl-col-resizer';
+      handle.dataset.col = String(c);
+      handle.style.left = acc + '%';
+      wrap.appendChild(handle);
+    }
+    acc = 0;
+    for (let r = 0; r < el.rows - 1; r++) {
+      acc += el.rowHeights[r];
+      const handle = document.createElement('div');
+      handle.className = 'tbl-row-resizer';
+      handle.dataset.row = String(r);
+      handle.style.top = acc + '%';
+      wrap.appendChild(handle);
+    }
+  };
+
+  Designer.prototype._applyTableMetrics = function (el) {
+    const root = this.canvas.querySelector(`.el[data-id="${el.id}"]`);
+    if (!root) return;
+    const wrap = root.querySelector('.tbl-wrap');
+    if (!wrap) return;
+    const cols = wrap.querySelectorAll('colgroup col');
+    cols.forEach((col, i) => {
+      if (el.colWidths[i] != null) col.style.width = el.colWidths[i] + '%';
+    });
+    const rows = wrap.querySelectorAll('tr');
+    rows.forEach((tr, i) => {
+      if (el.rowHeights[i] != null) tr.style.height = el.rowHeights[i] + '%';
+    });
+    let acc = 0;
+    wrap.querySelectorAll('.tbl-col-resizer').forEach((handle) => {
+      const i = Number(handle.dataset.col);
+      acc = el.colWidths.slice(0, i + 1).reduce((a, b) => a + b, 0);
+      handle.style.left = acc + '%';
+    });
+    wrap.querySelectorAll('.tbl-row-resizer').forEach((handle) => {
+      const i = Number(handle.dataset.row);
+      acc = el.rowHeights.slice(0, i + 1).reduce((a, b) => a + b, 0);
+      handle.style.top = acc + '%';
+    });
+  };
+
   Designer.prototype._paintTableSelection = function (el) {
     if (!el || el.type !== 'table') return;
     const root = this.canvas.querySelector(`.el[data-id="${el.id}"]`);
     if (!root) return;
+    this._ensureTableChrome(el);
     const range = this.cellRange;
     const inRange = (r, c) => {
       if (!range) return false;
@@ -452,10 +519,6 @@
       td.classList.toggle('tbl-cell-active', !!(this.selectedCell && this.selectedCell.r === r && this.selectedCell.c === c));
       td.classList.toggle('tbl-cell-range', inRange(r, c));
     });
-    // ensure resize handles exist when selected
-    if (!root.querySelector('.tbl-col-resizer') && el.cols > 1) {
-      this.render();
-    }
   };
 
   Designer.prototype.updateSelected = function (patch) {
