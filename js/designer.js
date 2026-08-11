@@ -377,6 +377,13 @@
 
   Designer.prototype._renderBarcode = function (node, el, row) {
     const content = this.resolveContent(el, row) || '0';
+    if (typeof JsBarcode === 'undefined') {
+      const fallback = document.createElement('div');
+      fallback.style.cssText = 'font-size:10px;color:#64748b;padding:4px;';
+      fallback.textContent = content;
+      node.appendChild(fallback);
+      return;
+    }
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     const barHeight = Math.max(20, Math.floor(el.h * this._scale() * (el.barcodeShowText === false ? 0.9 : 0.7)));
     try {
@@ -402,29 +409,49 @@
 
   Designer.prototype._renderQr = function (node, el, row) {
     const content = this.resolveContent(el, row) || ' ';
-    const canvas = document.createElement('canvas');
+    if (typeof QRCode === 'undefined') {
+      const fallback = document.createElement('div');
+      fallback.style.cssText = 'font-size:10px;color:#64748b;padding:4px;border:1px dashed #cbd5e1;width:100%;height:100%;display:flex;align-items:center;justify-content:center;text-align:center;';
+      fallback.textContent = 'QR';
+      node.appendChild(fallback);
+      return;
+    }
     const size = Math.max(32, Math.floor(Math.min(
       (el.w * this._scale()),
       (el.h * this._scale())
     )));
-    QRCode.toCanvas(canvas, content, {
-      errorCorrectionLevel: el.qrLevel || 'M',
-      margin: 0,
-      width: size,
-      color: { dark: '#000000', light: '#ffffff' },
-    }, (err) => {
-      if (err) {
-        const fallback = document.createElement('div');
-        fallback.style.cssText = 'font-size:10px;color:#b91c1c;padding:4px;';
-        fallback.textContent = '二维码错误';
-        node.appendChild(fallback);
-        return;
+    const levelMap = { L: QRCode.CorrectLevel.L, M: QRCode.CorrectLevel.M, Q: QRCode.CorrectLevel.Q, H: QRCode.CorrectLevel.H };
+    const holder = document.createElement('div');
+    holder.style.width = '100%';
+    holder.style.height = '100%';
+    holder.style.display = 'flex';
+    holder.style.alignItems = 'center';
+    holder.style.justifyContent = 'center';
+    try {
+      // eslint-disable-next-line no-new
+      new QRCode(holder, {
+        text: String(content),
+        width: size,
+        height: size,
+        colorDark: '#000000',
+        colorLight: '#ffffff',
+        correctLevel: levelMap[el.qrLevel] || QRCode.CorrectLevel.M,
+      });
+      const media = holder.querySelector('canvas, img');
+      if (media) {
+        media.style.width = '100%';
+        media.style.height = '100%';
+        media.style.objectFit = 'contain';
+        media.style.maxWidth = '100%';
+        media.style.maxHeight = '100%';
       }
-      canvas.style.width = '100%';
-      canvas.style.height = '100%';
-      canvas.style.objectFit = 'contain';
-      node.appendChild(canvas);
-    });
+      node.appendChild(holder);
+    } catch (err) {
+      const fallback = document.createElement('div');
+      fallback.style.cssText = 'font-size:10px;color:#b91c1c;padding:4px;';
+      fallback.textContent = '二维码错误';
+      node.appendChild(fallback);
+    }
   };
 
   Designer.prototype._renderTable = function (node, el, row, s) {

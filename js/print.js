@@ -106,26 +106,37 @@
           node.style.fontSize = '8pt';
         }
       } else if (el.type === 'qrcode') {
-        const canvas = document.createElement('canvas');
         const value = el.content || ' ';
-        tasks.push(new Promise((resolve) => {
-          QRCode.toCanvas(canvas, value, {
-            errorCorrectionLevel: el.qrLevel || 'M',
-            margin: 0,
-            width: 256,
-          }, (err) => {
-            if (!err) {
-              canvas.style.width = '100%';
-              canvas.style.height = '100%';
-              canvas.style.objectFit = 'contain';
-              node.appendChild(canvas);
-            } else {
-              node.textContent = value;
-              node.style.fontSize = '7pt';
+        if (typeof QRCode === 'undefined') {
+          node.textContent = value;
+          node.style.fontSize = '7pt';
+        } else {
+          const levelMap = { L: QRCode.CorrectLevel.L, M: QRCode.CorrectLevel.M, Q: QRCode.CorrectLevel.Q, H: QRCode.CorrectLevel.H };
+          const holder = document.createElement('div');
+          holder.style.width = '100%';
+          holder.style.height = '100%';
+          try {
+            // eslint-disable-next-line no-new
+            new QRCode(holder, {
+              text: String(value),
+              width: 256,
+              height: 256,
+              colorDark: '#000000',
+              colorLight: '#ffffff',
+              correctLevel: levelMap[el.qrLevel] || QRCode.CorrectLevel.M,
+            });
+            const media = holder.querySelector('canvas, img');
+            if (media) {
+              media.style.width = '100%';
+              media.style.height = '100%';
+              media.style.objectFit = 'contain';
             }
-            resolve();
-          });
-        }));
+            node.appendChild(holder);
+          } catch {
+            node.textContent = value;
+            node.style.fontSize = '7pt';
+          }
+        }
       }
 
       root.appendChild(node);

@@ -422,8 +422,12 @@
       state.columns = data.columns;
       state.orders = data.rows;
       state.orderIndex = 0;
-      refreshOrderUI();
-      persistSession();
+      try {
+        refreshOrderUI();
+        persistSession();
+      } catch (renderErr) {
+        console.error(renderErr);
+      }
       alert(`已导入 ${data.rows.length} 条订单，${data.columns.length} 列。`);
     } catch (err) {
       alert('导入失败: ' + (err.message || err));

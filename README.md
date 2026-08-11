@@ -54,3 +54,5 @@ samples/orders.csv
 ```
 
 数据与模板默认保存在本机浏览器，不会上传服务器。
+
+第三方库已内置在 `js/vendor/`（SheetJS / JsBarcode / qrcodejs），可离线打开使用。
