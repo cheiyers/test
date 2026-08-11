@@ -217,8 +217,55 @@
     window.print();
   }
 
+  /**
+   * Rasterize one label (with QR/barcode as drawn) to PNG dataURL.
+   * Positions/sizes follow the designer's mm layout.
+   */
+  async function renderLabelToDataURL(snapshot, options) {
+    options = options || {};
+    const dpi = Number(options.dpi) || 203; // common label printer density
+    const scale = dpi / 96;
+
+    const host = document.createElement('div');
+    host.style.cssText = 'position:fixed;left:-12000px;top:0;z-index:-1;background:#fff;';
+    document.body.appendChild(host);
+
+    try {
+      const { root, ready } = createLabelDOM(snapshot);
+      // Force layout metrics for html2canvas
+      root.style.boxShadow = 'none';
+      root.style.border = 'none';
+      host.appendChild(root);
+      await ready;
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+      if (typeof html2canvas !== 'function') {
+        throw new Error('html2canvas 未加载');
+      }
+
+      const canvas = await html2canvas(root, {
+        backgroundColor: '#ffffff',
+        scale,
+        useCORS: true,
+        logging: false,
+        width: root.offsetWidth,
+        height: root.offsetHeight,
+      });
+      return {
+        dataUrl: canvas.toDataURL('image/png'),
+        widthPx: canvas.width,
+        heightPx: canvas.height,
+        widthMm: snapshot.width,
+        heightMm: snapshot.height,
+      };
+    } finally {
+      host.remove();
+    }
+  }
+
   global.LabelPrint = {
     createLabelDOM,
     printLabels,
+    renderLabelToDataURL,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

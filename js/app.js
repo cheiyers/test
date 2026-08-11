@@ -579,13 +579,32 @@
     }
   });
 
-  $('#btn-export-excel').addEventListener('click', () => {
+  $('#btn-export-excel').addEventListener('click', async () => {
     const range = state.orders.length ? 'all' : 'blank';
     const snaps = collectSnapshots(range);
+    const btn = $('#btn-export-excel');
+    const oldText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = `导出中 0/${snaps.length}…`;
     try {
-      LabelData.exportLabelsExcel(snaps, `${state.templateName || 'labels'}.xlsx`);
+      const result = await LabelData.exportPrintableLabelsExcel(
+        snaps,
+        `${state.templateName || 'labels'}-打印.xlsx`,
+        {
+          dpi: 203,
+          maxLabels: 200,
+          onProgress: (cur, total) => {
+            btn.textContent = `导出中 ${cur}/${total}…`;
+          },
+        }
+      );
+      alert(`已导出 ${result.count} 张标签（每张一页，含二维码），可在 Excel 中直接打印。`);
     } catch (err) {
+      console.error(err);
       alert('导出失败: ' + (err.message || err));
+    } finally {
+      btn.disabled = false;
+      btn.textContent = oldText;
     }
   });
 

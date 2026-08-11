@@ -32,7 +32,7 @@
         <button type="button" class="btn ghost" id="btn-clear-orders">清空订单</button>
         <div class="divider-v"></div>
         <button type="button" class="btn primary" id="btn-print">打印</button>
-        <button type="button" class="btn accent" id="btn-export-excel">导出 Excel</button>
+        <button type="button" class="btn accent" id="btn-export-excel" title="导出可打印 Excel：一标签一页，含二维码">导出 Excel</button>
       </div>
     </header>
 
@@ -375,7 +375,7 @@
         <label>
           打印机类型
           <select id="print-mode">
-            <option value="label">标签打印机（按标签尺寸分页）</option>
+            <option value="label" selected>标签打印机（一张标签一页，按设计尺寸）</option>
             <option value="a4">普通打印机 / A4 排版</option>
           </select>
         </label>
@@ -383,7 +383,7 @@
           A4 每行标签数
           <input type="number" id="a4-cols" value="2" min="1" max="6" />
         </label>
-        <p class="hint">提示：选择系统打印机时，标签机请在打印对话框中匹配纸张尺寸；普通打印机可选用 A4 排版。</p>
+        <p class="hint">直接打印默认一张标签一页，位置与大小与设计界面一致。导出 Excel 同样按「一标签一页」嵌入二维码图片，可在 Excel 中直接打印。</p>
         <div class="modal-actions">
           <button type="button" class="btn primary" id="btn-do-print">开始打印</button>
         </div>
@@ -395,6 +395,8 @@
   <div id="print-root" aria-hidden="true"></div>
 
   <script src="js/vendor/xlsx.full.min.js"></script>
+  <script src="js/vendor/exceljs.min.js"></script>
+  <script src="js/vendor/html2canvas.min.js"></script>
   <script src="js/vendor/JsBarcode.all.min.js"></script>
   <script src="js/vendor/qrcode.min.js"></script>
   <script src="js/formula.js"></script>
