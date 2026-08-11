@@ -142,6 +142,45 @@
       const el = self.elements.find((x) => x.id === id);
       if (!el) return;
 
+      // Whole-element resize handle always wins
+      if (e.target.classList.contains('handle')) {
+        self.select(id);
+        self._drag = {
+          mode: 'resize',
+          id,
+          startX: e.clientX,
+          startY: e.clientY,
+          origX: el.x,
+          origY: el.y,
+          origW: el.w,
+          origH: el.h,
+          scale: self._scale(),
+        };
+        e.preventDefault();
+        return;
+      }
+
+      // Table move grip
+      if (el.type === 'table' && e.target.closest('.tbl-move-grip')) {
+        self.select(id);
+        self.selectedCell = null;
+        self.cellRange = null;
+        self._drag = {
+          mode: 'move',
+          id,
+          startX: e.clientX,
+          startY: e.clientY,
+          origX: el.x,
+          origY: el.y,
+          origW: el.w,
+          origH: el.h,
+          scale: self._scale(),
+        };
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+
       // Table cell / resizer interactions
       if (el.type === 'table') {
         const colResizer = e.target.closest('.tbl-col-resizer');
@@ -216,11 +255,10 @@
       }
 
       self.select(id);
-      const isHandle = e.target.classList.contains('handle');
       const selected = self.getSelected();
       if (!selected) return;
       self._drag = {
-        mode: isHandle ? 'resize' : 'move',
+        mode: 'move',
         id,
         startX: e.clientX,
         startY: e.clientY,
@@ -451,8 +489,18 @@
     if (!root) return;
     const wrap = root.querySelector('.tbl-wrap');
     if (!wrap) return;
+
+    if (!wrap.querySelector('.tbl-move-grip')) {
+      const grip = document.createElement('div');
+      grip.className = 'tbl-move-grip';
+      grip.textContent = '⋮⋮ 拖动移动表格 · 右下角缩放';
+      wrap.insertBefore(grip, wrap.firstChild);
+    }
+
     if (wrap.querySelector('.tbl-col-resizer') || wrap.querySelector('.tbl-row-resizer')) return;
 
+    const s = this._scale();
+    const tablePxH = Math.max(1, el.h * s);
     let acc = 0;
     for (let c = 0; c < el.cols - 1; c++) {
       acc += el.colWidths[c];
@@ -478,24 +526,27 @@
     if (!root) return;
     const wrap = root.querySelector('.tbl-wrap');
     if (!wrap) return;
+    const s = this._scale();
+    const tablePxH = Math.max(1, el.h * s);
     const cols = wrap.querySelectorAll('colgroup col');
     cols.forEach((col, i) => {
       if (el.colWidths[i] != null) col.style.width = el.colWidths[i] + '%';
     });
-    const rows = wrap.querySelectorAll('tr');
+    const rows = wrap.querySelectorAll('tbody tr');
     rows.forEach((tr, i) => {
-      if (el.rowHeights[i] != null) tr.style.height = el.rowHeights[i] + '%';
+      if (el.rowHeights[i] != null) {
+        tr.style.height = Math.max(8, (tablePxH * el.rowHeights[i]) / 100) + 'px';
+      }
     });
-    let acc = 0;
     wrap.querySelectorAll('.tbl-col-resizer').forEach((handle) => {
       const i = Number(handle.dataset.col);
-      acc = el.colWidths.slice(0, i + 1).reduce((a, b) => a + b, 0);
-      handle.style.left = acc + '%';
+      const left = el.colWidths.slice(0, i + 1).reduce((a, b) => a + b, 0);
+      handle.style.left = left + '%';
     });
     wrap.querySelectorAll('.tbl-row-resizer').forEach((handle) => {
       const i = Number(handle.dataset.row);
-      acc = el.rowHeights.slice(0, i + 1).reduce((a, b) => a + b, 0);
-      handle.style.top = acc + '%';
+      const top = el.rowHeights.slice(0, i + 1).reduce((a, b) => a + b, 0);
+      handle.style.top = top + '%';
     });
   };
 
@@ -833,11 +884,17 @@
     LabelTable.ensureGrid(el);
     const map = LabelTable.getVisibleCellMap(el);
     const table = document.createElement('table');
+    const tbody = document.createElement('tbody');
     const wrap = document.createElement('div');
     wrap.className = 'tbl-wrap';
     wrap.style.width = '100%';
     wrap.style.height = '100%';
     wrap.style.position = 'relative';
+
+    const grip = document.createElement('div');
+    grip.className = 'tbl-move-grip';
+    grip.textContent = '⋮⋮ 拖动移动表格 · 右下角缩放';
+    wrap.appendChild(grip);
 
     const defaultPt = Number(el.tableFontSize) || 8;
     table.style.fontSize = (defaultPt * (96 / 72) * this.zoom) + 'px';
@@ -863,9 +920,14 @@
       return r >= top && r <= bottom && c >= left && c <= right;
     };
 
+    // Pixel row heights — percentage <tr> heights are unreliable across browsers
+    const tablePxH = Math.max(1, el.h * s);
+    const rowPx = el.rowHeights.map((pct) => Math.max(8, (tablePxH * pct) / 100));
+
+    const hasOrderData = !!(row && Object.keys(row).length);
     for (let r = 0; r < el.rows; r++) {
       const tr = document.createElement('tr');
-      tr.style.height = el.rowHeights[r] + '%';
+      tr.style.height = rowPx[r] + 'px';
       for (let c = 0; c < el.cols; c++) {
         const vis = map[r][c];
         if (!vis.show) continue;
@@ -874,7 +936,12 @@
         td.className = 'tbl-cell';
         td.dataset.r = String(r);
         td.dataset.c = String(c);
-        if (vis.rowspan > 1) td.rowSpan = vis.rowspan;
+        if (vis.rowspan > 1) {
+          td.rowSpan = vis.rowspan;
+          let spanH = 0;
+          for (let k = 0; k < vis.rowspan; k++) spanH += rowPx[r + k] || 0;
+          td.style.height = spanH + 'px';
+        }
         if (vis.colspan > 1) td.colSpan = vis.colspan;
         td.style.borderColor = el.borderColor || '#334155';
         td.style.textAlign = cell.align || 'left';
@@ -884,19 +951,26 @@
         td.style.color = cell.color || '#0f172a';
         const pt = cell.fontSize != null ? Number(cell.fontSize) : defaultPt;
         td.style.fontSize = (pt * (96 / 72) * this.zoom) + 'px';
-        td.textContent = LabelTable.evaluateCellText(cell, row);
+        const rawText = cell.text || '';
+        const resolved = LabelTable.evaluateCellText(cell, row);
+        const shown = (resolved === '' && /\{\{[^}]+\}\}/.test(rawText)) ? rawText : resolved;
+        td.textContent = shown;
+        if (shown && shown === rawText && /\{\{/.test(rawText)) {
+          td.style.opacity = '0.72';
+          td.title = '未匹配到订单列，请检查字段名或导入订单';
+        }
         if (selected && this.selectedCell && this.selectedCell.r === r && this.selectedCell.c === c) {
           td.classList.add('tbl-cell-active');
         }
         if (selected && inRange(r, c)) td.classList.add('tbl-cell-range');
         tr.appendChild(td);
       }
-      table.appendChild(tr);
+      tbody.appendChild(tr);
     }
+    table.appendChild(tbody);
     wrap.appendChild(table);
 
     if (selected) {
-      // column resizers
       let acc = 0;
       for (let c = 0; c < el.cols - 1; c++) {
         acc += el.colWidths[c];
@@ -906,10 +980,9 @@
         handle.style.left = acc + '%';
         wrap.appendChild(handle);
       }
-      // row resizers
       acc = 0;
       for (let r = 0; r < el.rows - 1; r++) {
-        acc += el.rowHeights[r];
+        acc += (rowPx[r] / tablePxH) * 100;
         const handle = document.createElement('div');
         handle.className = 'tbl-row-resizer';
         handle.dataset.row = String(r);

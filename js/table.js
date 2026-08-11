@@ -237,8 +237,16 @@
     ]));
   }
 
-  function evaluateCellText(cell, rowData) {
-    return LabelFormula.evaluate(cell && cell.text != null ? cell.text : '', rowData || {});
+  function evaluateCellText(cell, rowData, opts) {
+    opts = opts || {};
+    const raw = cell && cell.text != null ? cell.text : '';
+    const Formula = global.LabelFormula;
+    const text = Formula ? Formula.evaluate(raw, rowData || {}) : String(raw);
+    // Design-time: if binding resolves empty but template has fields, keep placeholder visible
+    if (opts.showPlaceholder && text === '' && /\{\{[^}]+\}\}/.test(raw)) {
+      return raw;
+    }
+    return text;
   }
 
   global.LabelTable = {

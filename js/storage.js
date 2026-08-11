@@ -3,7 +3,7 @@
 
   const KEY = 'label-studio-templates-v1';
   const LAST_KEY = 'label-studio-last-session-v1';
-  const SEED_VERSION = 'cable-defaults-v2-table-edit';
+  const SEED_VERSION = 'cable-defaults-v3-table-resize';
 
   function uid() {
     return 'tpl_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
