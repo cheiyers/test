@@ -1,14 +1,12 @@
-﻿@echo off
+@echo off
 cd /d "%~dp0"
-if /I not "%~1"=="_KEEP" (
-  start "BOM-QC-Setup" cmd.exe /k ""%~f0" _KEEP"
-  exit /b 0
-)
-
 echo.
 echo ========================================
-echo   BOM 配置窗口（不会自动关闭）
+echo   BOM QC - Setup (window stays open)
 echo ========================================
+echo.
+echo Working dir:
+echo   %CD%
 echo.
 
 call "%~dp0setup-env.bat"
@@ -17,16 +15,14 @@ set ERR=%ERRORLEVEL%
 echo.
 echo ---------------------------------------
 if "%ERR%"=="0" (
-  echo 结果: 配置成功
-  echo 下一步请双击: 开始运行.bat
+  echo RESULT: OK
+  echo Next: double-click start.bat
 ) else (
-  echo 结果: 配置失败  错误码=%ERR%
-  echo 请把上面的报错截图发给技术支持。
-  echo.
-  echo 若中文脚本仍闪退，请改双击: setup.cmd
+  echo RESULT: FAILED  code=%ERR%
+  echo Try setup.cmd if this still fails.
 )
 echo ---------------------------------------
 echo.
-echo 按任意键关闭本窗口...
-pause >nul
+echo Press any key to close this window...
+pause
 exit /b %ERR%

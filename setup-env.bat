@@ -1,21 +1,20 @@
-﻿@echo off
-chcp 65001 >nul 2>nul
+@echo off
 setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 
 echo ========================================
-echo   BOM 扫码质量监管系统 - 一键配置环境
+echo   BOM Sao Ma Zhi Liang - Yi Jian Pei Zhi
 echo ========================================
 echo.
-echo 工作目录: %CD%
+echo Work dir: %CD%
 echo.
 
 call :RefreshPath
 
-echo [1/3] 检查 Node.js ...
+echo [1/3] Check Node.js ...
 where node >nul 2>nul
 if errorlevel 1 (
-  echo 未检测到 Node，尝试 winget 安装 ...
+  echo Node not found, try winget ...
   where winget >nul 2>nul
   if errorlevel 1 goto NoNode
   winget install -e --id OpenJS.NodeJS.LTS --accept-package-agreements --accept-source-agreements
@@ -41,58 +40,56 @@ set NEED=0
 if !MAJOR! LSS 22 set NEED=1
 if !MAJOR! EQU 22 if !MINOR! LSS 5 set NEED=1
 if !NEED! EQU 1 (
-  echo [错误] 需要 Node.js 22.5+，当前 !NODE_VER!
+  echo [ERROR] Need Node.js 22.5+, current !NODE_VER!
   goto NoNode
 )
 echo.
 
-echo [2/3] 配置 npm 国内镜像 ...
-REM Use cmd /c so npm.cmd cannot close this window.
+echo [2/3] Set npm mirror ...
 cmd /c npm config set registry https://registry.npmmirror.com
 if errorlevel 1 (
-  echo [警告] 镜像配置失败，将使用默认源继续
+  echo [WARN] mirror failed, continue with default
 ) else (
   echo [OK] registry = https://registry.npmmirror.com
 )
 echo.
 
-echo [3/3] 安装项目依赖 npm install ...
-REM Never put a trailing backslash inside a quoted if-exist path; it escapes the quote and aborts.
+echo [3/3] npm install ...
 if exist "node_modules" (
-  echo 正在删除旧的 node_modules ...
+  echo Removing old node_modules ...
   rmdir /s /q "node_modules" 2>nul
   ping 127.0.0.1 -n 2 >nul
 )
 if exist "node_modules" (
-  echo [错误] 无法删除 node_modules，请手动删除后重试:
+  echo [ERROR] Cannot delete node_modules, delete manually:
   echo   %CD%\node_modules
   exit /b 1
 )
 
 cmd /c npm install
 if errorlevel 1 (
-  echo [错误] npm install 失败，请检查网络后重试
+  echo [ERROR] npm install failed
   exit /b 1
 )
 
 echo.
-echo 正在验证环境 ...
+echo Verifying ...
 cmd /c node scripts\ensure-deps.js
 if errorlevel 1 (
-  echo [错误] 环境验证失败
+  echo [ERROR] ensure-deps failed
   exit /b 1
 )
 
 echo.
 echo ========================================
-echo   环境配置完成
-echo   下一步: 双击 开始运行.bat
-echo   浏览器: http://127.0.0.1:3789
+echo   SETUP OK
+echo   Next: start.bat
+echo   URL: http://127.0.0.1:3789
 echo ========================================
 exit /b 0
 
 :NoNode
-echo 请安装 Node.js 22.5+（Windows x64），勾选 Add to PATH
+echo Please install Node.js 22.5+ Windows x64, check Add to PATH
 start "" "https://nodejs.org/zh-cn/download"
 exit /b 1
 

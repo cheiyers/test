@@ -1,21 +1,20 @@
-﻿@echo off
-chcp 65001 >nul 2>nul
+@echo off
 setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 
 echo ========================================
-echo   BOM QC - One Click Setup
+echo   BOM Sao Ma Zhi Liang - Yi Jian Pei Zhi
 echo ========================================
 echo.
-echo Working directory: %CD%
+echo Work dir: %CD%
 echo.
 
 call :RefreshPath
 
-echo [1/3] Checking Node.js ...
+echo [1/3] Check Node.js ...
 where node >nul 2>nul
 if errorlevel 1 (
-  echo node not found, trying winget install...
+  echo Node not found, try winget ...
   where winget >nul 2>nul
   if errorlevel 1 goto NoNode
   winget install -e --id OpenJS.NodeJS.LTS --accept-package-agreements --accept-source-agreements
@@ -26,7 +25,7 @@ if errorlevel 1 (
 
 for /f "tokens=*" %%v in ('node -v 2^>nul') do set "NODE_VER=%%v"
 for /f "tokens=*" %%v in ('npm -v 2^>nul') do set "NPM_VER=%%v"
-echo [OK] Node !NODE_VER! / npm !NPM_VER!
+echo [OK] Node.js !NODE_VER! / npm !NPM_VER!
 
 set MAJOR=0
 set MINOR=0
@@ -41,37 +40,35 @@ set NEED=0
 if !MAJOR! LSS 22 set NEED=1
 if !MAJOR! EQU 22 if !MINOR! LSS 5 set NEED=1
 if !NEED! EQU 1 (
-  echo [error] Need Node.js 22.5+, current !NODE_VER!
+  echo [ERROR] Need Node.js 22.5+, current !NODE_VER!
   goto NoNode
 )
 echo.
 
-echo [2/3] Set npm mirror npmmirror.com ...
-REM Use cmd /c so npm.cmd cannot close this window.
+echo [2/3] Set npm mirror ...
 cmd /c npm config set registry https://registry.npmmirror.com
 if errorlevel 1 (
-  echo [warn] mirror set failed, continue with default registry
+  echo [WARN] mirror failed, continue with default
 ) else (
-  echo [OK] npm registry set
+  echo [OK] registry = https://registry.npmmirror.com
 )
 echo.
 
 echo [3/3] npm install ...
-REM Never put a trailing backslash inside a quoted if-exist path; it escapes the quote and aborts.
 if exist "node_modules" (
   echo Removing old node_modules ...
   rmdir /s /q "node_modules" 2>nul
   ping 127.0.0.1 -n 2 >nul
 )
 if exist "node_modules" (
-  echo [error] Cannot delete node_modules. Close other programs and delete it manually:
+  echo [ERROR] Cannot delete node_modules, delete manually:
   echo   %CD%\node_modules
   exit /b 1
 )
 
 cmd /c npm install
 if errorlevel 1 (
-  echo [error] npm install failed
+  echo [ERROR] npm install failed
   exit /b 1
 )
 
@@ -79,20 +76,20 @@ echo.
 echo Verifying ...
 cmd /c node scripts\ensure-deps.js
 if errorlevel 1 (
-  echo [error] ensure-deps failed
+  echo [ERROR] ensure-deps failed
   exit /b 1
 )
 
 echo.
 echo ========================================
 echo   SETUP OK
-echo   Next: double-click 开始运行.bat or start.bat
-echo   Open: http://127.0.0.1:3789
+echo   Next: start.bat
+echo   URL: http://127.0.0.1:3789
 echo ========================================
 exit /b 0
 
 :NoNode
-echo [error] Node.js not found. Install Node.js 22.5+ x64, check Add to PATH.
+echo Please install Node.js 22.5+ Windows x64, check Add to PATH
 start "" "https://nodejs.org/zh-cn/download"
 exit /b 1
 

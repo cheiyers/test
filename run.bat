@@ -1,10 +1,9 @@
-﻿@echo off
-chcp 65001 >nul 2>nul
+@echo off
 setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 
 echo ========================================
-echo   BOM 扫码质量监管系统 - 开始运行
+echo   BOM QC - Starting server
 echo ========================================
 echo.
 
@@ -12,10 +11,10 @@ call :RefreshPath
 
 where node >nul 2>nul
 if errorlevel 1 (
-  echo 未检测到 Node.js，先执行配置...
-  call "%~dp0setup-env.bat"
+  echo Node.js not found, running setup first...
+  call "%~dp0setup-env-en.bat"
   if errorlevel 1 (
-    echo 环境配置失败，无法启动。
+    echo Setup failed, cannot start.
     exit /b 1
   )
   call :RefreshPath
@@ -23,26 +22,25 @@ if errorlevel 1 (
 
 for /f "tokens=*" %%v in ('node -v 2^>nul') do echo [OK] Node.js %%v
 
-REM Check express package folder (backslash is mid-path, not before closing quote)
 if not exist "node_modules\express" (
-  echo 检测到尚未安装依赖，先执行配置...
-  call "%~dp0setup-env.bat"
+  echo Dependencies missing, running setup first...
+  call "%~dp0setup-env-en.bat"
   if errorlevel 1 (
-    echo 环境配置失败，无法启动。
+    echo Setup failed, cannot start.
     exit /b 1
   )
 )
 
 cmd /c node scripts\ensure-deps.js
 if errorlevel 1 (
-  echo 环境检查未通过，请先运行一键配置环境。
+  echo Env check failed. Run setup.cmd first.
   exit /b 1
 )
 
 echo.
-echo 正在启动服务...
-echo 约 2 秒后打开浏览器: http://127.0.0.1:3789
-echo 关闭本窗口即停止服务。
+echo Starting service...
+echo Browser in ~2s: http://127.0.0.1:3789
+echo Closing this window stops the service.
 echo.
 
 start "" cmd /c "timeout /t 2 /nobreak >nul && start http://127.0.0.1:3789"
@@ -52,7 +50,7 @@ set EXIT_CODE=%ERRORLEVEL%
 
 echo.
 if not "%EXIT_CODE%"=="0" (
-  echo 服务异常退出，错误码 %EXIT_CODE%
+  echo Service exited with code %EXIT_CODE%
 )
 exit /b %EXIT_CODE%
 

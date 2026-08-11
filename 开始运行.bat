@@ -1,13 +1,8 @@
-﻿@echo off
+@echo off
 cd /d "%~dp0"
-if /I not "%~1"=="_KEEP" (
-  start "BOM-QC-Run" cmd.exe /k ""%~f0" _KEEP"
-  exit /b 0
-)
-
 echo.
 echo ========================================
-echo   BOM 运行窗口（关闭即停服务）
+echo   BOM QC - Run (close window = stop)
 echo ========================================
 echo.
 
@@ -16,10 +11,10 @@ set ERR=%ERRORLEVEL%
 
 echo.
 if not "%ERR%"=="0" (
-  echo 运行异常，错误码=%ERR%
-  echo 请先双击「一键配置环境.bat」或 setup.cmd
+  echo ERROR code=%ERR%
+  echo Run setup first: setup.cmd
 )
 echo.
-echo 按任意键关闭本窗口...
-pause >nul
+echo Press any key to close this window...
+pause
 exit /b %ERR%
