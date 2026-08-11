@@ -184,7 +184,8 @@
             const origin = LabelTable.findMergeAt(el, r, c);
             const rr = origin ? origin.r : r;
             const cc = origin ? origin.c : c;
-            if (e.shiftKey && self.selectedCell && self.selectedId === id) {
+            self.select(id, { keepCell: true });
+            if (e.shiftKey && self.selectedCell) {
               self.cellRange = { r1: self.selectedCell.r, c1: self.selectedCell.c, r2: rr, c2: cc };
             } else {
               self.selectedCell = { r: rr, c: cc };
@@ -193,10 +194,10 @@
             self._drag = {
               mode: 'cell-select',
               id,
-              startR: rr,
-              startC: cc,
+              startR: self.cellRange.r1,
+              startC: self.cellRange.c1,
             };
-            self.render();
+            self._paintTableSelection(el);
             self.onSelect(el);
             e.preventDefault();
             e.stopPropagation();
@@ -253,7 +254,7 @@
           const cc = origin ? origin.c : c;
           self.cellRange = { r1: d.startR, c1: d.startC, r2: rr, c2: cc };
           self.selectedCell = { r: d.startR, c: d.startC };
-          self.render();
+          self._paintTableSelection(el);
           self.onSelect(el);
         }
         return;
@@ -410,15 +411,51 @@
     return this.elements.find((e) => e.id === this.selectedId) || null;
   };
 
-  Designer.prototype.select = function (id) {
+  Designer.prototype.select = function (id, opts) {
+    opts = opts || {};
     if (this.selectedId !== id) {
-      this.selectedCell = null;
-      this.cellRange = null;
+      if (!opts.keepCell) {
+        this.selectedCell = null;
+        this.cellRange = null;
+      }
       this._finishCellEdit();
     }
+    const prev = this.selectedId;
     this.selectedId = id;
-    this.render();
+    if (prev !== id) {
+      this.render();
+    } else {
+      // ensure selected class
+      this.canvas.querySelectorAll('.el').forEach((n) => {
+        n.classList.toggle('selected', n.dataset.id === id);
+      });
+    }
     this.onSelect(this.getSelected());
+  };
+
+  Designer.prototype._paintTableSelection = function (el) {
+    if (!el || el.type !== 'table') return;
+    const root = this.canvas.querySelector(`.el[data-id="${el.id}"]`);
+    if (!root) return;
+    const range = this.cellRange;
+    const inRange = (r, c) => {
+      if (!range) return false;
+      const top = Math.min(range.r1, range.r2);
+      const left = Math.min(range.c1, range.c2);
+      const bottom = Math.max(range.r1, range.r2);
+      const right = Math.max(range.c1, range.c2);
+      return r >= top && r <= bottom && c >= left && c <= right;
+    };
+    root.querySelectorAll('.tbl-cell').forEach((td) => {
+      const r = Number(td.dataset.r);
+      const c = Number(td.dataset.c);
+      td.classList.toggle('tbl-cell-active', !!(this.selectedCell && this.selectedCell.r === r && this.selectedCell.c === c));
+      td.classList.toggle('tbl-cell-range', inRange(r, c));
+    });
+    // ensure resize handles exist when selected
+    if (!root.querySelector('.tbl-col-resizer') && el.cols > 1) {
+      this.render();
+    }
   };
 
   Designer.prototype.updateSelected = function (patch) {
