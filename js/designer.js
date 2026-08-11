@@ -575,7 +575,7 @@
           const cells = (lines[r] || '').split('|');
           const rowCells = [];
           for (let c = 0; c < cols; c++) {
-            rowCells.push(LabelFormula.evaluate(cells[c] != null ? cells[c] : '', row || {}));
+            rowCells.push(parseStyledCell(cells[c] != null ? cells[c] : '', row || {}).text);
           }
           grid.push(rowCells);
         }
