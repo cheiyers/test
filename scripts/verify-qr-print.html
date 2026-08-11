@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>QR print/export verify</title>
+  <script src="../js/vendor/qrcode.min.js"></script>
+  <script src="../js/vendor/JsBarcode.all.min.js"></script>
+  <script src="../js/vendor/html2canvas.min.js"></script>
+  <script src="../js/formula.js"></script>
+  <script src="../js/table.js"></script>
+  <script src="../js/print.js"></script>
+</head>
+<body>
+  <pre id="out">running…</pre>
+  <div id="print-root"></div>
+  <script>
+    (async () => {
+      const out = document.getElementById('out');
+      try {
+        const snap = {
+          width: 80,
+          height: 40,
+          order: { OrderNo: 'SO-001' },
+          elements: [
+            {
+              type: 'qrcode',
+              x: 2, y: 2, w: 18, h: 18,
+              content: 'SO-001-QR-TEST',
+              qrLevel: 'M',
+            },
+            {
+              type: 'text',
+              x: 22, y: 4, w: 50, h: 8,
+              content: 'QR TEST',
+              fontSize: 10,
+            },
+          ],
+        };
+
+        const { root, ready } = LabelPrint.createLabelDOM(snap);
+        document.body.appendChild(root);
+        await ready;
+        const qrImg = root.querySelector('img');
+        const hasImg = !!(qrImg && qrImg.src && qrImg.src.startsWith('data:image'));
+        await (qrImg && qrImg.decode ? qrImg.decode().catch(() => {}) : Promise.resolve());
+
+        const rendered = await LabelPrint.renderLabelToDataURL(snap, { dpi: 96 });
+        // sample a few pixels in the left QR region — non-white means QR drawn
+        const img = new Image();
+        img.src = rendered.dataUrl;
+        await img.decode();
+        const c = document.createElement('canvas');
+        c.width = img.width;
+        c.height = img.height;
+        const ctx = c.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        let dark = 0;
+        const sampleW = Math.floor(img.width * 0.22);
+        const sampleH = Math.floor(img.height * 0.45);
+        for (let y = 2; y < sampleH; y += 3) {
+          for (let x = 2; x < sampleW; x += 3) {
+            const d = ctx.getImageData(x, y, 1, 1).data;
+            if (d[0] < 200 || d[1] < 200 || d[2] < 200) dark++;
+          }
+        }
+
+        const result = {
+          ok: hasImg && dark > 20,
+          hasImg,
+          imgLen: qrImg ? qrImg.src.length : 0,
+          darkPixels: dark,
+          exportW: rendered.widthPx,
+          exportH: rendered.heightPx,
+        };
+        out.textContent = JSON.stringify(result, null, 2);
+        document.title = result.ok ? 'QR_OK' : 'QR_FAIL';
+      } catch (e) {
+        out.textContent = String(e && e.stack || e);
+        document.title = 'QR_FAIL';
+      }
+    })();
+  </script>
+</body>
+</html>

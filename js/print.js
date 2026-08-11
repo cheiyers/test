@@ -3,9 +3,52 @@
 
   const MM = 3.7795275591;
 
+  function waitImage(img) {
+    if (!img) return Promise.resolve();
+    if (img.complete && img.naturalWidth) return Promise.resolve();
+    return new Promise((resolve) => {
+      const done = () => resolve();
+      img.addEventListener('load', done, { once: true });
+      img.addEventListener('error', done, { once: true });
+    });
+  }
+
+  /**
+   * Render QR to a PNG data URL via qrcodejs (canvas → toDataURL).
+   * Avoids display:none / async img issues that break print & html2canvas.
+   */
+  function qrToDataURL(text, sizePx, level) {
+    if (typeof QRCode === 'undefined') return '';
+    const levelMap = { L: QRCode.CorrectLevel.L, M: QRCode.CorrectLevel.M, Q: QRCode.CorrectLevel.Q, H: QRCode.CorrectLevel.H };
+    const px = Math.max(64, Math.round(sizePx || 256));
+    const host = document.createElement('div');
+    host.style.cssText = `position:fixed;left:-10000px;top:0;width:${px}px;height:${px}px;overflow:hidden;`;
+    document.body.appendChild(host);
+    try {
+      // eslint-disable-next-line no-new
+      new QRCode(host, {
+        text: String(text || ' '),
+        width: px,
+        height: px,
+        colorDark: '#000000',
+        colorLight: '#ffffff',
+        correctLevel: levelMap[level] || QRCode.CorrectLevel.M,
+      });
+      const canvas = host.querySelector('canvas');
+      if (canvas && typeof canvas.toDataURL === 'function') {
+        return canvas.toDataURL('image/png');
+      }
+      const img = host.querySelector('img');
+      return img && img.src ? img.src : '';
+    } catch {
+      return '';
+    } finally {
+      host.remove();
+    }
+  }
+
   function createLabelDOM(snapshot, options) {
     options = options || {};
-    const scale = options.scale || 1; // mm to CSS mm via width/height in mm
     const root = document.createElement('div');
     root.className = 'print-label';
     root.style.width = snapshot.width + 'mm';
@@ -60,6 +103,7 @@
           img.style.height = '100%';
           img.style.objectFit = el.imageFit !== false ? 'contain' : 'fill';
           node.appendChild(img);
+          tasks.push(waitImage(img));
         }
       } else if (el.type === 'table') {
         LabelTable.ensureGrid(el);
@@ -132,35 +176,21 @@
         }
       } else if (el.type === 'qrcode') {
         const value = el.content || ' ';
-        if (typeof QRCode === 'undefined') {
+        const sizePx = Math.max(128, Math.round(Math.min(Number(el.w) || 20, Number(el.h) || 20) * MM * 4));
+        const dataUrl = qrToDataURL(value, sizePx, el.qrLevel);
+        if (dataUrl) {
+          const img = document.createElement('img');
+          img.src = dataUrl;
+          img.alt = 'QR';
+          img.style.width = '100%';
+          img.style.height = '100%';
+          img.style.objectFit = 'contain';
+          img.style.display = 'block';
+          node.appendChild(img);
+          tasks.push(waitImage(img));
+        } else {
           node.textContent = value;
           node.style.fontSize = '7pt';
-        } else {
-          const levelMap = { L: QRCode.CorrectLevel.L, M: QRCode.CorrectLevel.M, Q: QRCode.CorrectLevel.Q, H: QRCode.CorrectLevel.H };
-          const holder = document.createElement('div');
-          holder.style.width = '100%';
-          holder.style.height = '100%';
-          try {
-            // eslint-disable-next-line no-new
-            new QRCode(holder, {
-              text: String(value),
-              width: 256,
-              height: 256,
-              colorDark: '#000000',
-              colorLight: '#ffffff',
-              correctLevel: levelMap[el.qrLevel] || QRCode.CorrectLevel.M,
-            });
-            const media = holder.querySelector('canvas, img');
-            if (media) {
-              media.style.width = '100%';
-              media.style.height = '100%';
-              media.style.objectFit = 'contain';
-            }
-            node.appendChild(holder);
-          } catch {
-            node.textContent = value;
-            node.style.fontSize = '7pt';
-          }
         }
       }
 
@@ -212,6 +242,8 @@
     }
 
     await Promise.all(readyList);
+    const imgs = Array.from(root.querySelectorAll('img'));
+    await Promise.all(imgs.map((img) => (img.decode ? img.decode().catch(() => {}) : waitImage(img))));
     // allow layout
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     window.print();
@@ -237,6 +269,9 @@
       root.style.border = 'none';
       host.appendChild(root);
       await ready;
+      // Ensure all embedded images (QR PNGs) are fully decoded before capture
+      const imgs = Array.from(root.querySelectorAll('img'));
+      await Promise.all(imgs.map((img) => (img.decode ? img.decode().catch(() => {}) : waitImage(img))));
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 
       if (typeof html2canvas !== 'function') {
@@ -247,9 +282,10 @@
         backgroundColor: '#ffffff',
         scale,
         useCORS: true,
+        allowTaint: true,
         logging: false,
-        width: root.offsetWidth,
-        height: root.offsetHeight,
+        width: root.offsetWidth || Math.round(snapshot.width * MM),
+        height: root.offsetHeight || Math.round(snapshot.height * MM),
       });
       return {
         dataUrl: canvas.toDataURL('image/png'),
