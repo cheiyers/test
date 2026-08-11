@@ -114,7 +114,7 @@
         <div class="canvas-toolbar">
           <span id="template-name" class="template-name">未命名模板</span>
           <div class="canvas-hints">
-            <span>拖拽移动 · 边角缩放 · Delete 删除 · Ctrl+D 复制</span>
+            <span>拖拽移动 · 表格可点选/框选/双击编辑 · Delete 删除 · Ctrl+D 复制</span>
           </div>
         </div>
         <div class="canvas-stage" id="canvas-stage">
@@ -137,7 +137,7 @@
             <label>高(mm)<input type="number" name="h" step="0.1" min="1" /></label>
           </div>
 
-          <div class="props-section" data-for="text,barcode,qrcode,table,image">
+          <div class="props-section" data-for="text,barcode,qrcode,image">
             <h3>内容绑定</h3>
             <label>
               绑定模式
@@ -247,21 +247,62 @@
 
           <div class="props-section" data-for="table">
             <h3>表格</h3>
-            <label>行数<input type="number" name="rows" min="1" max="20" value="3" /></label>
-            <label>列数<input type="number" name="cols" min="1" max="10" value="2" /></label>
-            <label>单元格公式（每行一格，用 | 分列；可用 **内容** 加粗）
-              <textarea name="tableCells" rows="5" placeholder="Order No.|**{{Order No.}}**&#10;Name|{{Name}}"></textarea>
-            </label>
-            <label>列对齐（用 | 分隔：left/center/right）
-              <input type="text" name="colAligns" value="right|left" placeholder="right|left" />
-            </label>
-            <label>列宽（用 | 分隔，如 38%|62%）
-              <input type="text" name="colWidths" value="" placeholder="38%|62%" />
-            </label>
+            <p class="hint">单击选中单元格 · 拖动框选 · 双击/Enter 编辑 · 拖动灰线调列宽/行高</p>
+            <div class="field-row">
+              <label>行数<input type="number" name="rows" min="1" max="20" value="3" /></label>
+              <label>列数<input type="number" name="cols" min="1" max="10" value="2" /></label>
+            </div>
             <div class="field-row">
               <label>边框色<input type="color" name="borderColor" value="#334155" /></label>
-              <label>字号(pt)<input type="number" name="tableFontSize" value="8" min="5" max="24" step="0.5" /></label>
+              <label>默认字号<input type="number" name="tableFontSize" value="8" min="5" max="24" step="0.5" /></label>
             </div>
+
+            <h3>选中单元格</h3>
+            <div id="cell-props" class="cell-props">
+              <p class="muted" id="cell-props-empty">在画布上点选一个单元格</p>
+              <div id="cell-props-form" hidden>
+                <label>内容（支持 {{列}} / 公式）
+                  <textarea name="cellText" rows="3" placeholder="{{Order No.}}"></textarea>
+                </label>
+                <div class="field-row">
+                  <label>字号(pt)<input type="number" name="cellFontSize" min="5" max="36" step="0.5" /></label>
+                  <label>字重
+                    <select name="cellFontWeight">
+                      <option value="400">常规</option>
+                      <option value="600">中粗</option>
+                      <option value="700">粗体</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="field-row">
+                  <label>样式
+                    <select name="cellFontStyle">
+                      <option value="normal">常规</option>
+                      <option value="italic">斜体</option>
+                    </select>
+                  </label>
+                  <label>对齐
+                    <select name="cellAlign">
+                      <option value="left">左</option>
+                      <option value="center">中</option>
+                      <option value="right">右</option>
+                    </select>
+                  </label>
+                </div>
+                <label>颜色<input type="color" name="cellColor" value="#0f172a" /></label>
+                <div class="props-actions" style="border:none;padding-top:0;margin-top:4px;">
+                  <button type="button" class="btn accent tiny" id="btn-merge-cells">合并选区</button>
+                  <button type="button" class="btn ghost tiny" id="btn-unmerge-cells">取消合并</button>
+                </div>
+              </div>
+            </div>
+
+            <details class="formula-help">
+              <summary>批量文本（高级）</summary>
+              <label>每行一格，用 | 分列
+                <textarea name="tableCells" rows="4" placeholder="Order No.|{{Order No.}}"></textarea>
+              </label>
+            </details>
           </div>
 
           <div class="props-section" data-for="line">
@@ -357,6 +398,7 @@
   <script src="js/vendor/JsBarcode.all.min.js"></script>
   <script src="js/vendor/qrcode.min.js"></script>
   <script src="js/formula.js"></script>
+  <script src="js/table.js"></script>
   <script src="js/defaults.js"></script>
   <script src="js/storage.js"></script>
   <script src="js/data.js"></script>

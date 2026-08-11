@@ -59,7 +59,12 @@
         } else if (el.bindMode === 'formula') {
           designer.updateSelected({ formula: (el.formula || '') + `{{${c}}}` });
         } else if (el.type === 'table') {
-          designer.updateSelected({ tableCells: (el.tableCells || '') + `{{${c}}}` });
+          if (designer.selectedCell) {
+            const cell = LabelTable.getCell(el, designer.selectedCell.r, designer.selectedCell.c);
+            designer.updateSelectedCell({ text: (cell.text || '') + `{{${c}}}` });
+          } else {
+            designer.updateSelected({ tableCells: (el.tableCells || '') + `{{${c}}}` });
+          }
         } else {
           designer.updateSelected({ bindMode: 'column', column: c });
         }
@@ -143,8 +148,6 @@
     set('tableCells', el.tableCells);
     set('borderColor', el.borderColor || '#334155');
     set('tableFontSize', el.tableFontSize);
-    set('colAligns', el.colAligns || 'left|left');
-    set('colWidths', el.colWidths || '');
     set('strokeWidth', el.strokeWidth);
     set('strokeColor', el.strokeColor || '#0f172a');
     set('rectStroke', el.rectStroke || '#0f172a');
@@ -154,7 +157,35 @@
     set('imageFit', el.imageFit !== false);
 
     showBindMode(el.bindMode || 'static');
+    syncCellProps(el);
     updateBindPreview();
+  }
+
+  function syncCellProps(el) {
+    const empty = $('#cell-props-empty');
+    const form = $('#cell-props-form');
+    if (!empty || !form) return;
+    if (!el || el.type !== 'table' || !designer.selectedCell) {
+      empty.hidden = false;
+      form.hidden = true;
+      return;
+    }
+    empty.hidden = true;
+    form.hidden = false;
+    LabelTable.ensureGrid(el);
+    const cell = LabelTable.getCell(el, designer.selectedCell.r, designer.selectedCell.c);
+    const root = $('#props-form');
+    const set = (name, value) => {
+      const input = root.elements[name];
+      if (!input) return;
+      input.value = value == null ? '' : value;
+    };
+    set('cellText', cell.text || '');
+    set('cellFontSize', cell.fontSize != null ? cell.fontSize : (el.tableFontSize || 8));
+    set('cellFontWeight', cell.fontWeight || '400');
+    set('cellFontStyle', cell.fontStyle || 'normal');
+    set('cellAlign', cell.align || 'left');
+    set('cellColor', cell.color || '#0f172a');
   }
 
   function showBindMode(mode) {
@@ -168,7 +199,12 @@
     const box = $('#bind-preview');
     if (!el || !box) return;
     if (el.type === 'table') {
-      box.textContent = LabelFormula.evaluate(String(el.tableCells || '').split('\n')[0] || '', currentOrder());
+      if (designer.selectedCell) {
+        const cell = LabelTable.getCell(el, designer.selectedCell.r, designer.selectedCell.c);
+        box.textContent = LabelTable.evaluateCellText(cell, currentOrder()) || '—';
+      } else {
+        box.textContent = '选中单元格以预览';
+      }
       return;
     }
     if (el.type === 'line' || el.type === 'rect' || el.type === 'image') {
@@ -183,7 +219,7 @@
     const g = (name) => form.elements[name];
     const joinSel = g('joinColumns');
     const joinColumns = joinSel ? Array.from(joinSel.selectedOptions).map((o) => o.value) : [];
-    return {
+    const patch = {
       name: g('name').value,
       x: Number(g('x').value),
       y: Number(g('y').value),
@@ -207,11 +243,8 @@
       qrLevel: g('qrLevel').value,
       rows: Number(g('rows').value),
       cols: Number(g('cols').value),
-      tableCells: g('tableCells').value,
       borderColor: g('borderColor').value,
       tableFontSize: Number(g('tableFontSize').value),
-      colAligns: g('colAligns').value,
-      colWidths: g('colWidths').value,
       strokeWidth: Number(g('strokeWidth').value),
       strokeColor: g('strokeColor').value,
       rectStroke: g('rectStroke').value,
@@ -220,13 +253,50 @@
       rectTransparent: g('rectTransparent').checked,
       imageFit: g('imageFit').checked,
     };
+    // Only push legacy tableCells when advanced editor changed (keep cells in sync)
+    if (g('tableCells')) patch.tableCells = g('tableCells').value;
+    return patch;
   }
 
-  function applyForm() {
+  function applyForm(ev) {
     if (!designer.getSelected()) return;
+    const target = ev && ev.target;
+    const cellFields = ['cellText', 'cellFontSize', 'cellFontWeight', 'cellFontStyle', 'cellAlign', 'cellColor'];
+    if (target && cellFields.includes(target.name)) {
+      applyCellForm();
+      return;
+    }
     const patch = readFormPatch();
+    // Avoid wiping rich cells unless advanced textarea was the source
+    if (target && target.name !== 'tableCells') {
+      delete patch.tableCells;
+    } else if (patch.tableCells != null) {
+      // rebuild from string
+      const el = designer.getSelected();
+      if (el && el.type === 'table') {
+        el.cells = null;
+      }
+    }
     designer.updateSelected(patch);
     showBindMode(patch.bindMode);
+    updateBindPreview();
+  }
+
+  function applyCellForm() {
+    const el = designer.getSelected();
+    if (!el || el.type !== 'table' || !designer.selectedCell) return;
+    const form = $('#props-form');
+    const g = (name) => form.elements[name];
+    designer.updateSelectedCell({
+      text: g('cellText').value,
+      fontSize: Number(g('cellFontSize').value),
+      fontWeight: g('cellFontWeight').value,
+      fontStyle: g('cellFontStyle').value,
+      align: g('cellAlign').value,
+      color: g('cellColor').value,
+    });
+    // refresh legacy textarea display
+    form.elements.tableCells.value = el.tableCells || '';
     updateBindPreview();
   }
 
@@ -365,6 +435,17 @@
 
   $('#props-form').addEventListener('input', applyForm);
   $('#props-form').addEventListener('change', applyForm);
+
+  $('#btn-merge-cells').addEventListener('click', () => {
+    if (!designer.mergeSelectedCells()) {
+      alert('请先拖动框选至少两个单元格再合并');
+    }
+  });
+  $('#btn-unmerge-cells').addEventListener('click', () => {
+    if (!designer.unmergeSelectedCell()) {
+      alert('当前单元格没有合并区域');
+    }
+  });
 
   $('#btn-delete-el').addEventListener('click', () => designer.removeSelected());
   $('#btn-duplicate-el').addEventListener('click', () => designer.duplicateSelected());

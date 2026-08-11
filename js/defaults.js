@@ -5,12 +5,52 @@
     return (prefix || 'el_') + Math.random().toString(36).slice(2, 10);
   }
 
+  function cell(text, patch) {
+    return global.LabelTable.defaultCell(text, patch);
+  }
+
   /** Shared 80×40 cable label: QR left + 7-row field table right. */
   function cableLabelDesign(options) {
     const opts = options || {};
     const qrBind = opts.qrBind || { bindMode: 'column', column: 'Order No.', staticValue: '11231445' };
-    const seqCell = opts.seqCell || '{{Seq.No.}}';
-    const propsCell = opts.propsCell || 'JOIN("/", {{标准}}, {{认证}}, {{机房类型}})';
+    const seqText = opts.seqText || '{{Seq.No.}}';
+    const propsText = opts.propsText || 'JOIN("/", {{标准}}, {{认证}}, {{机房类型}})';
+
+    const rows = [
+      { label: 'Order No.', value: '{{Order No.}}', bold: true },
+      { label: 'Company P/N', value: '{{Company P/N}}', bold: true },
+      { label: 'Customer P/N', value: '{{Customer P/N}}', bold: true },
+      { label: 'Length', value: '{{Length}}', bold: false },
+      { label: 'Properties', value: propsText, bold: false },
+      { label: 'Seq.No.', value: seqText, bold: false },
+      { label: 'Name', value: '{{Name}}', bold: false },
+    ];
+
+    const cells = rows.map((row) => ([
+      cell(row.label, { align: 'right', fontWeight: '400', fontSize: 7 }),
+      cell(row.value, { align: 'left', fontWeight: row.bold ? '700' : '400', fontSize: 7 }),
+    ]));
+
+    const tableEl = {
+      id: uid('tbl_'),
+      type: 'table',
+      name: '字段表',
+      x: 37,
+      y: 1.8,
+      w: 41.5,
+      h: 36.4,
+      rows: 7,
+      cols: 2,
+      borderColor: '#000000',
+      tableFontSize: 7,
+      colWidths: [38, 62],
+      rowHeights: global.LabelTable.normalizeWeights(Array(7).fill(1)),
+      merges: [],
+      cells,
+      bindMode: 'static',
+      staticValue: '',
+    };
+    global.LabelTable.ensureGrid(tableEl);
 
     return {
       width: 80,
@@ -50,32 +90,7 @@
           prefix: '',
           suffix: '',
         },
-        {
-          id: uid('tbl_'),
-          type: 'table',
-          name: '字段表',
-          x: 37,
-          y: 1.8,
-          w: 41.5,
-          h: 36.4,
-          rows: 7,
-          cols: 2,
-          borderColor: '#000000',
-          tableFontSize: 7,
-          colAligns: 'right|left',
-          colWidths: '38%|62%',
-          tableCells: [
-            'Order No.|**{{Order No.}}**',
-            'Company P/N|**{{Company P/N}}**',
-            'Customer P/N|**{{Customer P/N}}**',
-            'Length|{{Length}}',
-            'Properties|' + propsCell,
-            'Seq.No.|' + seqCell,
-            'Name|{{Name}}',
-          ].join('\n'),
-          bindMode: 'static',
-          staticValue: '',
-        },
+        tableEl,
       ],
     };
   }
@@ -88,8 +103,8 @@
       description: '80×40mm · 左侧二维码绑定订单号 · Properties 多列拼接',
       design: cableLabelDesign({
         qrBind: { bindMode: 'column', column: 'Order No.', staticValue: '11231445' },
-        propsCell: 'JOIN("/", {{标准}}, {{认证}}, {{机房类型}})',
-        seqCell: '{{Seq.No.}}',
+        propsText: 'JOIN("/", {{标准}}, {{认证}}, {{机房类型}})',
+        seqText: '{{Seq.No.}}',
       }),
     },
     {
@@ -103,8 +118,8 @@
           formula: '{{Order No.}}&"-"&{{Seq.No.}}',
           staticValue: '11231445-1',
         },
-        propsCell: '{{Properties}}',
-        seqCell: '{{Seq.No.}}',
+        propsText: '{{Properties}}',
+        seqText: '{{Seq.No.}}',
       }),
     },
   ];

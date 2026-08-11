@@ -68,7 +68,10 @@
           borderColor: '#334155',
           tableFontSize: 8,
           colAligns: 'left|left',
-          colWidths: '',
+          colWidths: [50, 50],
+          rowHeights: [33.3, 33.3, 33.4],
+          merges: [],
+          cells: null,
           w: 50,
           h: 22,
           bindMode: 'static',
@@ -117,9 +120,12 @@
     this.zoom = 1.2;
     this.elements = [];
     this.selectedId = null;
+    this.selectedCell = null; // { r, c }
+    this.cellRange = null; // { r1, c1, r2, c2 }
     this.orderRow = null;
     this.columns = [];
     this._drag = null;
+    this._editingCell = null;
     this._bindEvents();
     this.resizeCanvas();
   }
@@ -133,54 +139,191 @@
         return;
       }
       const id = elNode.dataset.id;
+      const el = self.elements.find((x) => x.id === id);
+      if (!el) return;
+
+      // Table cell / resizer interactions
+      if (el.type === 'table') {
+        const colResizer = e.target.closest('.tbl-col-resizer');
+        const rowResizer = e.target.closest('.tbl-row-resizer');
+        const cellNode = e.target.closest('.tbl-cell');
+        if (colResizer || rowResizer || cellNode) {
+          self.select(id);
+          LabelTable.ensureGrid(el);
+          if (colResizer) {
+            const ci = Number(colResizer.dataset.col);
+            self._drag = {
+              mode: 'col-resize',
+              id,
+              col: ci,
+              startX: e.clientX,
+              widths: el.colWidths.slice(),
+              scale: self._scale(),
+            };
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
+          if (rowResizer) {
+            const ri = Number(rowResizer.dataset.row);
+            self._drag = {
+              mode: 'row-resize',
+              id,
+              row: ri,
+              startY: e.clientY,
+              heights: el.rowHeights.slice(),
+              scale: self._scale(),
+            };
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
+          if (cellNode) {
+            const r = Number(cellNode.dataset.r);
+            const c = Number(cellNode.dataset.c);
+            const origin = LabelTable.findMergeAt(el, r, c);
+            const rr = origin ? origin.r : r;
+            const cc = origin ? origin.c : c;
+            if (e.shiftKey && self.selectedCell && self.selectedId === id) {
+              self.cellRange = { r1: self.selectedCell.r, c1: self.selectedCell.c, r2: rr, c2: cc };
+            } else {
+              self.selectedCell = { r: rr, c: cc };
+              self.cellRange = { r1: rr, c1: cc, r2: rr, c2: cc };
+            }
+            self._drag = {
+              mode: 'cell-select',
+              id,
+              startR: rr,
+              startC: cc,
+            };
+            self.render();
+            self.onSelect(el);
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
+        }
+      }
+
       self.select(id);
       const isHandle = e.target.classList.contains('handle');
-      const el = self.getSelected();
-      if (!el) return;
-      const rect = self.canvas.getBoundingClientRect();
-      const scale = self._scale();
+      const selected = self.getSelected();
+      if (!selected) return;
       self._drag = {
         mode: isHandle ? 'resize' : 'move',
         id,
         startX: e.clientX,
         startY: e.clientY,
-        origX: el.x,
-        origY: el.y,
-        origW: el.w,
-        origH: el.h,
-        scale,
+        origX: selected.x,
+        origY: selected.y,
+        origW: selected.w,
+        origH: selected.h,
+        scale: self._scale(),
       };
-      elNode.setPointerCapture(e.pointerId);
       e.preventDefault();
     });
 
-    this.canvas.addEventListener('pointermove', (e) => {
+    this.canvas.addEventListener('dblclick', (e) => {
+      const cellNode = e.target.closest('.tbl-cell');
+      if (!cellNode) return;
+      const elNode = cellNode.closest('.el');
+      if (!elNode) return;
+      const el = self.elements.find((x) => x.id === elNode.dataset.id);
+      if (!el || el.type !== 'table') return;
+      const r = Number(cellNode.dataset.r);
+      const c = Number(cellNode.dataset.c);
+      self.startCellEdit(el, r, c, cellNode);
+      e.preventDefault();
+    });
+
+    const onMove = (e) => {
       if (!self._drag) return;
       const d = self._drag;
       const el = self.elements.find((x) => x.id === d.id);
       if (!el) return;
+
+      if (d.mode === 'cell-select') {
+        const cellNode = document.elementFromPoint(e.clientX, e.clientY);
+        const td = cellNode && cellNode.closest && cellNode.closest('.tbl-cell');
+        if (td && td.closest('.el') && td.closest('.el').dataset.id === d.id) {
+          const r = Number(td.dataset.r);
+          const c = Number(td.dataset.c);
+          const origin = LabelTable.findMergeAt(el, r, c);
+          const rr = origin ? origin.r : r;
+          const cc = origin ? origin.c : c;
+          self.cellRange = { r1: d.startR, c1: d.startC, r2: rr, c2: cc };
+          self.selectedCell = { r: d.startR, c: d.startC };
+          self.render();
+          self.onSelect(el);
+        }
+        return;
+      }
+
+      if (d.mode === 'col-resize') {
+        const dxPct = ((e.clientX - d.startX) / (el.w * d.scale)) * 100;
+        const widths = d.widths.slice();
+        const i = d.col;
+        if (i < 0 || i >= widths.length - 1) return;
+        const pair = widths[i] + widths[i + 1];
+        let left = Math.min(pair - 5, Math.max(5, widths[i] + dxPct));
+        widths[i] = Math.round(left * 10) / 10;
+        widths[i + 1] = Math.round((pair - left) * 10) / 10;
+        el.colWidths = widths;
+        LabelTable.syncLegacyStrings(el);
+        self.render();
+        self.onChange();
+        return;
+      }
+
+      if (d.mode === 'row-resize') {
+        const dyPct = ((e.clientY - d.startY) / (el.h * d.scale)) * 100;
+        const heights = d.heights.slice();
+        const i = d.row;
+        if (i < 0 || i >= heights.length - 1) return;
+        const pair = heights[i] + heights[i + 1];
+        let top = Math.min(pair - 5, Math.max(5, heights[i] + dyPct));
+        heights[i] = Math.round(top * 10) / 10;
+        heights[i + 1] = Math.round((pair - top) * 10) / 10;
+        el.rowHeights = heights;
+        self.render();
+        self.onChange();
+        return;
+      }
+
       const dx = (e.clientX - d.startX) / d.scale;
       const dy = (e.clientY - d.startY) / d.scale;
       if (d.mode === 'move') {
         el.x = Math.round((d.origX + dx) * 10) / 10;
         el.y = Math.round((d.origY + dy) * 10) / 10;
-      } else {
+      } else if (d.mode === 'resize') {
         el.w = Math.max(2, Math.round((d.origW + dx) * 10) / 10);
         el.h = Math.max(2, Math.round((d.origH + dy) * 10) / 10);
       }
       self.render();
       self.onChange();
       self.onSelect(el);
-    });
+    };
 
     const endDrag = () => { self._drag = null; };
-    this.canvas.addEventListener('pointerup', endDrag);
-    this.canvas.addEventListener('pointercancel', endDrag);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', endDrag);
+    window.addEventListener('pointercancel', endDrag);
 
     this.canvas.addEventListener('keydown', (e) => {
+      if (e.target.classList && e.target.classList.contains('tbl-editor')) return;
       if (!self.selectedId) return;
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+        // If a cell is selected, clear cell text instead of deleting element on Backspace
+        const el = self.getSelected();
+        if (el && el.type === 'table' && self.selectedCell && e.key === 'Backspace') {
+          LabelTable.updateCell(el, self.selectedCell.r, self.selectedCell.c, { text: '' });
+          self.render();
+          self.onChange();
+          self.onSelect(el);
+          e.preventDefault();
+          return;
+        }
         e.preventDefault();
         self.removeSelected();
       }
@@ -188,9 +331,17 @@
         e.preventDefault();
         self.duplicateSelected();
       }
+      if (e.key === 'Enter' && self.getSelected() && self.getSelected().type === 'table' && self.selectedCell) {
+        const el = self.getSelected();
+        const td = self.canvas.querySelector(`.el[data-id="${el.id}"] .tbl-cell[data-r="${self.selectedCell.r}"][data-c="${self.selectedCell.c}"]`);
+        if (td) self.startCellEdit(el, self.selectedCell.r, self.selectedCell.c, td);
+        e.preventDefault();
+        return;
+      }
       const step = e.shiftKey ? 1 : 0.5;
       const el = self.getSelected();
       if (!el) return;
+      if (el.type === 'table' && self.selectedCell) return; // don't nudge whole table while editing cells
       let moved = false;
       if (e.key === 'ArrowLeft') { el.x -= step; moved = true; }
       if (e.key === 'ArrowRight') { el.x += step; moved = true; }
@@ -237,6 +388,7 @@
 
   Designer.prototype.addElement = function (type) {
     const el = defaultsFor(type);
+    if (type === 'table') LabelTable.ensureGrid(el);
     if (this.columns.length) {
       if (type === 'text' || type === 'barcode' || type === 'qrcode') {
         el.column = this.columns[0];
@@ -246,6 +398,8 @@
     el.x = 4 + (this.elements.length % 5) * 2;
     el.y = 4 + (this.elements.length % 5) * 2;
     this.elements.push(el);
+    this.selectedCell = null;
+    this.cellRange = null;
     this.select(el.id);
     this.render();
     this.onChange();
@@ -257,6 +411,11 @@
   };
 
   Designer.prototype.select = function (id) {
+    if (this.selectedId !== id) {
+      this.selectedCell = null;
+      this.cellRange = null;
+      this._finishCellEdit();
+    }
     this.selectedId = id;
     this.render();
     this.onSelect(this.getSelected());
@@ -265,7 +424,121 @@
   Designer.prototype.updateSelected = function (patch) {
     const el = this.getSelected();
     if (!el) return;
+    if (el.type === 'table' && (patch.rows != null || patch.cols != null)) {
+      LabelTable.resizeGrid(el, patch.rows != null ? patch.rows : el.rows, patch.cols != null ? patch.cols : el.cols);
+      delete patch.rows;
+      delete patch.cols;
+    }
     Object.assign(el, patch);
+    if (el.type === 'table') {
+      if (patch.tableCells != null && patch.cells == null) {
+        el.cells = null; // force rebuild from legacy string
+      }
+      LabelTable.ensureGrid(el);
+    }
+    this.render();
+    this.onChange();
+    this.onSelect(el);
+  };
+
+  Designer.prototype.startCellEdit = function (el, r, c, cellNode) {
+    this._finishCellEdit();
+    LabelTable.ensureGrid(el);
+    const origin = LabelTable.findMergeAt(el, r, c);
+    const rr = origin ? origin.r : r;
+    const cc = origin ? origin.c : c;
+    this.selectedCell = { r: rr, c: cc };
+    this.cellRange = { r1: rr, c1: cc, r2: rr, c2: cc };
+    const cell = LabelTable.getCell(el, rr, cc);
+    const editor = document.createElement('textarea');
+    editor.className = 'tbl-editor';
+    editor.value = cell.text || '';
+    editor.style.position = 'absolute';
+    editor.style.left = '0';
+    editor.style.top = '0';
+    editor.style.width = '100%';
+    editor.style.height = '100%';
+    editor.style.border = 'none';
+    editor.style.outline = '2px solid #1fb8a8';
+    editor.style.resize = 'none';
+    editor.style.padding = '2px 3px';
+    editor.style.font = 'inherit';
+    editor.style.fontSize = cellNode.style.fontSize || 'inherit';
+    editor.style.fontWeight = cell.fontWeight || '400';
+    editor.style.fontStyle = cell.fontStyle || 'normal';
+    editor.style.color = cell.color || '#0f172a';
+    editor.style.textAlign = cell.align || 'left';
+    editor.style.background = '#fffef5';
+    editor.style.zIndex = '5';
+    cellNode.innerHTML = '';
+    cellNode.appendChild(editor);
+    this._editingCell = { elId: el.id, r: rr, c: cc, editor };
+    editor.focus();
+    editor.select();
+    const commit = () => {
+      if (!this._editingCell || this._editingCell.editor !== editor) return;
+      LabelTable.updateCell(el, rr, cc, { text: editor.value });
+      this._editingCell = null;
+      this.render();
+      this.onChange();
+      this.onSelect(el);
+    };
+    editor.addEventListener('blur', commit);
+    editor.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape') {
+        this._editingCell = null;
+        this.render();
+        this.onSelect(el);
+        ev.preventDefault();
+      } else if (ev.key === 'Enter' && !ev.shiftKey) {
+        editor.blur();
+        ev.preventDefault();
+      }
+      ev.stopPropagation();
+    });
+  };
+
+  Designer.prototype._finishCellEdit = function () {
+    if (!this._editingCell) return;
+    const { elId, r, c, editor } = this._editingCell;
+    const el = this.elements.find((x) => x.id === elId);
+    if (el && editor) {
+      LabelTable.updateCell(el, r, c, { text: editor.value });
+    }
+    this._editingCell = null;
+  };
+
+  Designer.prototype.mergeSelectedCells = function () {
+    const el = this.getSelected();
+    if (!el || el.type !== 'table' || !this.cellRange) return false;
+    const { r1, c1, r2, c2 } = this.cellRange;
+    const ok = LabelTable.mergeRange(el, r1, c1, r2, c2);
+    if (ok) {
+      this.selectedCell = { r: Math.min(r1, r2), c: Math.min(c1, c2) };
+      this.cellRange = { r1: this.selectedCell.r, c1: this.selectedCell.c, r2: this.selectedCell.r, c2: this.selectedCell.c };
+      this.render();
+      this.onChange();
+      this.onSelect(el);
+    }
+    return ok;
+  };
+
+  Designer.prototype.unmergeSelectedCell = function () {
+    const el = this.getSelected();
+    if (!el || el.type !== 'table' || !this.selectedCell) return false;
+    const ok = LabelTable.unmergeAt(el, this.selectedCell.r, this.selectedCell.c);
+    if (ok) {
+      this.render();
+      this.onChange();
+      this.onSelect(el);
+    }
+    return ok;
+  };
+
+  Designer.prototype.updateSelectedCell = function (patch) {
+    const el = this.getSelected();
+    if (!el || el.type !== 'table' || !this.selectedCell) return;
+    LabelTable.updateCell(el, this.selectedCell.r, this.selectedCell.c, patch);
     this.render();
     this.onChange();
     this.onSelect(el);
@@ -457,50 +730,96 @@
   };
 
   Designer.prototype._renderTable = function (node, el, row, s) {
-    const rows = Math.max(1, Number(el.rows) || 1);
-    const cols = Math.max(1, Number(el.cols) || 1);
-    const lines = String(el.tableCells || '').split(/\n/);
-    const aligns = String(el.colAligns || '').split('|').map((x) => x.trim());
-    const widths = String(el.colWidths || '').split('|').map((x) => x.trim());
+    LabelTable.ensureGrid(el);
+    const map = LabelTable.getVisibleCellMap(el);
     const table = document.createElement('table');
-    const pt = Number(el.tableFontSize) || 8;
-    table.style.fontSize = (pt * (96 / 72) * this.zoom) + 'px';
-    if (widths.some(Boolean)) {
-      const colgroup = document.createElement('colgroup');
-      for (let c = 0; c < cols; c++) {
-        const col = document.createElement('col');
-        if (widths[c]) col.style.width = widths[c];
-        colgroup.appendChild(col);
-      }
-      table.appendChild(colgroup);
-    }
-    for (let r = 0; r < rows; r++) {
+    const wrap = document.createElement('div');
+    wrap.className = 'tbl-wrap';
+    wrap.style.width = '100%';
+    wrap.style.height = '100%';
+    wrap.style.position = 'relative';
+
+    const defaultPt = Number(el.tableFontSize) || 8;
+    table.style.fontSize = (defaultPt * (96 / 72) * this.zoom) + 'px';
+    table.style.width = '100%';
+    table.style.height = '100%';
+
+    const colgroup = document.createElement('colgroup');
+    el.colWidths.forEach((w) => {
+      const col = document.createElement('col');
+      col.style.width = w + '%';
+      colgroup.appendChild(col);
+    });
+    table.appendChild(colgroup);
+
+    const selected = el.id === this.selectedId;
+    const range = selected ? this.cellRange : null;
+    const inRange = (r, c) => {
+      if (!range) return false;
+      const top = Math.min(range.r1, range.r2);
+      const left = Math.min(range.c1, range.c2);
+      const bottom = Math.max(range.r1, range.r2);
+      const right = Math.max(range.c1, range.c2);
+      return r >= top && r <= bottom && c >= left && c <= right;
+    };
+
+    for (let r = 0; r < el.rows; r++) {
       const tr = document.createElement('tr');
-      const cells = (lines[r] || '').split('|');
-      for (let c = 0; c < cols; c++) {
+      tr.style.height = el.rowHeights[r] + '%';
+      for (let c = 0; c < el.cols; c++) {
+        const vis = map[r][c];
+        if (!vis.show) continue;
+        const cell = el.cells[r][c];
         const td = document.createElement('td');
+        td.className = 'tbl-cell';
+        td.dataset.r = String(r);
+        td.dataset.c = String(c);
+        if (vis.rowspan > 1) td.rowSpan = vis.rowspan;
+        if (vis.colspan > 1) td.colSpan = vis.colspan;
         td.style.borderColor = el.borderColor || '#334155';
-        td.style.textAlign = aligns[c] || 'left';
-        const raw = cells[c] != null ? cells[c] : '';
-        const parsed = parseStyledCell(raw, row);
-        td.textContent = parsed.text;
-        if (parsed.bold) td.style.fontWeight = '700';
+        td.style.textAlign = cell.align || 'left';
+        td.style.verticalAlign = cell.vAlign || 'middle';
+        td.style.fontWeight = cell.fontWeight || '400';
+        td.style.fontStyle = cell.fontStyle || 'normal';
+        td.style.color = cell.color || '#0f172a';
+        const pt = cell.fontSize != null ? Number(cell.fontSize) : defaultPt;
+        td.style.fontSize = (pt * (96 / 72) * this.zoom) + 'px';
+        td.textContent = LabelTable.evaluateCellText(cell, row);
+        if (selected && this.selectedCell && this.selectedCell.r === r && this.selectedCell.c === c) {
+          td.classList.add('tbl-cell-active');
+        }
+        if (selected && inRange(r, c)) td.classList.add('tbl-cell-range');
         tr.appendChild(td);
       }
       table.appendChild(tr);
     }
-    node.appendChild(table);
-  };
+    wrap.appendChild(table);
 
-  function parseStyledCell(raw, row) {
-    const src = String(raw == null ? '' : raw);
-    const m = src.match(/^\*\*([\s\S]*)\*\*$/);
-    const expr = m ? m[1] : src;
-    return {
-      text: LabelFormula.evaluate(expr, row || {}),
-      bold: !!m,
-    };
-  }
+    if (selected) {
+      // column resizers
+      let acc = 0;
+      for (let c = 0; c < el.cols - 1; c++) {
+        acc += el.colWidths[c];
+        const handle = document.createElement('div');
+        handle.className = 'tbl-col-resizer';
+        handle.dataset.col = String(c);
+        handle.style.left = acc + '%';
+        wrap.appendChild(handle);
+      }
+      // row resizers
+      acc = 0;
+      for (let r = 0; r < el.rows - 1; r++) {
+        acc += el.rowHeights[r];
+        const handle = document.createElement('div');
+        handle.className = 'tbl-row-resizer';
+        handle.dataset.row = String(r);
+        handle.style.top = acc + '%';
+        wrap.appendChild(handle);
+      }
+    }
+
+    node.appendChild(wrap);
+  };
 
   Designer.prototype._renderLine = function (node, el, s) {
     const line = document.createElement('div');
@@ -547,7 +866,12 @@
     this.width = data.width || 60;
     this.height = data.height || 40;
     this.elements = Array.isArray(data.elements) ? data.elements : [];
+    this.elements.forEach((el) => {
+      if (el.type === 'table') LabelTable.ensureGrid(el);
+    });
     this.selectedId = null;
+    this.selectedCell = null;
+    this.cellRange = null;
     this.resizeCanvas();
     this.render();
     this.onSelect(null);
@@ -567,15 +891,12 @@
     const elements = this.elements.map((el) => {
       let content = '';
       if (el.type === 'table') {
-        const rows = Math.max(1, Number(el.rows) || 1);
-        const cols = Math.max(1, Number(el.cols) || 1);
-        const lines = String(el.tableCells || '').split(/\n/);
+        LabelTable.ensureGrid(el);
         const grid = [];
-        for (let r = 0; r < rows; r++) {
-          const cells = (lines[r] || '').split('|');
+        for (let r = 0; r < el.rows; r++) {
           const rowCells = [];
-          for (let c = 0; c < cols; c++) {
-            rowCells.push(parseStyledCell(cells[c] != null ? cells[c] : '', row || {}).text);
+          for (let c = 0; c < el.cols; c++) {
+            rowCells.push(LabelTable.evaluateCellText(el.cells[r][c], row || {}));
           }
           grid.push(rowCells);
         }

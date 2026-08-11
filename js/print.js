@@ -62,40 +62,42 @@
           node.appendChild(img);
         }
       } else if (el.type === 'table') {
-        const rows = Math.max(1, Number(el.rows) || 1);
-        const cols = Math.max(1, Number(el.cols) || 1);
-        const lines = String(el.tableCells || '').split(/\n/);
-        const aligns = String(el.colAligns || '').split('|').map((x) => x.trim());
-        const widths = String(el.colWidths || '').split('|').map((x) => x.trim());
+        LabelTable.ensureGrid(el);
+        const map = LabelTable.getVisibleCellMap(el);
         const table = document.createElement('table');
         table.style.width = '100%';
         table.style.height = '100%';
         table.style.borderCollapse = 'collapse';
         table.style.tableLayout = 'fixed';
-        table.style.fontSize = (el.tableFontSize || 8) + 'pt';
-        if (widths.some(Boolean)) {
-          const colgroup = document.createElement('colgroup');
-          for (let c = 0; c < cols; c++) {
-            const col = document.createElement('col');
-            if (widths[c]) col.style.width = widths[c];
-            colgroup.appendChild(col);
-          }
-          table.appendChild(colgroup);
-        }
-        for (let r = 0; r < rows; r++) {
+        const defaultPt = Number(el.tableFontSize) || 8;
+        table.style.fontSize = defaultPt + 'pt';
+        const colgroup = document.createElement('colgroup');
+        el.colWidths.forEach((w) => {
+          const col = document.createElement('col');
+          col.style.width = w + '%';
+          colgroup.appendChild(col);
+        });
+        table.appendChild(colgroup);
+        for (let r = 0; r < el.rows; r++) {
           const tr = document.createElement('tr');
-          const cells = (lines[r] || '').split('|');
-          for (let c = 0; c < cols; c++) {
+          tr.style.height = el.rowHeights[r] + '%';
+          for (let c = 0; c < el.cols; c++) {
+            const vis = map[r][c];
+            if (!vis.show) continue;
+            const cell = el.cells[r][c];
             const td = document.createElement('td');
+            if (vis.rowspan > 1) td.rowSpan = vis.rowspan;
+            if (vis.colspan > 1) td.colSpan = vis.colspan;
             td.style.border = `0.2mm solid ${el.borderColor || '#334155'}`;
             td.style.padding = '0.3mm 0.5mm';
-            td.style.verticalAlign = 'middle';
-            td.style.textAlign = aligns[c] || 'left';
-            const raw = cells[c] != null ? cells[c] : '';
-            const m = String(raw).match(/^\*\*([\s\S]*)\*\*$/);
-            const expr = m ? m[1] : raw;
-            td.textContent = LabelFormula.evaluate(expr, snapshot.order || {});
-            if (m) td.style.fontWeight = '700';
+            td.style.verticalAlign = cell.vAlign || 'middle';
+            td.style.textAlign = cell.align || 'left';
+            td.style.fontWeight = cell.fontWeight || '400';
+            td.style.fontStyle = cell.fontStyle || 'normal';
+            td.style.color = cell.color || '#000';
+            const pt = cell.fontSize != null ? Number(cell.fontSize) : defaultPt;
+            td.style.fontSize = pt + 'pt';
+            td.textContent = LabelTable.evaluateCellText(cell, snapshot.order || {});
             tr.appendChild(td);
           }
           table.appendChild(tr);
