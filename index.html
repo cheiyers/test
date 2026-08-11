@@ -79,6 +79,7 @@
               <option value="40x30">40×30 mm</option>
               <option value="50x30">50×30 mm</option>
               <option value="60x40" selected>60×40 mm</option>
+              <option value="80x40">80×40 mm</option>
               <option value="80x50">80×50 mm</option>
               <option value="100x70">100×70 mm</option>
               <option value="100x150">100×150 mm</option>
@@ -248,8 +249,14 @@
             <h3>表格</h3>
             <label>行数<input type="number" name="rows" min="1" max="20" value="3" /></label>
             <label>列数<input type="number" name="cols" min="1" max="10" value="2" /></label>
-            <label>单元格公式（每行一格，用 | 分列）
-              <textarea name="tableCells" rows="5" placeholder="品名|{{品名}}&#10;数量|{{数量}}&#10;备注|{{备注}}"></textarea>
+            <label>单元格公式（每行一格，用 | 分列；可用 **内容** 加粗）
+              <textarea name="tableCells" rows="5" placeholder="Order No.|**{{Order No.}}**&#10;Name|{{Name}}"></textarea>
+            </label>
+            <label>列对齐（用 | 分隔：left/center/right）
+              <input type="text" name="colAligns" value="right|left" placeholder="right|left" />
+            </label>
+            <label>列宽（用 | 分隔，如 38%|62%）
+              <input type="text" name="colWidths" value="" placeholder="38%|62%" />
             </label>
             <div class="field-row">
               <label>边框色<input type="color" name="borderColor" value="#334155" /></label>
@@ -350,6 +357,7 @@
   <script src="js/vendor/JsBarcode.all.min.js"></script>
   <script src="js/vendor/qrcode.min.js"></script>
   <script src="js/formula.js"></script>
+  <script src="js/defaults.js"></script>
   <script src="js/storage.js"></script>
   <script src="js/data.js"></script>
   <script src="js/designer.js"></script>

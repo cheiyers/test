@@ -143,6 +143,8 @@
     set('tableCells', el.tableCells);
     set('borderColor', el.borderColor || '#334155');
     set('tableFontSize', el.tableFontSize);
+    set('colAligns', el.colAligns || 'left|left');
+    set('colWidths', el.colWidths || '');
     set('strokeWidth', el.strokeWidth);
     set('strokeColor', el.strokeColor || '#0f172a');
     set('rectStroke', el.rectStroke || '#0f172a');
@@ -208,6 +210,8 @@
       tableCells: g('tableCells').value,
       borderColor: g('borderColor').value,
       tableFontSize: Number(g('tableFontSize').value),
+      colAligns: g('colAligns').value,
+      colWidths: g('colWidths').value,
       strokeWidth: Number(g('strokeWidth').value),
       strokeColor: g('strokeColor').value,
       rectStroke: g('rectStroke').value,
@@ -245,7 +249,7 @@
 
   function loadSession() {
     const s = LabelStorage.loadSession();
-    if (!s) return false;
+    if (!s || !LabelStorage.isCurrentSeed(s)) return false;
     state.templateId = s.templateId || null;
     setTemplateName(s.templateName || '未命名模板');
     state.columns = s.columns || [];
@@ -263,53 +267,24 @@
   }
 
   function seedDemoTemplate() {
-    designer.clear();
-    designer.setSize(60, 40);
-    const title = designer.addElement('text');
-    designer.updateSelected({
-      name: '标题',
-      x: 3, y: 2, w: 35, h: 6,
-      bindMode: 'static',
-      staticValue: '发货标签',
-      fontSize: 12,
-      fontWeight: '700',
-    });
-    designer.addElement('text');
-    designer.updateSelected({
-      name: '订单号',
-      x: 3, y: 9, w: 35, h: 5,
-      bindMode: 'formula',
-      formula: '"单号: "&IF({{订单号}}="", "—", {{订单号}})',
-      fontSize: 9,
-    });
-    designer.addElement('text');
-    designer.updateSelected({
-      name: '收件人',
-      x: 3, y: 15, w: 35, h: 8,
-      bindMode: 'join',
-      joinColumns: ['收件人', '电话'],
-      joinSep: ' / ',
-      fontSize: 8,
-    });
-    designer.addElement('text');
-    designer.updateSelected({
-      name: '地址',
-      x: 3, y: 24, w: 35, h: 12,
-      bindMode: 'formula',
-      formula: 'JOIN("", {{省}}, {{市}}, {{区}}, {{地址}})',
-      fontSize: 8,
-    });
-    designer.addElement('qrcode');
-    designer.updateSelected({
-      name: '物流码',
-      x: 40, y: 8, w: 17, h: 17,
-      bindMode: 'column',
-      column: '订单号',
-      staticValue: 'DEMO001',
-    });
-    designer.select(null);
-    setTemplateName('示例发货标签');
+    const tpl = (LabelDefaults.templates && LabelDefaults.templates[0]) || null;
+    if (tpl) {
+      designer.loadJSON(tpl.design);
+      state.templateId = tpl.id;
+      setTemplateName(tpl.name);
+    } else {
+      designer.clear();
+      designer.setSize(80, 40);
+      setTemplateName('线缆产品标签');
+    }
+    state.columns = LabelDefaults.sampleColumns.slice();
+    state.orders = LabelDefaults.sampleOrders.map((r) => ({ ...r }));
+    state.orderIndex = 0;
+    designer.setZoom(Number($('#zoom').value) / 100 || 1.2);
     syncSizeInputs();
+    refreshOrderUI();
+    designer.select(null);
+    persistSession();
   }
 
   function syncSizeInputs() {
@@ -343,7 +318,9 @@
       const li = document.createElement('li');
       const meta = document.createElement('div');
       meta.className = 'meta';
-      meta.innerHTML = `<strong>${escapeHtml(t.name)}</strong><span>${new Date(t.updatedAt).toLocaleString()} · ${t.design?.width || '?'}×${t.design?.height || '?'} mm</span>`;
+      const badge = t.builtin ? '<span class="tpl-badge">默认</span> ' : '';
+      const desc = t.description ? ` · ${escapeHtml(t.description)}` : '';
+      meta.innerHTML = `<strong>${badge}${escapeHtml(t.name)}</strong><span>${t.builtin ? '内置模板' : new Date(t.updatedAt).toLocaleString()} · ${t.design?.width || '?'}×${t.design?.height || '?'} mm${desc}</span>`;
       const actions = document.createElement('div');
       actions.className = 'actions';
       const loadBtn = document.createElement('button');
@@ -353,23 +330,26 @@
       loadBtn.addEventListener('click', () => {
         state.templateId = t.id;
         setTemplateName(t.name);
-        designer.loadJSON(t.design || { width: 60, height: 40, elements: [] });
+        designer.loadJSON(t.design || { width: 80, height: 40, elements: [] });
         syncSizeInputs();
         persistSession();
         $('#templates-modal').close();
       });
-      const delBtn = document.createElement('button');
-      delBtn.type = 'button';
-      delBtn.className = 'btn tiny danger';
-      delBtn.textContent = '删除';
-      delBtn.addEventListener('click', () => {
-        if (confirm('确定删除方案「' + t.name + '」？')) {
-          LabelStorage.removeTemplate(t.id);
-          if (state.templateId === t.id) state.templateId = null;
-          renderTemplatesList();
-        }
-      });
-      actions.append(loadBtn, delBtn);
+      actions.appendChild(loadBtn);
+      if (!t.builtin) {
+        const delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'btn tiny danger';
+        delBtn.textContent = '删除';
+        delBtn.addEventListener('click', () => {
+          if (confirm('确定删除方案「' + t.name + '」？')) {
+            LabelStorage.removeTemplate(t.id);
+            if (state.templateId === t.id) state.templateId = null;
+            renderTemplatesList();
+          }
+        });
+        actions.appendChild(delBtn);
+      }
       li.append(meta, actions);
       list.appendChild(li);
     });

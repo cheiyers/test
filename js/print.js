@@ -65,22 +65,37 @@
         const rows = Math.max(1, Number(el.rows) || 1);
         const cols = Math.max(1, Number(el.cols) || 1);
         const lines = String(el.tableCells || '').split(/\n/);
+        const aligns = String(el.colAligns || '').split('|').map((x) => x.trim());
+        const widths = String(el.colWidths || '').split('|').map((x) => x.trim());
         const table = document.createElement('table');
         table.style.width = '100%';
         table.style.height = '100%';
         table.style.borderCollapse = 'collapse';
         table.style.tableLayout = 'fixed';
         table.style.fontSize = (el.tableFontSize || 8) + 'pt';
+        if (widths.some(Boolean)) {
+          const colgroup = document.createElement('colgroup');
+          for (let c = 0; c < cols; c++) {
+            const col = document.createElement('col');
+            if (widths[c]) col.style.width = widths[c];
+            colgroup.appendChild(col);
+          }
+          table.appendChild(colgroup);
+        }
         for (let r = 0; r < rows; r++) {
           const tr = document.createElement('tr');
           const cells = (lines[r] || '').split('|');
           for (let c = 0; c < cols; c++) {
             const td = document.createElement('td');
             td.style.border = `0.2mm solid ${el.borderColor || '#334155'}`;
-            td.style.padding = '0.4mm 0.6mm';
+            td.style.padding = '0.3mm 0.5mm';
             td.style.verticalAlign = 'middle';
+            td.style.textAlign = aligns[c] || 'left';
             const raw = cells[c] != null ? cells[c] : '';
-            td.textContent = LabelFormula.evaluate(raw, snapshot.order || {});
+            const m = String(raw).match(/^\*\*([\s\S]*)\*\*$/);
+            const expr = m ? m[1] : raw;
+            td.textContent = LabelFormula.evaluate(expr, snapshot.order || {});
+            if (m) td.style.fontWeight = '700';
             tr.appendChild(td);
           }
           table.appendChild(tr);

@@ -348,10 +348,23 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 }
 .el-table td {
   border: 1px solid #334155;
-  padding: 2px 4px;
+  padding: 1px 3px;
   vertical-align: middle;
   overflow: hidden;
   word-break: break-word;
+  line-height: 1.15;
+}
+.tpl-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(31, 184, 168, 0.18);
+  border: 1px solid rgba(31, 184, 168, 0.4);
+  color: #7ee0d4;
+  margin-right: 4px;
+  vertical-align: middle;
 }
 .el-line {
   pointer-events: auto;

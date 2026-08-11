@@ -67,6 +67,8 @@
           tableCells: '字段|值\n品名|{{品名}}\n数量|{{数量}}',
           borderColor: '#334155',
           tableFontSize: 8,
+          colAligns: 'left|left',
+          colWidths: '',
           w: 50,
           h: 22,
           bindMode: 'static',
@@ -458,23 +460,47 @@
     const rows = Math.max(1, Number(el.rows) || 1);
     const cols = Math.max(1, Number(el.cols) || 1);
     const lines = String(el.tableCells || '').split(/\n/);
+    const aligns = String(el.colAligns || '').split('|').map((x) => x.trim());
+    const widths = String(el.colWidths || '').split('|').map((x) => x.trim());
     const table = document.createElement('table');
     const pt = Number(el.tableFontSize) || 8;
     table.style.fontSize = (pt * (96 / 72) * this.zoom) + 'px';
+    if (widths.some(Boolean)) {
+      const colgroup = document.createElement('colgroup');
+      for (let c = 0; c < cols; c++) {
+        const col = document.createElement('col');
+        if (widths[c]) col.style.width = widths[c];
+        colgroup.appendChild(col);
+      }
+      table.appendChild(colgroup);
+    }
     for (let r = 0; r < rows; r++) {
       const tr = document.createElement('tr');
       const cells = (lines[r] || '').split('|');
       for (let c = 0; c < cols; c++) {
         const td = document.createElement('td');
         td.style.borderColor = el.borderColor || '#334155';
+        td.style.textAlign = aligns[c] || 'left';
         const raw = cells[c] != null ? cells[c] : '';
-        td.textContent = LabelFormula.evaluate(raw, row);
+        const parsed = parseStyledCell(raw, row);
+        td.textContent = parsed.text;
+        if (parsed.bold) td.style.fontWeight = '700';
         tr.appendChild(td);
       }
       table.appendChild(tr);
     }
     node.appendChild(table);
   };
+
+  function parseStyledCell(raw, row) {
+    const src = String(raw == null ? '' : raw);
+    const m = src.match(/^\*\*([\s\S]*)\*\*$/);
+    const expr = m ? m[1] : src;
+    return {
+      text: LabelFormula.evaluate(expr, row || {}),
+      bold: !!m,
+    };
+  }
 
   Designer.prototype._renderLine = function (node, el, s) {
     const line = document.createElement('div');

@@ -39,17 +39,28 @@ npx --yes serve -l 8080
 - `JOIN("-", {{省}}, {{市}}, {{区}})` — 多段连接并跳过空值
 - `CONCAT({{收件人}}, "/", {{电话}})` — 连接
 
+## 默认模板
+
+内置两套 **80×40 mm** 线缆产品标签（方案库可直接加载）：
+
+1. **线缆产品标签 A** — 左侧二维码绑定 `Order No.`，Properties 用 `JOIN("/", 标准, 认证, 机房类型)` 拼接  
+2. **线缆产品标签 B** — 二维码绑定 `订单号-序号` 公式，Properties 绑定单列  
+
+示例订单字段与模板一致，见 `samples/orders.csv`。
+
 ## 目录结构
 
 ```
 index.html
 css/styles.css
 js/formula.js      # 公式引擎
+js/defaults.js     # 内置默认模板与示例订单
 js/storage.js      # 模板本地存储
 js/data.js         # 订单导入 / Excel 导出
 js/designer.js     # 画布设计器
 js/print.js        # 打印排版
 js/app.js          # 主界面逻辑
+js/vendor/         # 离线第三方库
 samples/orders.csv
 ```
 
