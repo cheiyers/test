@@ -145,7 +145,8 @@
       // Whole-element resize handle always wins
       if (e.target.classList.contains('handle')) {
         self.select(id);
-        self._drag = {
+        LabelTable.ensureGrid(el);
+        const drag = {
           mode: 'resize',
           id,
           startX: e.clientX,
@@ -156,6 +157,14 @@
           origH: el.h,
           scale: self._scale(),
         };
+        // Snapshot fonts so whole-table resize scales cell type with the box
+        if (el.type === 'table') {
+          drag.origTableFontSize = Number(el.tableFontSize) || 8;
+          drag.origCellFontSizes = (el.cells || []).map((row) => (
+            (row || []).map((cell) => (cell && cell.fontSize != null ? Number(cell.fontSize) : null))
+          ));
+        }
+        self._drag = drag;
         e.preventDefault();
         return;
       }
@@ -346,6 +355,27 @@
         // Tables need a little height per row so lines/text stay usable while dragging
         const minH = el.type === 'table' ? Math.max(4, (Number(el.rows) || 1) * 1.6) : 2;
         el.h = Math.max(minH, Math.round((d.origH + dy) * 10) / 10);
+        if (el.type === 'table' && d.origTableFontSize != null && d.origH > 0) {
+          // Prefer height (row depth); blend a little width so wide/narrow still feels right
+          const hRatio = el.h / d.origH;
+          const wRatio = d.origW > 0 ? el.w / d.origW : hRatio;
+          const fontScale = Math.max(0.35, Math.min(4, (hRatio * 0.75) + (wRatio * 0.25)));
+          el.tableFontSize = clampFontPt(d.origTableFontSize * fontScale);
+          if (Array.isArray(el.cells) && Array.isArray(d.origCellFontSizes)) {
+            for (let r = 0; r < el.cells.length; r++) {
+              const row = el.cells[r];
+              const origRow = d.origCellFontSizes[r] || [];
+              if (!row) continue;
+              for (let c = 0; c < row.length; c++) {
+                if (!row[c]) continue;
+                if (origRow[c] != null && Number.isFinite(origRow[c])) {
+                  row[c].fontSize = clampFontPt(origRow[c] * fontScale);
+                }
+              }
+            }
+          }
+          LabelTable.syncLegacyStrings(el);
+        }
       }
       self.render();
       self.onChange();
@@ -1029,6 +1059,12 @@
       }
     }
   };
+
+  function clampFontPt(pt) {
+    const n = Number(pt);
+    if (!Number.isFinite(n)) return 8;
+    return Math.min(36, Math.max(4, Math.round(n * 2) / 2));
+  }
 
   function fitCellFont(td, basePt, zoom) {
     if (!td || !td.clientHeight) return;
