@@ -95,7 +95,32 @@
   function normalizeWeights(arr) {
     const nums = arr.map((n) => (Number.isFinite(n) && n > 0 ? n : 1));
     const sum = nums.reduce((a, b) => a + b, 0) || 1;
-    return nums.map((n) => Math.round((n / sum) * 1000) / 10);
+    const out = nums.map((n) => Math.round((n / sum) * 1000) / 10);
+    // Keep sum exactly 100 so % row/col layouts never overflow the box
+    if (out.length) {
+      const s2 = out.reduce((a, b) => a + b, 0);
+      if (Math.abs(s2 - 100) > 0.001) {
+        out[out.length - 1] = Math.round((out[out.length - 1] + (100 - s2)) * 10) / 10;
+        if (out[out.length - 1] <= 0) out[out.length - 1] = 0.1;
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Distribute row/col weights into pixel sizes that sum exactly to `totalPx`.
+   * Avoids a hard per-row floor (e.g. 8px) that makes short tables overflow and clip borders.
+   */
+  function distributePixels(weights, totalPx) {
+    const list = Array.isArray(weights) ? weights : [];
+    const n = list.length;
+    if (n === 0) return [];
+    const total = Math.max(0, Number(totalPx) || 0);
+    if (total <= 0) return list.map(() => 0);
+    const sumW = list.reduce((a, b) => a + (Number(b) > 0 ? Number(b) : 0), 0) || n;
+    const ideal = list.map((w) => (total * (Number(w) > 0 ? Number(w) : 0)) / sumW);
+    // Largest-remainder so integer px (when useful) still sum to total; keep fractional for CSS
+    return ideal;
   }
 
   function syncLegacyStrings(el) {
@@ -264,5 +289,6 @@
     evaluateCellText,
     syncLegacyStrings,
     normalizeWeights,
+    distributePixels,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

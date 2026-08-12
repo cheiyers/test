@@ -343,7 +343,9 @@
         el.y = Math.round((d.origY + dy) * 10) / 10;
       } else if (d.mode === 'resize') {
         el.w = Math.max(2, Math.round((d.origW + dx) * 10) / 10);
-        el.h = Math.max(2, Math.round((d.origH + dy) * 10) / 10);
+        // Tables need a little height per row so lines/text stay usable while dragging
+        const minH = el.type === 'table' ? Math.max(4, (Number(el.rows) || 1) * 1.6) : 2;
+        el.h = Math.max(minH, Math.round((d.origH + dy) * 10) / 10);
       }
       self.render();
       self.onChange();
@@ -352,6 +354,15 @@
 
     const endDrag = () => {
       if (self._drag && (self._drag.mode === 'col-resize' || self._drag.mode === 'row-resize')) {
+        const el = self.elements.find((x) => x.id === self._drag.id);
+        if (el && el.type === 'table') {
+          if (self._drag.mode === 'col-resize') {
+            el.colWidths = LabelTable.normalizeWeights(el.colWidths);
+          } else {
+            el.rowHeights = LabelTable.normalizeWeights(el.rowHeights);
+          }
+          self._applyTableMetrics(el);
+        }
         self.onChange();
       }
       self._drag = null;
@@ -508,13 +519,17 @@
       handle.style.left = acc + '%';
       wrap.appendChild(handle);
     }
+    const s = this._scale();
+    const tablePxH = Math.max(1, el.h * s);
+    const innerH = Math.max(1, tablePxH - 1);
+    const rowPx = LabelTable.distributePixels(el.rowHeights, innerH);
     acc = 0;
     for (let r = 0; r < el.rows - 1; r++) {
-      acc += el.rowHeights[r];
+      acc += rowPx[r] || 0;
       const handle = document.createElement('div');
       handle.className = 'tbl-row-resizer';
       handle.dataset.row = String(r);
-      handle.style.top = acc + '%';
+      handle.style.top = ((acc / innerH) * 100) + '%';
       wrap.appendChild(handle);
     }
   };
@@ -526,15 +541,15 @@
     if (!wrap) return;
     const s = this._scale();
     const tablePxH = Math.max(1, el.h * s);
+    const innerH = Math.max(1, tablePxH - 1);
     const cols = wrap.querySelectorAll('colgroup col');
     cols.forEach((col, i) => {
       if (el.colWidths[i] != null) col.style.width = el.colWidths[i] + '%';
     });
+    const rowPx = LabelTable.distributePixels(el.rowHeights, innerH);
     const rows = wrap.querySelectorAll('tbody tr');
     rows.forEach((tr, i) => {
-      if (el.rowHeights[i] != null) {
-        tr.style.height = Math.max(8, (tablePxH * el.rowHeights[i]) / 100) + 'px';
-      }
+      if (rowPx[i] != null) tr.style.height = rowPx[i] + 'px';
     });
     wrap.querySelectorAll('.tbl-col-resizer').forEach((handle) => {
       const i = Number(handle.dataset.col);
@@ -543,8 +558,8 @@
     });
     wrap.querySelectorAll('.tbl-row-resizer').forEach((handle) => {
       const i = Number(handle.dataset.row);
-      const top = el.rowHeights.slice(0, i + 1).reduce((a, b) => a + b, 0);
-      handle.style.top = top + '%';
+      const topPx = rowPx.slice(0, i + 1).reduce((a, b) => a + b, 0);
+      handle.style.top = ((topPx / innerH) * 100) + '%';
     });
   };
 
@@ -896,9 +911,14 @@
     node.appendChild(grip);
 
     const defaultPt = Number(el.tableFontSize) || 8;
+    const borderColor = el.borderColor || '#334155';
     table.style.fontSize = (defaultPt * (96 / 72) * this.zoom) + 'px';
     table.style.width = '100%';
-    table.style.height = '100%';
+    table.style.height = 'calc(100% - 1px)';
+    table.style.borderCollapse = 'separate';
+    table.style.borderSpacing = '0';
+    table.style.boxSizing = 'border-box';
+    table.style.border = `1px solid ${borderColor}`;
 
     const colgroup = document.createElement('colgroup');
     el.colWidths.forEach((w) => {
@@ -919,11 +939,11 @@
       return r >= top && r <= bottom && c >= left && c <= right;
     };
 
-    // Pixel row heights — percentage <tr> heights are unreliable across browsers
+    // Pixel row heights inside the bordered table (1px reserved so bottom border stays visible)
     const tablePxH = Math.max(1, el.h * s);
-    const rowPx = el.rowHeights.map((pct) => Math.max(8, (tablePxH * pct) / 100));
+    const innerH = Math.max(1, tablePxH - 1);
+    const rowPx = LabelTable.distributePixels(el.rowHeights, innerH);
 
-    const hasOrderData = !!(row && Object.keys(row).length);
     for (let r = 0; r < el.rows; r++) {
       const tr = document.createElement('tr');
       tr.style.height = rowPx[r] + 'px';
@@ -942,7 +962,12 @@
           td.style.height = spanH + 'px';
         }
         if (vis.colspan > 1) td.colSpan = vis.colspan;
-        td.style.borderColor = el.borderColor || '#334155';
+        // Outer edge is on <table>; skip outer edges here so bottom/right lines aren't clipped
+        const isLastCol = (c + (vis.colspan || 1)) >= el.cols;
+        const isLastRow = (r + (vis.rowspan || 1)) >= el.rows;
+        td.style.border = 'none';
+        td.style.borderRight = isLastCol ? 'none' : `1px solid ${borderColor}`;
+        td.style.borderBottom = isLastRow ? 'none' : `1px solid ${borderColor}`;
         td.style.textAlign = cell.align || 'left';
         td.style.verticalAlign = cell.vAlign || 'middle';
         td.style.fontWeight = cell.fontWeight || '400';
@@ -995,7 +1020,7 @@
       }
       acc = 0;
       for (let r = 0; r < el.rows - 1; r++) {
-        acc += (rowPx[r] / tablePxH) * 100;
+        acc += (rowPx[r] / innerH) * 100;
         const handle = document.createElement('div');
         handle.className = 'tbl-row-resizer';
         handle.dataset.row = String(r);

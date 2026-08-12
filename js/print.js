@@ -157,24 +157,39 @@
       } else if (el.type === 'table') {
         LabelTable.ensureGrid(el);
         const map = LabelTable.getVisibleCellMap(el);
+        // Keep outer borders inside the box (collapse + overflow:hidden clips the last edge)
+        node.style.overflow = 'hidden';
+        node.style.boxSizing = 'border-box';
+
         const table = document.createElement('table');
         const tbody = document.createElement('tbody');
+        const borderColor = el.borderColor || '#334155';
+        // Slightly thicker than design hairlines so printers/html2canvas don't drop the edge
+        const borderW = fillPage ? mmToCqh(0.3, labelH) : '0.3mm';
+        // Inset height so the outer bottom border stays inside overflow:hidden
         table.style.width = '100%';
-        table.style.height = '100%';
-        table.style.borderCollapse = 'collapse';
+        table.style.height = fillPage ? 'calc(100% - 0.4cqh)' : 'calc(100% - 0.4mm)';
+        table.style.maxHeight = '100%';
+        table.style.borderCollapse = 'separate';
+        table.style.borderSpacing = '0';
         table.style.tableLayout = 'fixed';
+        table.style.boxSizing = 'border-box';
+        table.style.border = `${borderW} solid ${borderColor}`;
         const defaultPt = Number(el.tableFontSize) || 8;
         table.style.fontSize = fillPage ? ptToCqh(defaultPt, labelH) : (defaultPt + 'pt');
         const colgroup = document.createElement('colgroup');
-        el.colWidths.forEach((w) => {
+        const colWeights = LabelTable.normalizeWeights((el.colWidths || []).map(Number));
+        colWeights.forEach((w) => {
           const col = document.createElement('col');
           col.style.width = w + '%';
           colgroup.appendChild(col);
         });
         table.appendChild(colgroup);
+
+        const rowWeights = LabelTable.normalizeWeights((el.rowHeights || []).map(Number));
         for (let r = 0; r < el.rows; r++) {
           const tr = document.createElement('tr');
-          tr.style.height = el.rowHeights[r] + '%';
+          tr.style.height = (rowWeights[r] != null ? rowWeights[r] : (100 / el.rows)) + '%';
           for (let c = 0; c < el.cols; c++) {
             const vis = map[r][c];
             if (!vis.show) continue;
@@ -182,12 +197,17 @@
             const td = document.createElement('td');
             if (vis.rowspan > 1) td.rowSpan = vis.rowspan;
             if (vis.colspan > 1) td.colSpan = vis.colspan;
-            td.style.border = fillPage
-              ? `${mmToCqh(0.2, labelH)} solid ${el.borderColor || '#334155'}`
-              : `0.2mm solid ${el.borderColor || '#334155'}`;
+            // Internal grid only — outer edge comes from table border (avoids missing bottom line)
+            td.style.border = 'none';
+            td.style.borderRight = `${borderW} solid ${borderColor}`;
+            td.style.borderBottom = `${borderW} solid ${borderColor}`;
+            const isLastCol = (c + (vis.colspan || 1)) >= el.cols;
+            const isLastRow = (r + (vis.rowspan || 1)) >= el.rows;
+            if (isLastCol) td.style.borderRight = 'none';
+            if (isLastRow) td.style.borderBottom = 'none';
             td.style.padding = fillPage
-              ? `${mmToCqh(0.3, labelH)} ${mmToCqh(0.5, labelH)}`
-              : '0.3mm 0.5mm';
+              ? `${mmToCqh(0.25, labelH)} ${mmToCqh(0.4, labelH)}`
+              : '0.25mm 0.4mm';
             td.style.verticalAlign = cell.vAlign || 'middle';
             td.style.textAlign = cell.align || 'left';
             td.style.fontWeight = cell.fontWeight || '400';
@@ -199,6 +219,7 @@
             td.style.whiteSpace = 'pre-wrap';
             td.style.lineHeight = '1.15';
             td.style.maxWidth = '0';
+            td.style.boxSizing = 'border-box';
             const pt = cell.fontSize != null ? Number(cell.fontSize) : defaultPt;
             td.style.fontSize = fillPage ? ptToCqh(pt, labelH) : (pt + 'pt');
             td.textContent = LabelTable.evaluateCellText(cell, snapshot.order || {});
