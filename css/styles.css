@@ -603,17 +603,31 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
   z-index: -1;
 }
 @media print {
-  body * { visibility: hidden !important; }
-  #print-root, #print-root * { visibility: visible !important; }
+  /* Hide app chrome with display:none (visibility:hidden still affects layout/scale) */
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  body > *:not(#print-root) {
+    display: none !important;
+  }
   #print-root {
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
+    display: block !important;
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
     width: 100% !important;
     height: auto !important;
     overflow: visible !important;
     pointer-events: auto !important;
     z-index: auto !important;
+  }
+  #print-root.print-mode-label {
+    width: 100% !important;
+    height: 100% !important;
   }
   .print-label {
     page-break-after: always;
@@ -626,6 +640,17 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
     color: #000;
     box-shadow: none !important;
     margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+  }
+  /* Fill the physical page box so preview ≈ print (no leftover margins from fixed mm) */
+  #print-root.print-mode-label .print-label,
+  #print-root.print-mode-label .print-label-fill {
+    width: 100% !important;
+    height: 100% !important;
+    min-width: 100%;
+    min-height: 100%;
+    box-sizing: border-box !important;
   }
   .print-label:last-child {
     page-break-after: auto;
@@ -647,6 +672,10 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
     break-after: auto;
     box-shadow: none;
     border: 0.2mm dashed #ccc;
+    width: auto !important;
+    height: auto !important;
+    min-width: 0;
+    min-height: 0;
   }
 }
 

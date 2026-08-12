@@ -79,6 +79,7 @@
               <option value="40x30">40×30 mm</option>
               <option value="50x30">50×30 mm</option>
               <option value="60x40" selected>60×40 mm</option>
+              <option value="80x30">80×30 mm</option>
               <option value="80x40">80×40 mm</option>
               <option value="80x50">80×50 mm</option>
               <option value="100x70">100×70 mm</option>
@@ -383,7 +384,7 @@
           A4 每行标签数
           <input type="number" id="a4-cols" value="2" min="1" max="6" />
         </label>
-        <p class="hint">直接打印默认一张标签一页，位置与大小与设计界面一致。导出 Excel 同样按「一标签一页」嵌入二维码图片，可在 Excel 中直接打印。</p>
+        <p class="hint">标签打印按设计尺寸一页一张并铺满纸张。请在系统打印对话框中选择相同纸张（如 80×30 mm）、页边距「无 / 默认」、缩放 <strong>100% / 实际大小</strong>（不要「适合页面」），否则实物会出现留白。</p>
         <div class="modal-actions">
           <button type="button" class="btn primary" id="btn-do-print">开始打印</button>
         </div>

@@ -47,32 +47,75 @@
     }
   }
 
+  function pct(n, total) {
+    if (!total) return '0%';
+    return ((Number(n) / Number(total)) * 100) + '%';
+  }
+
+  /** pt → fraction of label height (cqh), so type scales when page is filled */
+  function ptToCqh(pt, labelHmm) {
+    return ((Number(pt) * 25.4 / 72) / Number(labelHmm) * 100) + 'cqh';
+  }
+
+  function mmToCqh(mm, labelHmm) {
+    return (Number(mm) / Number(labelHmm) * 100) + 'cqh';
+  }
+
   function createLabelDOM(snapshot, options) {
     options = options || {};
+    const fillPage = !!options.fillPage;
+    const labelW = Number(snapshot.width) || 60;
+    const labelH = Number(snapshot.height) || 40;
+
     const root = document.createElement('div');
-    root.className = 'print-label';
-    root.style.width = snapshot.width + 'mm';
-    root.style.height = snapshot.height + 'mm';
+    root.className = 'print-label' + (fillPage ? ' print-label-fill' : '');
     root.style.position = 'relative';
     root.style.overflow = 'hidden';
     root.style.background = '#fff';
     root.style.color = '#000';
     root.style.boxSizing = 'border-box';
 
+    let host = root;
+    if (fillPage) {
+      // Fill the browser/printer page box; layout uses % + cqh so content scales.
+      root.style.width = '100%';
+      root.style.height = '100%';
+      root.style.containerType = 'size';
+      host = document.createElement('div');
+      host.className = 'print-label-inner';
+      host.style.position = 'absolute';
+      host.style.left = '0';
+      host.style.top = '0';
+      host.style.width = '100%';
+      host.style.height = '100%';
+      host.style.overflow = 'hidden';
+      root.appendChild(host);
+    } else {
+      root.style.width = labelW + 'mm';
+      root.style.height = labelH + 'mm';
+    }
+
     const tasks = [];
 
     (snapshot.elements || []).forEach((el) => {
       const node = document.createElement('div');
       node.style.position = 'absolute';
-      node.style.left = el.x + 'mm';
-      node.style.top = el.y + 'mm';
-      node.style.width = el.w + 'mm';
-      node.style.height = el.h + 'mm';
       node.style.boxSizing = 'border-box';
       node.style.overflow = 'hidden';
+      if (fillPage) {
+        node.style.left = pct(el.x, labelW);
+        node.style.top = pct(el.y, labelH);
+        node.style.width = pct(el.w, labelW);
+        node.style.height = pct(el.h, labelH);
+      } else {
+        node.style.left = el.x + 'mm';
+        node.style.top = el.y + 'mm';
+        node.style.width = el.w + 'mm';
+        node.style.height = el.h + 'mm';
+      }
 
       if (el.type === 'text') {
-        node.style.fontSize = (el.fontSize || 10) + 'pt';
+        node.style.fontSize = fillPage ? ptToCqh(el.fontSize || 10, labelH) : ((el.fontSize || 10) + 'pt');
         node.style.fontWeight = el.fontWeight || '400';
         node.style.textAlign = el.textAlign || 'left';
         node.style.color = el.color || '#000';
@@ -86,13 +129,19 @@
         line.style.left = '0';
         line.style.right = '0';
         line.style.top = '50%';
-        line.style.borderTop = `${el.strokeWidth || 0.3}mm solid ${el.strokeColor || '#000'}`;
+        const sw = el.strokeWidth || 0.3;
+        line.style.borderTop = fillPage
+          ? `${mmToCqh(sw, labelH)} solid ${el.strokeColor || '#000'}`
+          : `${sw}mm solid ${el.strokeColor || '#000'}`;
         node.appendChild(line);
       } else if (el.type === 'rect') {
         const rect = document.createElement('div');
         rect.style.width = '100%';
         rect.style.height = '100%';
-        rect.style.border = `${el.rectStrokeWidth || 0.3}mm solid ${el.rectStroke || '#000'}`;
+        const rw = el.rectStrokeWidth || 0.3;
+        rect.style.border = fillPage
+          ? `${mmToCqh(rw, labelH)} solid ${el.rectStroke || '#000'}`
+          : `${rw}mm solid ${el.rectStroke || '#000'}`;
         rect.style.background = el.rectTransparent ? 'transparent' : (el.rectFill || '#fff');
         node.appendChild(rect);
       } else if (el.type === 'image') {
@@ -115,7 +164,7 @@
         table.style.borderCollapse = 'collapse';
         table.style.tableLayout = 'fixed';
         const defaultPt = Number(el.tableFontSize) || 8;
-        table.style.fontSize = defaultPt + 'pt';
+        table.style.fontSize = fillPage ? ptToCqh(defaultPt, labelH) : (defaultPt + 'pt');
         const colgroup = document.createElement('colgroup');
         el.colWidths.forEach((w) => {
           const col = document.createElement('col');
@@ -133,8 +182,12 @@
             const td = document.createElement('td');
             if (vis.rowspan > 1) td.rowSpan = vis.rowspan;
             if (vis.colspan > 1) td.colSpan = vis.colspan;
-            td.style.border = `0.2mm solid ${el.borderColor || '#334155'}`;
-            td.style.padding = '0.3mm 0.5mm';
+            td.style.border = fillPage
+              ? `${mmToCqh(0.2, labelH)} solid ${el.borderColor || '#334155'}`
+              : `0.2mm solid ${el.borderColor || '#334155'}`;
+            td.style.padding = fillPage
+              ? `${mmToCqh(0.3, labelH)} ${mmToCqh(0.5, labelH)}`
+              : '0.3mm 0.5mm';
             td.style.verticalAlign = cell.vAlign || 'middle';
             td.style.textAlign = cell.align || 'left';
             td.style.fontWeight = cell.fontWeight || '400';
@@ -147,7 +200,7 @@
             td.style.lineHeight = '1.15';
             td.style.maxWidth = '0';
             const pt = cell.fontSize != null ? Number(cell.fontSize) : defaultPt;
-            td.style.fontSize = pt + 'pt';
+            td.style.fontSize = fillPage ? ptToCqh(pt, labelH) : (pt + 'pt');
             td.textContent = LabelTable.evaluateCellText(cell, snapshot.order || {});
             tr.appendChild(td);
           }
@@ -172,7 +225,7 @@
           node.appendChild(svg);
         } catch {
           node.textContent = value;
-          node.style.fontSize = '8pt';
+          node.style.fontSize = fillPage ? ptToCqh(8, labelH) : '8pt';
         }
       } else if (el.type === 'qrcode') {
         const value = el.content || ' ';
@@ -190,14 +243,25 @@
           tasks.push(waitImage(img));
         } else {
           node.textContent = value;
-          node.style.fontSize = '7pt';
+          node.style.fontSize = fillPage ? ptToCqh(7, labelH) : '7pt';
         }
       }
 
-      root.appendChild(node);
+      host.appendChild(node);
     });
 
     return { root, ready: Promise.all(tasks) };
+  }
+
+  function injectPrintStyle(cssText) {
+    let style = document.getElementById('print-page-style');
+    if (!style) {
+      style = document.createElement('style');
+      style.id = 'print-page-style';
+      document.head.appendChild(style);
+    }
+    style.textContent = cssText;
+    return style;
   }
 
   async function printLabels(snapshots, settings) {
@@ -205,28 +269,36 @@
     root.innerHTML = '';
     const mode = settings.mode || 'label';
     const a4cols = Number(settings.a4cols) || 2;
-
-    // inject page style
-    let style = document.getElementById('print-page-style');
-    if (!style) {
-      style = document.createElement('style');
-      style.id = 'print-page-style';
-      document.head.appendChild(style);
-    }
-
     const readyList = [];
 
+    root.classList.toggle('print-mode-label', mode === 'label');
+    root.classList.toggle('print-mode-a4', mode === 'a4');
+
     if (mode === 'label') {
-      const w = snapshots[0] ? snapshots[0].width : 60;
-      const h = snapshots[0] ? snapshots[0].height : 40;
-      style.textContent = `@page { size: ${w}mm ${h}mm; margin: 0; }`;
+      const w = snapshots[0] ? Number(snapshots[0].width) : 60;
+      const h = snapshots[0] ? Number(snapshots[0].height) : 40;
+      // Exact page size + zero margins. Content fills the page box (see fillPage).
+      injectPrintStyle(`
+        @page { size: ${w}mm ${h}mm; margin: 0; }
+        @media print {
+          html, body {
+            width: ${w}mm !important;
+            height: ${h}mm !important;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+        }
+      `);
       snapshots.forEach((snap) => {
-        const { root: label, ready } = createLabelDOM(snap);
+        const { root: label, ready } = createLabelDOM(snap, { fillPage: true });
+        // Also pin design size as fallback when % page height fails in some engines
+        label.style.setProperty('--label-w', snap.width + 'mm');
+        label.style.setProperty('--label-h', snap.height + 'mm');
         root.appendChild(label);
         readyList.push(ready);
       });
     } else {
-      style.textContent = `@page { size: A4; margin: 0; }`;
+      injectPrintStyle(`@page { size: A4; margin: 0; }`);
       let sheet = null;
       snapshots.forEach((snap, i) => {
         if (i % (a4cols * 4) === 0 || !sheet) {
@@ -235,7 +307,7 @@
           sheet.style.gridTemplateColumns = `repeat(${a4cols}, ${snap.width}mm)`;
           root.appendChild(sheet);
         }
-        const { root: label, ready } = createLabelDOM(snap);
+        const { root: label, ready } = createLabelDOM(snap, { fillPage: false });
         sheet.appendChild(label);
         readyList.push(ready);
       });
@@ -244,8 +316,16 @@
     await Promise.all(readyList);
     const imgs = Array.from(root.querySelectorAll('img'));
     await Promise.all(imgs.map((img) => (img.decode ? img.decode().catch(() => {}) : waitImage(img))));
-    // allow layout
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+    const cleanup = () => {
+      document.body.classList.remove('is-printing');
+    };
+    document.body.classList.add('is-printing');
+    window.addEventListener('afterprint', cleanup, { once: true });
+    // Fallback if afterprint is skipped
+    setTimeout(cleanup, 60_000);
+
     window.print();
   }
 
@@ -263,13 +343,11 @@
     document.body.appendChild(host);
 
     try {
-      const { root, ready } = createLabelDOM(snapshot);
-      // Force layout metrics for html2canvas
+      const { root, ready } = createLabelDOM(snapshot, { fillPage: false });
       root.style.boxShadow = 'none';
       root.style.border = 'none';
       host.appendChild(root);
       await ready;
-      // Ensure all embedded images (QR PNGs) are fully decoded before capture
       const imgs = Array.from(root.querySelectorAll('img'));
       await Promise.all(imgs.map((img) => (img.decode ? img.decode().catch(() => {}) : waitImage(img))));
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
