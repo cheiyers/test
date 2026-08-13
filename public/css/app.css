@@ -214,9 +214,11 @@ tr:hover td { background: #f8fbf9; }
 .label-el {
   position: absolute; border: 1px solid transparent; padding: 0; cursor: move;
   white-space: pre-wrap; overflow: visible; box-sizing: border-box;
+  line-height: 1.15;
 }
 .label-el .el-body {
   width: 100%; height: 100%; overflow: hidden; box-sizing: border-box;
+  line-height: 1.15;
 }
 .label-el.selected { border-color: var(--brand); background: rgba(31,107,74,.04); z-index: 2; }
 .label-el.dragging, .label-el.resizing { opacity: .92; z-index: 5; }
@@ -256,8 +258,9 @@ tr:hover td { background: #f8fbf9; }
 }
 .label-table-edit td {
   position: relative;
-  border: 1px solid #7a9486; padding: 2px; text-align: center; vertical-align: middle;
-  overflow: visible; word-break: break-all; background: #fff;
+  border: 1px solid #7a9486; padding: 0 1px; text-align: center; vertical-align: middle;
+  overflow: hidden; word-break: break-word; background: #fff; line-height: 1.15;
+  box-sizing: border-box;
 }
 .label-table-edit td .cell-content-clip {
   overflow: hidden; max-width: 100%; max-height: 100%;
@@ -336,21 +339,25 @@ tr:hover td { background: #f8fbf9; }
   display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px;
 }
 @media print {
+  html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
   body * { visibility: hidden; }
   .print-sheet, .print-sheet * { visibility: visible; }
   .print-sheet {
     display: block !important; position: absolute; left: 0; top: 0; width: 100%;
+    margin: 0; padding: 0;
   }
   .no-print { display: none !important; }
   .print-label {
-    position: relative; overflow: hidden; background: #fff;
+    position: relative; overflow: hidden; background: #fff; box-sizing: border-box;
   }
   .print-label.solo {
-    page-break-after: always; break-after: page;
+    page-break-after: always; break-after: page; page-break-inside: avoid; break-inside: avoid;
   }
   .print-page {
     page-break-after: always; break-after: page;
   }
+  .label-table { border-spacing: 0; }
+  .label-table td { line-height: 1.15; }
 }
 
 .props .field, .palette .field { min-width: 0; }

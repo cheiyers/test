@@ -1184,7 +1184,9 @@
       const lw = sample?.width_mm || 100;
       const lh = sample?.height_mm || 60;
       let pageCss = '';
-      if (opts.paper === 'label') {
+      // 标签纸：页面尺寸与模板一致。浏览器/驱动常有亚毫米误差，内容按 99% 轻微内缩，避免底行被裁。
+      const labelSafe = opts.paper === 'label';
+      if (labelSafe) {
         pageCss = `@page { size: ${lw}mm ${lh}mm; margin: 0; }`;
       } else if (opts.paper === 'a4') {
         pageCss = '@page { size: A4 portrait; margin: 8mm; }';
@@ -1198,8 +1200,41 @@
       styleEl.textContent = `
         ${pageCss}
         @media print {
-          .print-sheet { width: 100%; }
-          .print-label.solo { page-break-after: always; break-after: page; margin: 0 auto; }
+          html, body {
+            margin: 0 !important;
+            padding: 0 !important;
+            width: 100%;
+            height: auto;
+            background: #fff !important;
+          }
+          .print-sheet {
+            display: block !important;
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            margin: 0;
+            padding: 0;
+          }
+          .print-label {
+            box-sizing: border-box;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+          .print-label.solo {
+            page-break-after: always;
+            break-after: page;
+            page-break-inside: avoid;
+            break-inside: avoid;
+            margin: 0;
+            ${labelSafe ? `
+            width: ${lw}mm !important;
+            height: ${lh}mm !important;
+            overflow: hidden;
+            transform: scale(0.99);
+            transform-origin: top left;
+            ` : 'margin: 0 auto;'}
+          }
           .print-page { page-break-after: always; break-after: page; }
           .print-page .print-label { page-break-after: auto; break-after: auto; }
         }

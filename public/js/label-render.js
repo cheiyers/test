@@ -53,7 +53,9 @@
     table.style.width = '100%';
     table.style.height = '100%';
     table.style.borderCollapse = 'collapse';
+    table.style.borderSpacing = '0';
     table.style.tableLayout = 'fixed';
+    table.style.boxSizing = 'border-box';
 
     const rows = el.rows || 1;
     const cols = el.cols || 1;
@@ -61,6 +63,11 @@
     const occupied = Expr.buildOccupiedMap(rows, cols, el.cells);
     const colWidths = el.colWidths || Array.from({ length: cols }, () => 100 / cols);
     const rowHeights = el.rowHeights || Array.from({ length: rows }, () => 100 / rows);
+
+    // 百分比行高 + 边框在固定高度容器内常把末行挤没；改为按元件高度(mm)分配，并预留边框厚度
+    const elH = Math.max(1, Number(el.h) || 10);
+    const borderMm = 0.27; // ≈1 CSS px @ 96dpi
+    const usableH = Math.max(1, elH - borderMm * (rows + 1));
 
     const colgroup = document.createElement('colgroup');
     for (let c = 0; c < cols; c++) {
@@ -72,17 +79,22 @@
 
     for (let r = 0; r < rows; r++) {
       const tr = document.createElement('tr');
-      tr.style.height = `${rowHeights[r] || (100 / rows)}%`;
+      const pct = Number(rowHeights[r]) || (100 / rows);
+      tr.style.height = `${(pct / 100) * usableH}mm`;
       for (let c = 0; c < cols; c++) {
         const cell = occupied[r][c];
         if (cell === 'skip') continue;
         const td = document.createElement('td');
         td.style.border = '1px solid #333';
-        td.style.padding = '1px 2px';
+        td.style.padding = '0 1px';
+        td.style.lineHeight = '1.15';
         td.style.verticalAlign = 'middle';
         td.style.textAlign = (cell && cell.align) || 'center';
         td.style.fontSize = `${(cell && cell.fontSize) || 10}pt`;
         td.style.fontWeight = cell && cell.bold ? '700' : '400';
+        td.style.overflow = 'hidden';
+        td.style.boxSizing = 'border-box';
+        td.style.wordBreak = 'break-word';
         td.rowSpan = (cell && cell.rowspan) || 1;
         td.colSpan = (cell && cell.colspan) || 1;
 
@@ -93,7 +105,7 @@
           const host = document.createElement('div');
           host.style.width = '100%';
           host.style.height = '100%';
-          host.style.minHeight = '24px';
+          host.style.minHeight = '20px';
           host.style.display = 'grid';
           host.style.placeItems = 'center';
           td.appendChild(host);
@@ -123,6 +135,9 @@
     container.style.height = `${tpl.height_mm}mm`;
     container.style.overflow = 'hidden';
     container.style.background = '#fff';
+    container.style.boxSizing = 'border-box';
+    container.style.margin = '0';
+    container.style.padding = '0';
 
     (tpl.elements || []).forEach((el) => {
       const node = document.createElement('div');
@@ -132,6 +147,8 @@
       node.style.width = `${el.w}mm`;
       node.style.height = `${el.h}mm`;
       node.style.overflow = 'hidden';
+      node.style.boxSizing = 'border-box';
+      node.style.lineHeight = '1.15';
 
       if (el.type === 'table') {
         node.appendChild(renderTableElement(el, label.data, label.scan_id || label.code, options));
@@ -153,6 +170,8 @@
         node.style.fontSize = `${el.fontSize || 11}pt`;
         node.style.textAlign = el.align || 'left';
         node.style.fontWeight = el.bold ? '700' : '400';
+        node.style.whiteSpace = 'pre-wrap';
+        node.style.wordBreak = 'break-word';
         node.textContent = Expr.resolveElementContent(el, label.data, label.code);
       }
       container.appendChild(node);

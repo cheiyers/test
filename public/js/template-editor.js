@@ -314,8 +314,9 @@
     }
 
     function editorFontPx(pt) {
-      // 按当前画布缩放近似 pt → px，便于放大后看清多行表格
-      return Math.max(8, (Number(pt) || 10) * canvasZoom / 3.2);
+      // 与打印一致：1pt = 25.4/72 mm，画布 zoom = px/mm
+      // 旧公式 /3.2 会把字画小约 11%，设计时看似铺满，打印却裁掉末行
+      return Math.max(6, (Number(pt) || 10) * (25.4 / 72) * canvasZoom);
     }
 
     function renderCanvas() {
@@ -330,13 +331,16 @@
         if (el.type === 'table') {
           Expr.ensureTableLayout(el);
           const occupied = Expr.buildOccupiedMap(el.rows, el.cols, el.cells);
+          const borderPx = Math.max(1, pxPerMm * 0.27);
+          const usableHpx = Math.max(1, el.h * pxPerMm - borderPx * (el.rows + 1));
           let html = `<div class="label-el table ${selected}" data-id="${el.id}" style="left:${el.x * pxPerMm}px;top:${el.y * pxPerMm}px;width:${el.w * pxPerMm}px;height:${el.h * pxPerMm}px"><div class="el-body"><table class="label-table-edit"><colgroup>`;
           for (let c = 0; c < el.cols; c++) {
             html += `<col style="width:${el.colWidths[c]}%">`;
           }
           html += '</colgroup>';
           for (let r = 0; r < el.rows; r++) {
-            html += `<tr style="height:${el.rowHeights[r]}%">`;
+            const rowPx = ((Number(el.rowHeights[r]) || (100 / el.rows)) / 100) * usableHpx;
+            html += `<tr style="height:${rowPx}px">`;
             for (let c = 0; c < el.cols; c++) {
               const cell = occupied[r][c];
               if (cell === 'skip') continue;
