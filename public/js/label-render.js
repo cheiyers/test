@@ -106,15 +106,17 @@
    */
   function renderCodeBlock(host, contentType, text, widthMm, heightMm, opts = {}, options = {}) {
     host.innerHTML = '';
+    // 不要改写 host 的 width/height：打印时父节点已是 el.w/el.h（mm），
+    // 若设成 100% 会铺满整张标签，导致手动调整的大小完全无效。
     host.style.display = 'flex';
     host.style.flexDirection = 'column';
     host.style.alignItems = 'flex-start';
     host.style.justifyContent = 'flex-start';
-    host.style.width = '100%';
-    host.style.height = '100%';
     host.style.overflow = 'hidden';
     host.style.boxSizing = 'border-box';
-    host.style.containerType = 'size';
+    if (!host.style.width) host.style.width = '100%';
+    if (!host.style.height) host.style.height = '100%';
+    // containerType 在部分布局下会导致子元素高度塌缩，二维码改用 100% 铺满父框
 
     const showText = !!opts.showCodeText;
     const fontPt = Number(opts.codeTextFontSize) || 8;
@@ -134,24 +136,12 @@
     codeHost.style.position = 'relative';
 
     if (isQr) {
-      // 边长 = min(父宽, 码区高)；优先用容器查询，保证随父框缩放
-      codeHost.style.width = `min(100cqw, ${codePct}cqh)`;
-      codeHost.style.height = `min(100cqw, ${codePct}cqh)`;
+      // 父框由设计器强制为正方形，码图铺满即可随宽高即时变化
+      codeHost.style.width = '100%';
+      codeHost.style.height = showText ? `${codePct}%` : '100%';
       codeHost.style.aspectRatio = '1 / 1';
       codeHost.style.maxWidth = '100%';
-      codeHost.style.maxHeight = `${codePct}%`;
-      // 无容器查询时的回退：按设计 mm 比例换成父宽/高百分比
-      if (typeof CSS === 'undefined' || !CSS.supports?.('width', '1cqw')) {
-        if (wMm <= codeHmm) {
-          codeHost.style.width = '100%';
-          codeHost.style.height = 'auto';
-          codeHost.style.maxHeight = `${codePct}%`;
-        } else {
-          codeHost.style.height = `${codePct}%`;
-          codeHost.style.width = 'auto';
-          codeHost.style.maxWidth = '100%';
-        }
-      }
+      codeHost.style.maxHeight = showText ? `${codePct}%` : '100%';
     } else {
       codeHost.style.width = '100%';
       codeHost.style.height = `${codePct}%`;

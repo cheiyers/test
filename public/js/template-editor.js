@@ -640,6 +640,26 @@
       window.addEventListener('mouseup', onUp);
     }
 
+    function isQrElement(el) {
+      if (!el || el.type !== 'code') return false;
+      const t = el.codeType || draft.code_type || 'qr';
+      return t !== 'barcode';
+    }
+
+    /** 二维码保持正方形；若目标边长超出画布则向左/上推移原点 */
+    function clampQrSquare(el, side) {
+      const minSize = 4;
+      let s = Math.max(minSize, Number(side) || minSize);
+      s = Math.min(s, draft.width_mm, draft.height_mm);
+      el.w = s;
+      el.h = s;
+      if (el.x + el.w > draft.width_mm) el.x = Math.max(0, draft.width_mm - el.w);
+      if (el.y + el.h > draft.height_mm) el.y = Math.max(0, draft.height_mm - el.h);
+      el.x = Math.max(0, el.x);
+      el.y = Math.max(0, el.y);
+      return s;
+    }
+
     function startResize(ev, node, dir, pxPerMm) {
       const el = draft.elements.find((e) => e.id === node.dataset.id);
       if (!el) return;
@@ -651,6 +671,7 @@
       const ow = el.w;
       const oh = el.h;
       const minSize = 4; // mm
+      const lockSquare = isQrElement(el);
       node.classList.add('resizing');
       const onMove = (e2) => {
         const dx = (e2.clientX - startX) / pxPerMm;
@@ -660,39 +681,61 @@
         let w = ow;
         let h = oh;
 
-        if (dir.includes('e')) w = ow + dx;
-        if (dir.includes('s')) h = oh + dy;
-        if (dir.includes('w')) {
-          w = ow - dx;
-          x = ox + dx;
-        }
-        if (dir.includes('n')) {
-          h = oh - dy;
-          y = oy + dy;
-        }
+        if (lockSquare) {
+          // 任一方向拖动都改变边长，保证码图可见尺寸一定变化
+          let delta = 0;
+          if (dir === 'e' || dir === 'se' || dir === 'ne') delta = dx;
+          else if (dir === 'w' || dir === 'sw' || dir === 'nw') delta = -dx;
+          else if (dir === 's') delta = dy;
+          else if (dir === 'n') delta = -dy;
+          else delta = Math.abs(dx) > Math.abs(dy) ? (dir.includes('w') ? -dx : dx) : (dir.includes('n') ? -dy : dy);
 
-        if (w < minSize) {
-          if (dir.includes('w')) x = ox + ow - minSize;
-          w = minSize;
-        }
-        if (h < minSize) {
-          if (dir.includes('n')) y = oy + oh - minSize;
-          h = minSize;
-        }
+          let side = Math.max(minSize, ow + delta);
+          // 角点拖动：从对边锚定
+          if (dir.includes('w')) x = ox + ow - side;
+          if (dir.includes('n')) y = oy + oh - side;
+          if (x < 0) { side += x; x = 0; }
+          if (y < 0) { side += y; y = 0; }
+          side = Math.max(minSize, side);
+          if (x + side > draft.width_mm) side = draft.width_mm - x;
+          if (y + side > draft.height_mm) side = draft.height_mm - y;
+          side = Math.max(minSize, side);
+          w = side;
+          h = side;
+        } else {
+          if (dir.includes('e')) w = ow + dx;
+          if (dir.includes('s')) h = oh + dy;
+          if (dir.includes('w')) {
+            w = ow - dx;
+            x = ox + dx;
+          }
+          if (dir.includes('n')) {
+            h = oh - dy;
+            y = oy + dy;
+          }
 
-        // keep inside label canvas
-        if (x < 0) {
-          w += x;
-          x = 0;
+          if (w < minSize) {
+            if (dir.includes('w')) x = ox + ow - minSize;
+            w = minSize;
+          }
+          if (h < minSize) {
+            if (dir.includes('n')) y = oy + oh - minSize;
+            h = minSize;
+          }
+
+          if (x < 0) {
+            w += x;
+            x = 0;
+          }
+          if (y < 0) {
+            h += y;
+            y = 0;
+          }
+          if (x + w > draft.width_mm) w = draft.width_mm - x;
+          if (y + h > draft.height_mm) h = draft.height_mm - y;
+          w = Math.max(minSize, w);
+          h = Math.max(minSize, h);
         }
-        if (y < 0) {
-          h += y;
-          y = 0;
-        }
-        if (x + w > draft.width_mm) w = draft.width_mm - x;
-        if (y + h > draft.height_mm) h = draft.height_mm - y;
-        w = Math.max(minSize, w);
-        h = Math.max(minSize, h);
 
         el.x = x;
         el.y = y;
@@ -951,7 +994,7 @@
           <label class="field"><span>高 mm</span><input id="elH" type="number" step="0.5" min="4" value="${fmtMm(el.h)}" /></label>
         </div>
         ${el.type === 'code' ? `
-          <p class="muted" style="font-size:12px;margin:0 0 8px">二维码从元素框<strong>左上角</strong>绘制，边长取宽/高较小值；框宜接近正方形，改大小后码图会跟着变。</p>
+          <p class="muted" style="font-size:12px;margin:0 0 8px">二维码为<strong>正方形</strong>：改宽或高都会同步成同一边长；若超出标签右/下边界会自动左移/上移以放下更大尺寸。</p>
           <label class="field"><span>码类型</span>
             <select id="elCodeType">
               <option value="qr" ${(el.codeType || draft.code_type) === 'qr' ? 'selected' : ''}>二维码</option>
@@ -1029,10 +1072,6 @@
         el.y = Number($('#elY').value);
         const nextW = Number($('#elW')?.value);
         const nextH = Number($('#elH')?.value);
-        if (Number.isFinite(nextW) && nextW >= 4) el.w = Math.min(draft.width_mm - Math.max(0, el.x), nextW);
-        if (Number.isFinite(nextH) && nextH >= 4) el.h = Math.min(draft.height_mm - Math.max(0, el.y), nextH);
-        el.x = Math.max(0, Math.min(el.x, draft.width_mm - el.w));
-        el.y = Math.max(0, Math.min(el.y, draft.height_mm - el.h));
         if (el.type === 'code') {
           el.codeType = $('#elCodeType').value;
           el.showCodeText = !!( $('#elShowCodeText') && $('#elShowCodeText').checked );
@@ -1040,7 +1079,27 @@
           el.codeTextAlign = $('#elCodeTextAlign')?.value || 'center';
           el.codeTextBold = !!( $('#elCodeTextBold') && $('#elCodeTextBold').checked );
           el.codeTextMaxLen = Number($('#elCodeTextMax')?.value) || 0;
+          if (isQrElement(el)) {
+            // 取用户输入的较大边，保证“想放大”时一定能放大；不够空间则左移/上移
+            const side = Math.max(
+              Number.isFinite(nextW) ? nextW : el.w,
+              Number.isFinite(nextH) ? nextH : el.h,
+              4
+            );
+            clampQrSquare(el, side);
+          } else {
+            if (Number.isFinite(nextW) && nextW >= 4) el.w = nextW;
+            if (Number.isFinite(nextH) && nextH >= 4) el.h = nextH;
+            if (el.x + el.w > draft.width_mm) el.x = Math.max(0, draft.width_mm - el.w);
+            if (el.y + el.h > draft.height_mm) el.y = Math.max(0, draft.height_mm - el.h);
+            el.w = Math.min(el.w, draft.width_mm - el.x);
+            el.h = Math.min(el.h, draft.height_mm - el.y);
+          }
         } else {
+          if (Number.isFinite(nextW) && nextW >= 4) el.w = Math.min(draft.width_mm - Math.max(0, el.x), nextW);
+          if (Number.isFinite(nextH) && nextH >= 4) el.h = Math.min(draft.height_mm - Math.max(0, el.y), nextH);
+          el.x = Math.max(0, Math.min(el.x, draft.width_mm - el.w));
+          el.y = Math.max(0, Math.min(el.y, draft.height_mm - el.h));
           el.fontSize = Number($('#elSize').value) || 12;
           el.align = $('#elAlign').value;
           el.bold = $('#elBold').checked;
