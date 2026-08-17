@@ -5,6 +5,7 @@ const FORMULA_CATALOG = [
   { value: 'FORMAT(TODAY(),"yyyy/mm/dd")', label: '今日 FORMAT(TODAY(),"yyyy/mm/dd")', hint: '取今天' },
   { value: 'FORMAT(TODAY(),"yyyy年mm月dd日")', label: '今日中文日期', hint: '2026年08月17日' },
   { value: 'FORMAT(TODAY(),"yyyymmdd")', label: '今日紧凑日期', hint: '20260817' },
+  { value: 'FORMAT(TODAY(),"yymmdd")', label: '今日短日期 yymmdd', hint: '260817（两位年+月+日）' },
   { value: 'TODAY()', label: 'TODAY()', hint: '今日（默认 yyyy-mm-dd），可再套 FORMAT' },
   { value: 'FORMAT(,"yyyy-mm-dd")', label: '日期格式 FORMAT(,"yyyy-mm-dd")', hint: '2026/7/25 → 2026-07-25' },
   { value: 'FORMAT(,"yyyy/mm/dd")', label: '日期 FORMAT(,"yyyy/mm/dd")', hint: '2026/7/25 → 2026/07/25' },
