@@ -223,8 +223,8 @@ tr:hover td { background: #f8fbf9; }
 }
 .label-el.selected { border-color: var(--brand); background: rgba(31,107,74,.04); z-index: 8; }
 .label-el.dragging, .label-el.resizing { opacity: .92; z-index: 20; }
-.label-el.code { display: block; background: transparent; font-size: 11px; color: var(--muted); }
-.label-el.code .el-body { width: 100%; height: 100%; }
+.label-el.code { display: block; background: transparent; font-size: 11px; color: var(--muted); overflow: hidden; }
+.label-el.code .el-body { width: 100%; height: 100%; overflow: hidden; }
 .label-el.table { padding: 0; overflow: hidden; z-index: 1; }
 .label-el.table.selected { z-index: 2; } /* 选中表格时仍低于二维码/文字，方便点到上层元件 */
 .label-el.table .el-body { border: 0; overflow: hidden; }

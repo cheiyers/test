@@ -411,6 +411,8 @@
       };
       setVal('elX', el.x);
       setVal('elY', el.y);
+      setVal('elW', el.w);
+      setVal('elH', el.h);
       const hint = $('#elSizeHint');
       if (hint) hint.textContent = `${fmtMm(el.w)} × ${fmtMm(el.h)} mm`;
     }
@@ -933,13 +935,15 @@
 
       box.innerHTML = `
         <h4>元素属性</h4>
-        <p class="size-hint">宽高请在画布拖动手柄调整：当前 <strong id="elSizeHint">${fmtMm(el.w)} × ${fmtMm(el.h)} mm</strong></p>
+        <p class="size-hint">可拖画布手柄，或直接改下方数值后点「应用」。当前 <strong id="elSizeHint">${fmtMm(el.w)} × ${fmtMm(el.h)} mm</strong></p>
         <div class="grid-2">
           <label class="field"><span>X mm</span><input id="elX" type="number" step="0.5" value="${fmtMm(el.x)}" /></label>
           <label class="field"><span>Y mm</span><input id="elY" type="number" step="0.5" value="${fmtMm(el.y)}" /></label>
+          <label class="field"><span>宽 mm</span><input id="elW" type="number" step="0.5" min="4" value="${fmtMm(el.w)}" /></label>
+          <label class="field"><span>高 mm</span><input id="elH" type="number" step="0.5" min="4" value="${fmtMm(el.h)}" /></label>
         </div>
         ${el.type === 'code' ? `
-          <p class="muted" style="font-size:12px;margin:0 0 8px">二维码从元素框<strong>左上角</strong>绘制，边长取宽/高较小值；请把框的 X/Y 对齐到码的目标位置，框宜接近正方形。</p>
+          <p class="muted" style="font-size:12px;margin:0 0 8px">二维码从元素框<strong>左上角</strong>绘制，边长取宽/高较小值；框宜接近正方形，改大小后码图会跟着变。</p>
           <label class="field"><span>码类型</span>
             <select id="elCodeType">
               <option value="qr" ${(el.codeType || draft.code_type) === 'qr' ? 'selected' : ''}>二维码</option>
@@ -1015,6 +1019,12 @@
       $('#applyEl').onclick = () => {
         el.x = Number($('#elX').value);
         el.y = Number($('#elY').value);
+        const nextW = Number($('#elW')?.value);
+        const nextH = Number($('#elH')?.value);
+        if (Number.isFinite(nextW) && nextW >= 4) el.w = Math.min(draft.width_mm - Math.max(0, el.x), nextW);
+        if (Number.isFinite(nextH) && nextH >= 4) el.h = Math.min(draft.height_mm - Math.max(0, el.y), nextH);
+        el.x = Math.max(0, Math.min(el.x, draft.width_mm - el.w));
+        el.y = Math.max(0, Math.min(el.y, draft.height_mm - el.h));
         if (el.type === 'code') {
           el.codeType = $('#elCodeType').value;
           el.showCodeText = !!( $('#elShowCodeText') && $('#elShowCodeText').checked );
@@ -1029,6 +1039,7 @@
           el.text = Expr.segmentsPreview(el.segments);
         }
         renderCanvas();
+        renderProps();
       };
       $('#delEl').onclick = () => {
         draft.elements = draft.elements.filter((e) => e.id !== el.id);

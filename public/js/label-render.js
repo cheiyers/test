@@ -1,10 +1,13 @@
 (function (global) {
-  /** CSS mm → 生成码图用的像素（2× 提高打印清晰度） */
-  function mmToGenPx(mm) {
-    return Math.max(32, Math.round(Number(mm) * (96 / 25.4) * 2));
+  /** 按容器边长生成足够清晰的码图像素 */
+  function boxToGenPx(host, fallbackMm) {
+    const rect = host.getBoundingClientRect();
+    const side = Math.max(rect.width || 0, rect.height || 0);
+    if (side >= 8) return Math.max(64, Math.round(side * 2));
+    return Math.max(64, Math.round(Number(fallbackMm || 20) * (96 / 25.4) * 2));
   }
 
-  /** 让 qrcodejs / JsBarcode 输出铺满容器，避免像素图偏小居中导致“不在设计位置” */
+  /** 让 qrcodejs / JsBarcode 输出铺满容器 */
   function fitGraphicToHost(host) {
     if (!host) return;
     host.style.width = '100%';
@@ -98,8 +101,8 @@
 
   /**
    * 码图 + 可选下方文字。
-   * 二维码：从元素框左上角起，边长 = min(宽, 可用高)，与设计器 X/Y 对齐。
-   * 一维码：铺满可用宽高区域顶部。
+   * 尺寸一律相对父容器（% / cqw），设计器像素框与打印 mm 框拖动缩放都会即时生效。
+   * 二维码：左上角正方形，边长 = min(宽, 可用高)。
    */
   function renderCodeBlock(host, contentType, text, widthMm, heightMm, opts = {}, options = {}) {
     host.innerHTML = '';
@@ -111,26 +114,48 @@
     host.style.height = '100%';
     host.style.overflow = 'hidden';
     host.style.boxSizing = 'border-box';
+    host.style.containerType = 'size';
 
     const showText = !!opts.showCodeText;
     const fontPt = Number(opts.codeTextFontSize) || 8;
+    const wMm = Math.max(1, Number(widthMm) || 20);
+    const hMm = Math.max(1, Number(heightMm) || 20);
     const textHmm = showText ? Math.max(2.5, fontPt * 0.4 + 1.2) : 0;
-    const codeHmm = Math.max(4, (Number(heightMm) || 20) - textHmm);
-    const codeWmm = Math.max(4, Number(widthMm) || 20);
+    const codeHmm = Math.max(1, hMm - textHmm);
     const isQr = contentType !== 'barcode';
+    const textPct = showText ? Math.min(45, (textHmm / hMm) * 100) : 0;
+    const codePct = Math.max(55, 100 - textPct);
 
     const codeHost = document.createElement('div');
     codeHost.className = 'code-graphic';
     codeHost.style.flex = '0 0 auto';
     codeHost.style.overflow = 'hidden';
     codeHost.style.boxSizing = 'border-box';
+    codeHost.style.position = 'relative';
+
     if (isQr) {
-      const side = Math.min(codeWmm, codeHmm);
-      codeHost.style.width = `${side}mm`;
-      codeHost.style.height = `${side}mm`;
+      // 边长 = min(父宽, 码区高)；优先用容器查询，保证随父框缩放
+      codeHost.style.width = `min(100cqw, ${codePct}cqh)`;
+      codeHost.style.height = `min(100cqw, ${codePct}cqh)`;
+      codeHost.style.aspectRatio = '1 / 1';
+      codeHost.style.maxWidth = '100%';
+      codeHost.style.maxHeight = `${codePct}%`;
+      // 无容器查询时的回退：按设计 mm 比例换成父宽/高百分比
+      if (typeof CSS === 'undefined' || !CSS.supports?.('width', '1cqw')) {
+        if (wMm <= codeHmm) {
+          codeHost.style.width = '100%';
+          codeHost.style.height = 'auto';
+          codeHost.style.maxHeight = `${codePct}%`;
+        } else {
+          codeHost.style.height = `${codePct}%`;
+          codeHost.style.width = 'auto';
+          codeHost.style.maxWidth = '100%';
+        }
+      }
     } else {
       codeHost.style.width = '100%';
-      codeHost.style.height = `${codeHmm}mm`;
+      codeHost.style.height = `${codePct}%`;
+      codeHost.style.minHeight = '40%';
     }
     host.appendChild(codeHost);
 
@@ -143,10 +168,12 @@
       codeHost.style.border = '1px dashed #aaa';
       codeHost.style.background = '#fafafa';
     } else {
-      const pxSide = mmToGenPx(isQr ? Math.min(codeWmm, codeHmm) : Math.max(codeWmm, codeHmm));
-      const pxW = isQr ? pxSide : mmToGenPx(codeWmm);
-      const pxH = isQr ? pxSide : mmToGenPx(codeHmm);
-      fillCode(codeHost, contentType, text, pxW, pxH);
+      const paint = () => {
+        const px = boxToGenPx(codeHost, Math.min(wMm, codeHmm));
+        fillCode(codeHost, contentType, text, px, isQr ? px : Math.max(px, boxToGenPx(codeHost, codeHmm)));
+      };
+      if (host.isConnected && codeHost.getBoundingClientRect().width > 2) paint();
+      else requestAnimationFrame(paint);
     }
 
     if (showText) {
@@ -155,7 +182,7 @@
       caption.textContent = formatCodeCaption(text, opts);
       caption.style.flex = '0 0 auto';
       caption.style.width = '100%';
-      caption.style.maxHeight = `${textHmm}mm`;
+      caption.style.maxHeight = `${textPct}%`;
       caption.style.overflow = 'hidden';
       caption.style.fontSize = `${fontPt}pt`;
       caption.style.lineHeight = '1.15';
@@ -221,11 +248,14 @@
         let text = Expr.resolveCellContent(cell, data, codeFallback);
         if (contentType === 'qr' || contentType === 'barcode') {
           const host = document.createElement('div');
+          host.style.width = '100%';
+          host.style.height = '100%';
           const cellHmm = ((pct / 100) * usableH) * ((cell && cell.rowspan) || 1);
           const cellWmm = (Number(el.w) || 30) * ((Number(colWidths[c]) || (100 / cols)) / 100)
             * ((cell && cell.colspan) || 1);
           td.style.verticalAlign = 'top';
           td.style.padding = '0';
+          td.style.height = `${cellHmm}mm`;
           td.appendChild(host);
           renderCodeBlock(host, contentType, text, cellWmm, cellHmm, {
             showCodeText: !!(cell && cell.showCodeText),
@@ -257,7 +287,6 @@
     container.style.margin = '0';
     container.style.padding = '0';
 
-    // 先表格后二维码/文字，与设计器叠放一致（非表格在上）
     const paintOrder = [...(tpl.elements || [])].sort((a, b) => {
       const at = a.type === 'table' ? 0 : 1;
       const bt = b.type === 'table' ? 0 : 1;
@@ -279,7 +308,6 @@
         node.appendChild(renderTableElement(el, label.data, label.scan_id || label.code, options));
       } else if (el.type === 'code') {
         let content = Expr.resolveElementContent(el, label.data, label.code);
-        // 不再强制追加唯一码；按模板片段原样输出
         if (!content) content = label.scan_id || label.code || '';
         const type = el.codeType || tpl.code_type || 'qr';
         renderCodeBlock(node, type, content, el.w, el.h, {
