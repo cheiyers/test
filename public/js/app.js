@@ -1016,15 +1016,15 @@
         </div>
 
         <div id="manualPrintPane" class="hidden">
-          <p class="muted">无需订单/BOM：选择模板后手工填写字段内容，即可预览并打印。</p>
+          <p class="muted">无需订单/BOM：选择模板后手工填写字段内容，即可预览并打印。同一条码的多份会连续打印，再进入下一张。</p>
           <div class="row" style="flex-wrap:wrap;gap:12px">
             <label class="field"><span>标签模板</span>
               <select id="manualTpl">
                 <option value="">请选择</option>
-                ${templates.map((t) => `<option value="${t.id}" data-type="${t.label_type}">${escapeHtml(t.name)}（${t.label_type === 'child' ? '配件' : '总包'} · ${t.width_mm}×${t.height_mm}mm）</option>`).join('')}
+                ${templates.map((t) => `<option value="${t.id}" data-type="${t.label_type}" data-copies="${t.copies_per_label || 1}">${escapeHtml(t.name)}（${t.label_type === 'child' ? '配件' : '总包'} · ${t.width_mm}×${t.height_mm}mm · 默认${t.copies_per_label || 1}份）</option>`).join('')}
               </select>
             </label>
-            <label class="field"><span>打印份数</span><input id="manualCopies" type="number" min="1" max="200" value="1" /></label>
+            <label class="field"><span>每码份数</span><input id="manualCopies" type="number" min="1" max="200" value="1" title="单个条码连续打印几份" /></label>
             <label class="field"><span>序列号按份递增</span>
               <select id="manualSerialPerCopy">
                 <option value="1" selected>是（每份 +1）</option>
@@ -1033,6 +1033,7 @@
             </label>
             <label class="field"><span>条码/唯一码（可选）</span><input id="manualScanId" placeholder="留空则自动生成" /></label>
           </div>
+          <p class="muted" style="margin-top:8px;font-size:12px">每码份数默认取自模板「单个条码默认份数」，可在此临时修改。</p>
           <div id="manualFields" class="manual-fields" style="margin-top:12px"></div>
           <div class="row" style="margin-top:12px">
             <button class="btn" id="manualPreviewBtn" type="button">生成预览</button>

@@ -19,7 +19,7 @@
       rows: 2,
       cols: 2,
       colWidths: [50, 50],
-      rowHeights: [40, 60],
+      rowHeights: [50, 50],
       cells: [
         {
           r: 0, c: 0, rowspan: 1, colspan: 2, contentType: 'text',
@@ -35,12 +35,36 @@
           text: '', fontSize: 10, align: 'center', bold: false
         },
         {
-          r: 1, c: 1, rowspan: 1, colspan: 1, contentType: 'qr',
+          r: 1, c: 1, rowspan: 1, colspan: 1, contentType: 'text',
           segments: [{ type: 'field', field: 'package_code', formula: '' }],
           text: '', fontSize: 10, align: 'center', bold: false
         }
       ]
     };
+  }
+
+  /** 设计器内单元格短预览：不展开长公式，避免把表格撑大 */
+  function cellDesignerPreview(cell) {
+    const ct = (cell && cell.contentType) || 'text';
+    if (ct === 'qr') return '▣二维码';
+    if (ct === 'barcode') return '▮一维码';
+    const segs = (cell && cell.segments) || [];
+    if (!segs.length) return '空';
+    const short = segs.map((s) => {
+      if (!s) return '';
+      if (s.type === 'text') return String(s.value || '');
+      if (s.type === 'field') {
+        const name = s.field || '?';
+        return s.formula ? `{${name}|…}` : `{${name}}`;
+      }
+      if (s.type === 'serial') {
+        return (global.Expr && Expr.formatSerialSeg) ? Expr.formatSerialSeg(s, 0) : '[序号]';
+      }
+      return '';
+    }).join('');
+    const oneLine = short.replace(/\s+/g, ' ').trim();
+    if (oneLine.length > 18) return `${oneLine.slice(0, 18)}…`;
+    return oneLine || '空';
   }
 
   async function openTemplateEditor(host, tpl, ctx) {
@@ -424,7 +448,7 @@
               if (cell === 'skip') continue;
               const key = `${r},${c}`;
               const active = selectedElId === el.id && selectedCellKey === key ? 'cell-active' : '';
-              const preview = Expr.segmentsPreview(cell.segments) || cell.contentType || '';
+              const preview = cellDesignerPreview(cell);
               const fs = editorFontPx(cell.fontSize || 10);
               const endCol = c + (cell.colspan || 1) - 1;
               const endRow = r + (cell.rowspan || 1) - 1;
@@ -434,7 +458,7 @@
               const rowHandle = endRow < el.rows - 1
                 ? `<span class="cell-resize row" data-row-boundary="${endRow}" title="拖动调整行高"></span>`
                 : '';
-              html += `<td class="${active}" data-cell="${key}" rowspan="${cell.rowspan || 1}" colspan="${cell.colspan || 1}" style="font-size:${fs}px">${escapeHtml(preview || '空')}${colHandle}${rowHandle}</td>`;
+              html += `<td class="${active}" data-cell="${key}" rowspan="${cell.rowspan || 1}" colspan="${cell.colspan || 1}" style="font-size:${fs}px;height:${rowPx * ((cell.rowspan || 1))}px"><div class="cell-content-clip" title="${escapeHtml(Expr.segmentsPreview(cell.segments) || '')}">${escapeHtml(preview)}</div>${colHandle}${rowHandle}</td>`;
             }
             html += '</tr>';
           }
@@ -740,6 +764,7 @@
             <button class="btn secondary" id="addCellText" type="button">+ 任意字符</button>
             <button class="btn secondary" id="addCellSerial" type="button">+ 序列号</button>
             <button class="btn" id="applyCell" type="button">应用单元格</button>
+            <button class="btn danger" id="clearCell" type="button">清空为文本</button>
           </div>
           <div class="muted" style="margin-top:6px">预览：<code id="cellPreview"></code></div>
           <div class="row" style="margin-top:12px"><button class="btn danger" id="delEl" type="button">删除表格</button></div>
@@ -813,22 +838,47 @@
           renderProps();
         };
         $('#applyCell').onclick = () => {
-          cell.contentType = $('#cellType').value;
+          cell.contentType = $('#cellType').value || 'text';
           cell.fontSize = Number($('#cellSize').value) || 10;
           cell.align = $('#cellAlign').value;
           cell.bold = $('#cellBold').checked;
-          cell.showCodeText = !!( $('#cellShowCodeText') && $('#cellShowCodeText').checked );
-          cell.codeTextFontSize = Number($('#cellCodeTextSize')?.value) || 7;
-          cell.codeTextAlign = $('#cellCodeTextAlign')?.value || 'center';
-          cell.codeTextBold = !!( $('#cellCodeTextBold') && $('#cellCodeTextBold').checked );
-          cell.codeTextMaxLen = Number($('#cellCodeTextMax')?.value) || 0;
+          if (cell.contentType !== 'qr' && cell.contentType !== 'barcode') {
+            cell.showCodeText = false;
+          } else {
+            cell.showCodeText = !!( $('#cellShowCodeText') && $('#cellShowCodeText').checked );
+            cell.codeTextFontSize = Number($('#cellCodeTextSize')?.value) || 7;
+            cell.codeTextAlign = $('#cellCodeTextAlign')?.value || 'center';
+            cell.codeTextBold = !!( $('#cellCodeTextBold') && $('#cellCodeTextBold').checked );
+            cell.codeTextMaxLen = Number($('#cellCodeTextMax')?.value) || 0;
+          }
           if ($('#cellColW')) {
             el.colWidths = Expr.setPercentAt(el.colWidths, cell.c, Number($('#cellColW').value), el.cols);
           }
           if ($('#cellRowH')) {
             el.rowHeights = Expr.setPercentAt(el.rowHeights, cell.r, Number($('#cellRowH').value), el.rows);
           }
+          // 不因内容/公式变长而改表格外框尺寸，外框只由手柄或行数变更控制
           Expr.ensureTableLayout(el);
+          renderCanvas();
+          renderProps();
+        };
+        $('#clearCell').onclick = () => {
+          cell.contentType = 'text';
+          cell.segments = [];
+          cell.text = '';
+          cell.showCodeText = false;
+          cell.bold = false;
+          if ($('#cellType')) $('#cellType').value = 'text';
+          Expr.ensureTableLayout(el);
+          renderCanvas();
+          renderProps();
+        };
+        $('#cellType').onchange = () => {
+          // 切换类型时立即反映，避免仍显示旧的二维码预览
+          cell.contentType = $('#cellType').value || 'text';
+          if (cell.contentType !== 'qr' && cell.contentType !== 'barcode') {
+            cell.showCodeText = false;
+          }
           renderCanvas();
           renderProps();
         };
