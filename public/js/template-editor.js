@@ -820,6 +820,12 @@
           el.cols = Math.max(1, Number($('#tCols').value) || 1);
           el.x = Number($('#elX').value);
           el.y = Number($('#elY').value);
+          const nextW = Number($('#elW')?.value);
+          const nextH = Number($('#elH')?.value);
+          if (Number.isFinite(nextW) && nextW >= 4) el.w = Math.min(draft.width_mm - Math.max(0, el.x), nextW);
+          if (Number.isFinite(nextH) && nextH >= 4) el.h = Math.min(draft.height_mm - Math.max(0, el.y), nextH);
+          el.x = Math.max(0, Math.min(el.x, draft.width_mm - el.w));
+          el.y = Math.max(0, Math.min(el.y, draft.height_mm - el.h));
           el.colWidths = Expr.resizePercents(el.colWidths, el.cols);
           el.rowHeights = Expr.resizePercents(el.rowHeights, el.rows);
           // 行数增加时自动增高表格，避免多行挤在原高度里看不见
