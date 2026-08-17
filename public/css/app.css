@@ -215,15 +215,17 @@ tr:hover td { background: #f8fbf9; }
   position: absolute; border: 1px solid transparent; padding: 0; cursor: move;
   white-space: pre-wrap; overflow: visible; box-sizing: border-box;
   line-height: 1.15;
+  z-index: 3; /* 文字/字段/二维码默认在表格之上，避免被表格挡住无法点选 */
 }
 .label-el .el-body {
   width: 100%; height: 100%; overflow: hidden; box-sizing: border-box;
   line-height: 1.15;
 }
-.label-el.selected { border-color: var(--brand); background: rgba(31,107,74,.04); z-index: 2; }
-.label-el.dragging, .label-el.resizing { opacity: .92; z-index: 5; }
+.label-el.selected { border-color: var(--brand); background: rgba(31,107,74,.04); z-index: 8; }
+.label-el.dragging, .label-el.resizing { opacity: .92; z-index: 20; }
 .label-el.code { display: grid; place-items: center; background: #fafafa; font-size: 11px; color: var(--muted); }
-.label-el.table { padding: 0; overflow: hidden; }
+.label-el.table { padding: 0; overflow: hidden; z-index: 1; }
+.label-el.table.selected { z-index: 2; } /* 选中表格时仍低于二维码/文字，方便点到上层元件 */
 .label-el.table .el-body { border: 0; overflow: hidden; }
 .label-table-edit { width: 100%; height: 100%; border-collapse: collapse; table-layout: fixed; font-size: 10px; }
 .label-table-edit tr { height: 0; }

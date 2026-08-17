@@ -189,7 +189,13 @@
     container.style.margin = '0';
     container.style.padding = '0';
 
-    (tpl.elements || []).forEach((el) => {
+    // 先表格后二维码/文字，与设计器叠放一致（非表格在上）
+    const paintOrder = [...(tpl.elements || [])].sort((a, b) => {
+      const at = a.type === 'table' ? 0 : 1;
+      const bt = b.type === 'table' ? 0 : 1;
+      return at - bt;
+    });
+    paintOrder.forEach((el) => {
       const node = document.createElement('div');
       node.style.position = 'absolute';
       node.style.left = `${el.x}mm`;
@@ -199,6 +205,7 @@
       node.style.overflow = 'hidden';
       node.style.boxSizing = 'border-box';
       node.style.lineHeight = '1.15';
+      node.style.zIndex = el.type === 'table' ? '1' : '3';
 
       if (el.type === 'table') {
         node.appendChild(renderTableElement(el, label.data, label.scan_id || label.code, options));

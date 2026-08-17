@@ -428,7 +428,13 @@
       const pxPerMm = canvasZoom;
       canvas.style.width = `${draft.width_mm * pxPerMm}px`;
       canvas.style.height = `${draft.height_mm * pxPerMm}px`;
-      canvas.innerHTML = draft.elements.map((el) => {
+      // 先渲染表格，再渲染二维码/文字等，保证非表格默认叠在表格上方且可点选
+      const paintOrder = [...draft.elements].sort((a, b) => {
+        const at = a.type === 'table' ? 0 : 1;
+        const bt = b.type === 'table' ? 0 : 1;
+        return at - bt;
+      });
+      canvas.innerHTML = paintOrder.map((el) => {
         const selected = el.id === selectedElId ? 'selected' : '';
         if (el.type === 'table') {
           Expr.ensureTableLayout(el);
