@@ -957,8 +957,9 @@
     const templates = allTpls.items || [...(masterTpls.items || []), ...(childTpls.items || [])];
     const orderMasterTpls = (masterTpls.items || []).filter((t) => t.includes_scan_id);
     const orderChildTpls = (childTpls.items || []).filter((t) => t.includes_scan_id);
-    let printMode = 'order'; // order | manual
+    let printMode = 'order'; // order | general | manual
     let lastLabels = [];
+    let generalState = { headers: [], fields: [], formulas: [], file: null, row_count: 0 };
 
     function tplOptions(list, emptyText) {
       if (!list.length) return `<option value="">${escapeHtml(emptyText || '暂无可用模板')}</option>`;
@@ -969,7 +970,8 @@
       <div class="card">
         <h2>生成并打印标签</h2>
         <div class="mode-tabs" id="printModeTabs">
-          <button type="button" class="mode-tab active" data-pmode="order">订单打印</button>
+          <button type="button" class="mode-tab active" data-pmode="order">齐套订单打印</button>
+          <button type="button" class="mode-tab" data-pmode="general">一般订单打印</button>
           <button type="button" class="mode-tab" data-pmode="manual">自定义打印</button>
         </div>
         <div id="printFlash"></div>
@@ -1008,10 +1010,49 @@
               </select>
             </label>
           </div>
-          <p class="muted" style="margin-top:8px;font-size:12px">订单批次打印仅列出条码/二维码中包含系统唯一码的模板；不含唯一码的模板请用「自定义打印」。每码份数默认取自模板「单个条码默认份数」，可在此临时修改。</p>
+          <p class="muted" style="margin-top:8px;font-size:12px">齐套订单需先关联 BOM 并生成唯一码；仅列出条码中含系统唯一码的模板。不含唯一码或普通 Excel 订单请用「一般订单打印」。</p>
           <div class="row" style="margin-top:12px;flex-wrap:wrap;gap:8px">
             <button class="btn" id="genLabelsBtn" type="button">生成标签码</button>
             <button class="btn secondary" id="loadPrintBtn" type="button">加载预览</button>
+          </div>
+        </div>
+
+        <div id="generalPrintPane" class="hidden">
+          <p class="muted">上传一般订单 Excel，选择已有标签模板，再把模板中的字段位置绑定到订单列（可写公式），按订单行生成标签。</p>
+          <div class="row" style="flex-wrap:wrap;gap:12px">
+            <label class="field"><span>订单 Excel</span>
+              <input id="generalFile" type="file" accept=".xlsx,.xls,.csv" />
+            </label>
+            <label class="field"><span>标签模板</span>
+              <select id="generalTpl">
+                <option value="">请选择</option>
+                ${templates.map((t) => `<option value="${t.id}" data-type="${t.label_type}" data-copies="${t.copies_per_label || 1}">${escapeHtml(t.name)}（${t.label_type === 'child' ? '配件' : '总包'} · ${t.width_mm}×${t.height_mm}mm · 默认${t.copies_per_label || 1}份）</option>`).join('')}
+              </select>
+            </label>
+            <label class="field"><span>每码份数</span>
+              <input id="generalCopies" type="number" min="1" max="200" value="1" />
+            </label>
+            <label class="field"><span>序列号按份递增</span>
+              <select id="generalSerialPerCopy">
+                <option value="1" selected>是（每份 +1）</option>
+                <option value="0">否（同行多份同号）</option>
+              </select>
+            </label>
+            <button class="btn secondary" id="generalParseBtn" type="button">解析订单并加载绑定</button>
+          </div>
+          <p id="generalFileHint" class="muted" style="margin-top:8px;font-size:12px">请先上传 Excel 并选择模板，再点「解析订单并加载绑定」。</p>
+          <div id="generalBindBox" class="general-bind-box" style="margin-top:12px"></div>
+          <details class="formula-help" style="margin-top:10px">
+            <summary>公式说明（绑定列后可对取值使用公式）</summary>
+            <ul class="muted" id="generalFormulaHelp" style="margin:8px 0 0;padding-left:18px;font-size:12px;line-height:1.6">
+              <li><code>UPPER()</code> / <code>TRIM()</code> / <code>LEFT(4)</code></li>
+              <li><code>IF(LEFT(TRIM(),2)="SO","订单","其他")</code></li>
+              <li><code>FORMAT(TODAY(),"yymmdd")</code>、<code>FIELD("列名")</code></li>
+            </ul>
+          </details>
+          <div class="row" style="margin-top:12px;flex-wrap:wrap;gap:8px">
+            <button class="btn" id="generalPreviewBtn" type="button">生成预览</button>
+            <button class="btn secondary" id="generalAddBindBtn" type="button">+ 添加绑定字段</button>
           </div>
         </div>
 
@@ -1078,11 +1119,151 @@
       printMode = mode;
       $$('#printModeTabs .mode-tab', root).forEach((b) => b.classList.toggle('active', b.dataset.pmode === mode));
       $('#orderPrintPane', root).classList.toggle('hidden', mode !== 'order');
+      $('#generalPrintPane', root).classList.toggle('hidden', mode !== 'general');
       $('#manualPrintPane', root).classList.toggle('hidden', mode !== 'manual');
     }
 
     $$('#printModeTabs .mode-tab', root).forEach((btn) => {
       btn.addEventListener('click', () => setPrintMode(btn.dataset.pmode));
+    });
+
+    function guessColumn(headers, field) {
+      const list = headers || [];
+      if (!field) return '';
+      const exact = list.find((h) => h === field);
+      if (exact) return exact;
+      const lower = String(field).toLowerCase();
+      const ci = list.find((h) => String(h).toLowerCase() === lower);
+      if (ci) return ci;
+      const aliases = {
+        order_no: ['订单号', '订单', 'order', '订单编号'],
+        mother_part_no: ['母件', '母件料号', '成品料号', '总包料号'],
+        part_no: ['料号', '零件号', '子件料号', '物料编码'],
+        qty: ['数量', 'qty', 'QTY', '需求数'],
+        package_code: ['总包码', '包装码', '唯一码'],
+        child_code: ['子件码', '配件码']
+      };
+      for (const a of (aliases[field] || [])) {
+        const hit = list.find((h) => h === a || String(h).toLowerCase() === String(a).toLowerCase());
+        if (hit) return hit;
+      }
+      return '';
+    }
+
+    function renderGeneralBindings(fields, headers, preserve = {}) {
+      const box = $('#generalBindBox', root);
+      const cols = headers || [];
+      const colOpts = (selected) => `<option value="">— 不绑定 —</option>${cols.map((h) =>
+        `<option value="${escapeHtml(h)}" ${h === selected ? 'selected' : ''}>${escapeHtml(h)}</option>`
+      ).join('')}`;
+      const rows = (fields || []).map((f) => {
+        const prev = preserve[f] || {};
+        const selected = prev.column || guessColumn(cols, f);
+        return `
+          <div class="general-bind-row" data-bind-field="${escapeHtml(f)}">
+            <div class="bind-field"><span class="muted">模板位置</span><strong>${escapeHtml(f)}</strong></div>
+            <label class="field"><span>绑定订单列</span>
+              <select data-bind-col>${colOpts(selected)}</select>
+            </label>
+            <label class="field"><span>公式（可选）</span>
+              <input data-bind-formula placeholder='如 UPPER() / LEFT(4) / IF(...)' value="${escapeHtml(prev.formula || '')}" />
+            </label>
+            <button type="button" class="btn secondary btn-icon" data-bind-remove title="移除">×</button>
+          </div>`;
+      }).join('');
+      box.innerHTML = `
+        <div class="section-title">模板字段 ↔ 订单列绑定</div>
+        <p class="muted" style="font-size:12px;margin:0 0 8px">模板里用到的字段会出现在下方；选择对应订单列，需要时再填公式。未列出的可用「添加绑定字段」。</p>
+        ${rows || '<div class="muted">模板暂无字段，请添加绑定或检查模板内容拼接。</div>'}
+      `;
+      $$('[data-bind-remove]', box).forEach((btn) => {
+        btn.onclick = () => btn.closest('.general-bind-row')?.remove();
+      });
+    }
+
+    function collectGeneralBindings() {
+      return $$('.general-bind-row', root).map((row) => ({
+        field: row.dataset.bindField,
+        column: row.querySelector('[data-bind-col]')?.value || '',
+        formula: row.querySelector('[data-bind-formula]')?.value || ''
+      })).filter((b) => b.field);
+    }
+
+    async function refreshGeneralBindUI() {
+      const file = $('#generalFile', root).files?.[0] || generalState.file;
+      const templateId = $('#generalTpl', root).value;
+      if (!file) return flash($('#printFlash', root), '请先选择订单 Excel', 'error');
+      if (!templateId) return flash($('#printFlash', root), '请先选择标签模板', 'error');
+      generalState.file = file;
+      try {
+        const fd = new FormData();
+        fd.append('file', file);
+        const parsed = await API.upload('/labels/general/parse', fd);
+        const fieldRes = await API.get(`/labels/templates/${templateId}/fields`);
+        generalState.headers = parsed.headers || [];
+        generalState.row_count = parsed.row_count || 0;
+        generalState.fields = fieldRes.fields || [];
+        generalState.formulas = parsed.formulas || fieldRes.formulas || [];
+        const tpl = fieldRes.template || templates.find((t) => t.id === templateId);
+        if (tpl?.copies_per_label) $('#generalCopies', root).value = tpl.copies_per_label;
+        $('#generalFileHint', root).textContent = `已解析 ${generalState.row_count} 行，列：${generalState.headers.join('、')}`;
+        const help = $('#generalFormulaHelp', root);
+        if (help && generalState.formulas.length) {
+          help.innerHTML = generalState.formulas.slice(0, 12).map((f) =>
+            `<li><code>${escapeHtml(f.value)}</code> — ${escapeHtml(f.label || '')}</li>`
+          ).join('');
+        }
+        const preserve = {};
+        collectGeneralBindings().forEach((b) => { preserve[b.field] = b; });
+        renderGeneralBindings(generalState.fields, generalState.headers, preserve);
+        flash($('#printFlash', root), '已加载模板字段与订单列，请确认绑定后生成预览', 'success');
+      } catch (err) {
+        flash($('#printFlash', root), err.message, 'error');
+      }
+    }
+
+    $('#generalParseBtn', root).addEventListener('click', refreshGeneralBindUI);
+    $('#generalTpl', root).addEventListener('change', () => {
+      const id = $('#generalTpl', root).value;
+      const t = templates.find((x) => x.id === id);
+      if (t?.copies_per_label) $('#generalCopies', root).value = t.copies_per_label;
+      if (generalState.headers.length && id) refreshGeneralBindUI();
+    });
+    $('#generalFile', root).addEventListener('change', () => {
+      generalState.file = $('#generalFile', root).files?.[0] || null;
+    });
+    $('#generalAddBindBtn', root).addEventListener('click', () => {
+      const name = prompt('绑定字段名（需与模板中的字段 / {字段名} 一致）');
+      if (!name || !name.trim()) return;
+      const f = name.trim();
+      if (!generalState.headers.length) {
+        return flash($('#printFlash', root), '请先解析订单 Excel', 'error');
+      }
+      const preserve = {};
+      collectGeneralBindings().forEach((b) => { preserve[b.field] = b; });
+      const fields = [...new Set([...collectGeneralBindings().map((b) => b.field), f])];
+      renderGeneralBindings(fields, generalState.headers, preserve);
+    });
+    $('#generalPreviewBtn', root).addEventListener('click', async () => {
+      const file = $('#generalFile', root).files?.[0] || generalState.file;
+      const template_id = $('#generalTpl', root).value;
+      if (!file) return flash($('#printFlash', root), '请上传订单 Excel', 'error');
+      if (!template_id) return flash($('#printFlash', root), '请选择标签模板', 'error');
+      const bindings = collectGeneralBindings();
+      if (!bindings.length) return flash($('#printFlash', root), '请先解析并配置字段绑定', 'error');
+      try {
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('template_id', template_id);
+        fd.append('bindings_json', JSON.stringify(bindings));
+        fd.append('copies', String(Number($('#generalCopies', root).value) || 1));
+        fd.append('serial_per_copy', $('#generalSerialPerCopy', root).value === '0' ? '0' : '1');
+        const res = await API.upload('/labels/general-preview', fd);
+        renderLabels(res.labels || []);
+        flash($('#printFlash', root), `一般订单已生成 ${res.count} 张（${res.row_count} 行 × ${res.copies} 份）`, 'success');
+      } catch (err) {
+        flash($('#printFlash', root), err.message, 'error');
+      }
     });
 
     $('#printPaper', root).addEventListener('change', () => {

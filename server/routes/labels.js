@@ -1,9 +1,11 @@
 'use strict';
 
 const express = require('express');
+const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
 const { requireRoles } = require('../auth');
-const { buildPrintCode, templateIncludesScanId } = require('../expr');
+const { buildPrintCode, templateIncludesScanId, applyFormula, FORMULA_CATALOG } = require('../expr');
+const { readExcelBuffer, pickField } = require('../excel');
 
 function assertBatchPrintTemplate(row, kind) {
   if (!row) return null;
@@ -22,9 +24,51 @@ function shortCode(prefix) {
   return `${prefix}${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 }
 
+/** 一般订单：把 Excel 行 + 字段绑定（列/公式）合成标签 data */
+function buildGeneralRowData(rowObj, bindings, scanId, labelType) {
+  const raw = { ...(rowObj || {}) };
+  const data = { ...raw };
+  (bindings || []).forEach((b) => {
+    const field = String(b?.field || '').trim();
+    if (!field) return;
+    const column = String(b.column || '').trim() || field;
+    const formula = String(b.formula || '').trim();
+    const src = pickField(raw, column);
+    try {
+      data[field] = applyFormula(src, formula, { ...data, ...raw });
+    } catch {
+      data[field] = src;
+    }
+  });
+  if (labelType === 'child') {
+    if (!String(data.child_code || '').trim()) data.child_code = scanId;
+  } else if (!String(data.package_code || '').trim()) {
+    data.package_code = scanId;
+  }
+  if (!String(data.order_no || '').trim()) {
+    const guess = pickField(raw, 'order_no') || pickField(raw, '订单号') || pickField(raw, '订单');
+    if (guess) data.order_no = guess;
+  }
+  return data;
+}
+
+function parseBindingsInput(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'string' && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 function labelRoutes(db) {
   const router = express.Router();
   const canImport = requireRoles('importer', 'admin');
+  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
   router.post('/generate', canImport, (req, res) => {
     const { batch_id, master_template_id, child_template_id, only_success = true } = req.body || {};
@@ -348,11 +392,113 @@ function labelRoutes(db) {
     });
   });
 
+  /** 一般订单：解析 Excel 表头与样例行 */
+  router.post('/general/parse', canImport, upload.single('file'), (req, res) => {
+    if (!req.file) return res.status(400).json({ error: '请上传订单 Excel' });
+    try {
+      const parsed = readExcelBuffer(req.file.buffer);
+      if (!parsed.headers.length) return res.status(400).json({ error: 'Excel 无表头' });
+      const sample = (parsed.rows || []).slice(0, 5).map((r) => r.data);
+      res.json({
+        headers: parsed.headers,
+        row_count: parsed.rows.length,
+        sample,
+        sheet_name: parsed.sheetName,
+        formulas: FORMULA_CATALOG
+      });
+    } catch (err) {
+      res.status(400).json({ error: err.message || '解析失败' });
+    }
+  });
+
+  /**
+   * 一般订单打印预览：
+   * 选用已有标签模板，将模板中的字段位置绑定到订单 Excel 列（可加公式），按行出标签。
+   */
+  router.post('/general-preview', canImport, upload.single('file'), (req, res) => {
+    if (!req.file) return res.status(400).json({ error: '请上传订单 Excel' });
+    const templateId = req.body?.template_id;
+    if (!templateId) return res.status(400).json({ error: '请选择标签模板' });
+    const row = db.prepare('SELECT * FROM label_templates WHERE id = ?').get(templateId);
+    if (!row) return res.status(404).json({ error: '模板不存在' });
+
+    let parsed;
+    try {
+      parsed = readExcelBuffer(req.file.buffer);
+    } catch (err) {
+      return res.status(400).json({ error: err.message || '解析 Excel 失败' });
+    }
+    if (!parsed.rows.length) return res.status(400).json({ error: '订单表无数据行' });
+
+    const tpl = formatTpl(row);
+    const bindings = parseBindingsInput(req.body?.bindings_json || req.body?.bindings);
+    const copies = Math.max(1, Math.min(200, Number(req.body?.copies) || tpl.copies_per_label || 1));
+    const serialPerCopy = !(req.body?.serial_per_copy === false
+      || req.body?.serial_per_copy === 0
+      || req.body?.serial_per_copy === '0');
+    const maxRows = Math.max(1, Math.min(2000, Number(req.body?.max_rows) || 2000));
+    const rows = parsed.rows.slice(0, maxRows);
+
+    const labels = [];
+    let serialIndex = 0;
+    rows.forEach((r, rowIdx) => {
+      const scanId = shortCode(tpl.label_type === 'child' ? 'G' : 'G');
+      const baseData = buildGeneralRowData(r.data, bindings, scanId, tpl.label_type);
+      const rowScanId = String(
+        tpl.label_type === 'child'
+          ? (baseData.child_code || scanId)
+          : (baseData.package_code || scanId)
+      );
+      for (let i = 0; i < copies; i++) {
+        const si = serialPerCopy ? serialIndex : rowIdx;
+        const dataWithSerial = {
+          ...baseData,
+          __serial_index: si,
+          __copy_index: i,
+          __copies: copies,
+          __row_index: rowIdx,
+          __line_no: r.lineNo
+        };
+        let copyCode = '';
+        try {
+          copyCode = buildPrintCode(tpl, dataWithSerial, rowScanId, tpl.label_type);
+        } catch {
+          copyCode = rowScanId;
+        }
+        labels.push({
+          type: tpl.label_type,
+          code: copyCode,
+          scan_id: rowScanId,
+          order_no: dataWithSerial.order_no || '',
+          data: dataWithSerial,
+          template: tpl,
+          general: true,
+          copy_index: i,
+          copies,
+          row_index: rowIdx
+        });
+        if (serialPerCopy) serialIndex += 1;
+      }
+      if (!serialPerCopy) serialIndex += 1;
+    });
+
+    res.json({
+      labels,
+      count: labels.length,
+      row_count: rows.length,
+      headers: parsed.headers,
+      fields: collectTemplateFields(tpl),
+      bindings,
+      copies,
+      serial_per_copy: serialPerCopy
+    });
+  });
+
   router.get('/templates/:id/fields', canImport, (req, res) => {
     const row = db.prepare('SELECT * FROM label_templates WHERE id = ?').get(req.params.id);
     if (!row) return res.status(404).json({ error: '模板不存在' });
     const tpl = formatTpl(row);
-    res.json({ template: tpl, fields: collectTemplateFields(tpl) });
+    res.json({ template: tpl, fields: collectTemplateFields(tpl), formulas: FORMULA_CATALOG });
   });
 
   return router;
