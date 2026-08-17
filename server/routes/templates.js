@@ -83,6 +83,7 @@ function templateRoutes(db) {
         .map((s) => s.field)
         .filter(Boolean);
     }
+    next.copies_per_label = clampCopies(next.copies_per_label);
     next.elements = (next.elements || []).map((el) => ({ ...el }));
     return next;
   }
@@ -95,8 +96,8 @@ function templateRoutes(db) {
     const id = uuidv4();
     db.prepare(`
       INSERT INTO label_templates
-        (id, name, label_type, width_mm, height_mm, code_mode, code_fields_json, code_segments_json, code_type, elements_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, name, label_type, width_mm, height_mm, code_mode, code_fields_json, code_segments_json, code_type, elements_json, copies_per_label)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       body.name,
@@ -107,7 +108,8 @@ function templateRoutes(db) {
       JSON.stringify(body.code_fields || []),
       JSON.stringify(body.code_segments || []),
       body.code_type || 'qr',
-      JSON.stringify(body.elements || [])
+      JSON.stringify(body.elements || []),
+      body.copies_per_label || 1
     );
     const row = db.prepare('SELECT * FROM label_templates WHERE id = ?').get(id);
     res.json(formatTemplate(row));
@@ -120,7 +122,8 @@ function templateRoutes(db) {
     db.prepare(`
       UPDATE label_templates SET
         name = ?, width_mm = ?, height_mm = ?, code_mode = ?, code_fields_json = ?,
-        code_segments_json = ?, code_type = ?, elements_json = ?, updated_at = datetime('now','localtime')
+        code_segments_json = ?, code_type = ?, elements_json = ?, copies_per_label = ?,
+        updated_at = datetime('now','localtime')
       WHERE id = ?
     `).run(
       body.name || existing.name,
@@ -131,6 +134,7 @@ function templateRoutes(db) {
       JSON.stringify(body.code_segments || JSON.parse(existing.code_segments_json || '[]')),
       body.code_type || existing.code_type,
       JSON.stringify(body.elements || JSON.parse(existing.elements_json || '[]')),
+      body.copies_per_label != null ? body.copies_per_label : (existing.copies_per_label || 1),
       req.params.id
     );
     const row = db.prepare('SELECT * FROM label_templates WHERE id = ?').get(req.params.id);
@@ -145,6 +149,12 @@ function templateRoutes(db) {
   return router;
 }
 
+function clampCopies(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v) || v < 1) return 1;
+  return Math.min(200, Math.floor(v));
+}
+
 function formatTemplate(row) {
   const tpl = {
     id: row.id,
@@ -156,6 +166,7 @@ function formatTemplate(row) {
     code_fields: JSON.parse(row.code_fields_json || '[]'),
     code_segments: JSON.parse(row.code_segments_json || '[]'),
     code_type: row.code_type,
+    copies_per_label: clampCopies(row.copies_per_label == null ? 1 : row.copies_per_label),
     elements: JSON.parse(row.elements_json || '[]'),
     created_at: row.created_at,
     updated_at: row.updated_at

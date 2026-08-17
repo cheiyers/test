@@ -225,6 +225,9 @@ function initSchema(db) {
   if (!tplCols.includes('code_segments_json')) {
     db.exec('ALTER TABLE label_templates ADD COLUMN code_segments_json TEXT');
   }
+  if (!tplCols.includes('copies_per_label')) {
+    db.exec('ALTER TABLE label_templates ADD COLUMN copies_per_label INTEGER NOT NULL DEFAULT 1');
+  }
 
   const bomCols = db.prepare('PRAGMA table_info(bom_files)').all().map((c) => c.name);
   if (!bomCols.includes('mother_info_json')) {

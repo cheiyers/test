@@ -47,6 +47,7 @@
     const draft = JSON.parse(JSON.stringify(tpl));
     draft.code_segments = draft.code_segments || [];
     draft.code_fields = draft.code_fields || [];
+    draft.copies_per_label = Number(draft.copies_per_label) > 0 ? Number(draft.copies_per_label) : 1;
     let selectedElId = null;
     let selectedCellKey = null; // "r,c"
     let fieldMeta = {
@@ -89,7 +90,11 @@
               <option value="fields" ${draft.code_mode === 'fields' ? 'selected' : ''}>自定义拼接（唯一码可选）</option>
             </select>
           </label>
+          <label class="field"><span>单个条码默认份数</span>
+            <input id="tplCopies" type="number" min="1" max="200" value="${Number(draft.copies_per_label) > 0 ? Number(draft.copies_per_label) : 1}" title="打印时每个条码默认生成几份，可在打印页临时改" />
+          </label>
         </div>
+        <p class="muted" style="font-size:12px;margin:6px 0 0">「单个条码默认份数」用于订单/自定义打印时每个条码重复出纸；含序列号时默认每份递增。</p>
         <details class="formula-help" style="margin-top:10px">
           <summary>公式说明与示例（点击展开）</summary>
           <ul class="muted" style="margin:8px 0 0;padding-left:18px;font-size:12px;line-height:1.6">
@@ -180,6 +185,8 @@
       draft.height_mm = Number($('#tplH').value) || 50;
       draft.code_type = $('#tplCodeType').value;
       draft.code_mode = $('#tplCodeMode').value;
+      const copies = Number($('#tplCopies')?.value);
+      draft.copies_per_label = Number.isFinite(copies) && copies >= 1 ? Math.min(200, Math.floor(copies)) : 1;
     }
 
     function renderCodeSegBox() {
@@ -1046,7 +1053,7 @@
       syncMeta();
       renderCodeSegBox();
     };
-    ['tplName', 'tplW', 'tplH', 'tplCodeType'].forEach((id) => {
+    ['tplName', 'tplW', 'tplH', 'tplCodeType', 'tplCopies'].forEach((id) => {
       $(`#${id}`).addEventListener('change', renderCanvas);
     });
 

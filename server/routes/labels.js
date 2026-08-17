@@ -176,6 +176,24 @@ function labelRoutes(db) {
       ORDER BY m.line_no
     `).all(batch_id);
 
+    const masterTplFmt = masterTpl ? formatTpl(masterTpl) : null;
+    const childTplFmt = childTpl ? formatTpl(childTpl) : null;
+    const qCopies = Number(req.query.copies);
+    const qMasterCopies = Number(req.query.copies_master);
+    const qChildCopies = Number(req.query.copies_child);
+    const masterCopies = Math.max(1, Math.min(200, Math.floor(
+      Number.isFinite(qMasterCopies) && qMasterCopies >= 1
+        ? qMasterCopies
+        : (Number.isFinite(qCopies) && qCopies >= 1 ? qCopies : (masterTplFmt?.copies_per_label || 1))
+    )));
+    const childCopies = Math.max(1, Math.min(200, Math.floor(
+      Number.isFinite(qChildCopies) && qChildCopies >= 1
+        ? qChildCopies
+        : (Number.isFinite(qCopies) && qCopies >= 1 ? qCopies : (childTplFmt?.copies_per_label || 1))
+    )));
+    // serial_per_copy=1（默认）：每份都递增序列号；=0：同一条码的多份共用同一序列号
+    const serialPerCopy = String(req.query.serial_per_copy == null ? '1' : req.query.serial_per_copy) !== '0';
+
     const labels = [];
     let serialIndex = 0;
     for (const pkg of packages) {
@@ -187,22 +205,33 @@ function labelRoutes(db) {
         package_code: pkg.package_code
       };
 
-      if (want === 'all' || want === 'master') {
-        const masterTplFmt = formatTpl(masterTpl);
-        const dataWithSerial = { ...masterData, __serial_index: serialIndex };
-        const masterPrintCode = buildPrintCode(masterTplFmt, dataWithSerial, pkg.package_code, 'master');
-        labels.push({
-          type: 'master',
-          code: masterPrintCode,
-          scan_id: pkg.package_code,
-          order_no: pkg.order_no,
-          data: dataWithSerial,
-          template: masterTplFmt
-        });
-        serialIndex += 1;
+      if ((want === 'all' || want === 'master') && masterTplFmt) {
+        const baseSerial = serialIndex;
+        for (let c = 0; c < masterCopies; c++) {
+          const si = serialPerCopy ? serialIndex : baseSerial;
+          const dataWithSerial = {
+            ...masterData,
+            __serial_index: si,
+            __copy_index: c,
+            __copies: masterCopies
+          };
+          const masterPrintCode = buildPrintCode(masterTplFmt, dataWithSerial, pkg.package_code, 'master');
+          labels.push({
+            type: 'master',
+            code: masterPrintCode,
+            scan_id: pkg.package_code,
+            order_no: pkg.order_no,
+            data: dataWithSerial,
+            template: masterTplFmt,
+            copy_index: c,
+            copies: masterCopies
+          });
+          if (serialPerCopy) serialIndex += 1;
+        }
+        if (!serialPerCopy) serialIndex += 1;
       }
 
-      if (want === 'all' || want === 'child') {
+      if ((want === 'all' || want === 'child') && childTplFmt) {
         const children = db.prepare(`
           SELECT pc.*, a.raw_json, a.part_no, a.qty, a.line_no
           FROM package_children pc
@@ -213,31 +242,46 @@ function labelRoutes(db) {
 
         for (const ch of children) {
           const raw = JSON.parse(ch.raw_json);
-          const childData = {
-            ...raw,
-            order_no: pkg.order_no,
-            part_no: ch.part_no,
-            qty: ch.qty,
-            child_code: ch.child_code,
-            package_code: pkg.package_code,
-            __serial_index: serialIndex
-          };
-          const childTplFmt = formatTpl(childTpl);
-          const childPrintCode = buildPrintCode(childTplFmt, childData, ch.child_code, 'child');
-          labels.push({
-            type: 'child',
-            code: childPrintCode,
-            scan_id: ch.child_code,
-            order_no: pkg.order_no,
-            data: childData,
-            template: childTplFmt
-          });
-          serialIndex += 1;
+          const baseSerial = serialIndex;
+          for (let c = 0; c < childCopies; c++) {
+            const si = serialPerCopy ? serialIndex : baseSerial;
+            const childData = {
+              ...raw,
+              order_no: pkg.order_no,
+              part_no: ch.part_no,
+              qty: ch.qty,
+              child_code: ch.child_code,
+              package_code: pkg.package_code,
+              __serial_index: si,
+              __copy_index: c,
+              __copies: childCopies
+            };
+            const childPrintCode = buildPrintCode(childTplFmt, childData, ch.child_code, 'child');
+            labels.push({
+              type: 'child',
+              code: childPrintCode,
+              scan_id: ch.child_code,
+              order_no: pkg.order_no,
+              data: childData,
+              template: childTplFmt,
+              copy_index: c,
+              copies: childCopies
+            });
+            if (serialPerCopy) serialIndex += 1;
+          }
+          if (!serialPerCopy) serialIndex += 1;
         }
       }
     }
 
-    res.json({ labels, count: labels.length, label_type: want });
+    res.json({
+      labels,
+      count: labels.length,
+      label_type: want,
+      copies_master: masterCopies,
+      copies_child: childCopies,
+      serial_per_copy: serialPerCopy
+    });
   });
 
   /** 无订单/BOM 时：按模板 + 人工填写字段生成可打印标签 */
@@ -250,8 +294,11 @@ function labelRoutes(db) {
 
     const tpl = formatTpl(row);
     const data = { ...(body.data && typeof body.data === 'object' ? body.data : {}) };
-    const copies = Math.max(1, Math.min(200, Number(body.copies) || 1));
+    const copies = Math.max(1, Math.min(200, Number(body.copies) || tpl.copies_per_label || 1));
     const scanId = String(body.scan_id || body.code || '').trim() || shortCode(tpl.label_type === 'child' ? 'C' : 'M');
+    const serialPerCopy = body.serial_per_copy === false || body.serial_per_copy === 0 || body.serial_per_copy === '0'
+      ? false
+      : true;
 
     if (tpl.label_type === 'child') {
       if (!data.child_code) data.child_code = scanId;
@@ -260,8 +307,16 @@ function labelRoutes(db) {
     }
 
     const labels = [];
+    let serialIndex = 0;
+    const baseSerial = 0;
     for (let i = 0; i < copies; i++) {
-      const dataWithSerial = { ...data, __serial_index: i };
+      const si = serialPerCopy ? serialIndex : baseSerial;
+      const dataWithSerial = {
+        ...data,
+        __serial_index: si,
+        __copy_index: i,
+        __copies: copies
+      };
       let copyCode = String(body.code || '').trim();
       if (!copyCode) {
         try {
@@ -277,14 +332,19 @@ function labelRoutes(db) {
         order_no: data.order_no || '',
         data: dataWithSerial,
         template: tpl,
-        manual: true
+        manual: true,
+        copy_index: i,
+        copies
       });
+      if (serialPerCopy) serialIndex += 1;
     }
 
     res.json({
       labels,
       count: labels.length,
-      fields: collectTemplateFields(tpl)
+      fields: collectTemplateFields(tpl),
+      copies,
+      serial_per_copy: serialPerCopy
     });
   });
 
@@ -338,6 +398,7 @@ function collectTemplateFields(tpl) {
 
 function formatTpl(row) {
   if (!row) return null;
+  const copies = Number(row.copies_per_label);
   const tpl = {
     id: row.id,
     name: row.name,
@@ -348,6 +409,7 @@ function formatTpl(row) {
     code_fields: JSON.parse(row.code_fields_json || '[]'),
     code_segments: JSON.parse(row.code_segments_json || '[]'),
     code_type: row.code_type,
+    copies_per_label: Number.isFinite(copies) && copies >= 1 ? Math.min(200, Math.floor(copies)) : 1,
     elements: JSON.parse(row.elements_json || '[]')
   };
   tpl.includes_scan_id = templateIncludesScanId(tpl);

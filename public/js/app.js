@@ -891,7 +891,7 @@
                 <td>${escapeHtml(t.name)}</td>
                 <td>${t.label_type === 'master' ? '总包' : '子件'}</td>
                 <td>${t.width_mm} × ${t.height_mm}</td>
-                <td>${t.code_mode === 'unique' ? '唯一编号' : '自定义拼接'} / ${t.code_type}${t.includes_scan_id ? ' · 含唯一码' : ' · 无唯一码'}</td>
+                <td>${t.code_mode === 'unique' ? '唯一编号' : '自定义拼接'} / ${t.code_type}${t.includes_scan_id ? ' · 含唯一码' : ' · 无唯一码'} · ${t.copies_per_label || 1}份</td>
                 <td>${escapeHtml(t.updated_at)}</td>
                 <td>
                   <button class="btn secondary" data-edit="${t.id}" type="button">编辑</button>
@@ -915,7 +915,7 @@
 
     $('#newMasterTpl', root).addEventListener('click', () => openEditor({
       name: '新总包模板', label_type: 'master', width_mm: 100, height_mm: 60,
-      code_mode: 'unique', code_type: 'qr', code_fields: [], code_segments: [],
+      code_mode: 'unique', code_type: 'qr', code_fields: [], code_segments: [], copies_per_label: 1,
       elements: [
         { id: 't1', type: 'text', x: 4, y: 4, w: 50, h: 8, text: '总包标签', fontSize: 14, align: 'left', bold: true,
           segments: [{ type: 'text', value: '总包标签' }] },
@@ -925,7 +925,7 @@
     }));
     $('#newChildTpl', root).addEventListener('click', () => openEditor({
       name: '新子件模板', label_type: 'child', width_mm: 80, height_mm: 50,
-      code_mode: 'unique', code_type: 'qr', code_fields: [], code_segments: [],
+      code_mode: 'unique', code_type: 'qr', code_fields: [], code_segments: [], copies_per_label: 1,
       elements: [
         { id: 't1', type: 'text', x: 3, y: 3, w: 40, h: 7, text: '子件标签', fontSize: 13, align: 'left', bold: true,
           segments: [{ type: 'text', value: '子件标签' }] },
@@ -995,8 +995,20 @@
             <label class="field"><span>配件模板（含唯一码）</span>
               <select id="printChildTpl">${tplOptions(orderChildTpls, '无含唯一码的配件模板')}</select>
             </label>
+            <label class="field"><span>总包每码份数</span>
+              <input id="orderMasterCopies" type="number" min="1" max="200" value="${orderMasterTpls[0]?.copies_per_label || 1}" title="每个总包条码生成几份" />
+            </label>
+            <label class="field"><span>配件每码份数</span>
+              <input id="orderChildCopies" type="number" min="1" max="200" value="${orderChildTpls[0]?.copies_per_label || 1}" title="每个配件条码生成几份" />
+            </label>
+            <label class="field"><span>序列号按份递增</span>
+              <select id="orderSerialPerCopy">
+                <option value="1" selected>是（每份 +1）</option>
+                <option value="0">否（同一条码多份同号）</option>
+              </select>
+            </label>
           </div>
-          <p class="muted" style="margin-top:8px;font-size:12px">订单批次打印仅列出条码/二维码中包含系统唯一码的模板；不含唯一码的模板请用「自定义打印」。</p>
+          <p class="muted" style="margin-top:8px;font-size:12px">订单批次打印仅列出条码/二维码中包含系统唯一码的模板；不含唯一码的模板请用「自定义打印」。每码份数默认取自模板「单个条码默认份数」，可在此临时修改。</p>
           <div class="row" style="margin-top:12px;flex-wrap:wrap;gap:8px">
             <button class="btn" id="genLabelsBtn" type="button">生成标签码</button>
             <button class="btn secondary" id="loadPrintBtn" type="button">加载预览</button>
@@ -1013,6 +1025,12 @@
               </select>
             </label>
             <label class="field"><span>打印份数</span><input id="manualCopies" type="number" min="1" max="200" value="1" /></label>
+            <label class="field"><span>序列号按份递增</span>
+              <select id="manualSerialPerCopy">
+                <option value="1" selected>是（每份 +1）</option>
+                <option value="0">否（多份同号）</option>
+              </select>
+            </label>
             <label class="field"><span>条码/唯一码（可选）</span><input id="manualScanId" placeholder="留空则自动生成" /></label>
           </div>
           <div id="manualFields" class="manual-fields" style="margin-top:12px"></div>
@@ -1074,6 +1092,17 @@
       if (lastLabels.length) renderLabels(lastLabels);
     });
 
+    $('#printMasterTpl', root).addEventListener('change', () => {
+      const id = $('#printMasterTpl', root).value;
+      const t = orderMasterTpls.find((x) => x.id === id);
+      if (t) $('#orderMasterCopies', root).value = t.copies_per_label || 1;
+    });
+    $('#printChildTpl', root).addEventListener('change', () => {
+      const id = $('#printChildTpl', root).value;
+      const t = orderChildTpls.find((x) => x.id === id);
+      if (t) $('#orderChildCopies', root).value = t.copies_per_label || 1;
+    });
+
     $('#genLabelsBtn', root).addEventListener('click', async () => {
       try {
         const res = await API.post('/labels/generate', {
@@ -1108,6 +1137,10 @@
       try {
         const res = await API.get(`/labels/templates/${id}/fields`);
         const fields = res.fields || [];
+        const tpl = res.template || templates.find((t) => t.id === id);
+        if (tpl && tpl.copies_per_label) {
+          $('#manualCopies', root).value = tpl.copies_per_label;
+        }
         box.innerHTML = fields.map((f) => `
           <label class="field"><span>${escapeHtml(f)}</span>
             <input data-manual-field="${escapeHtml(f)}" placeholder="填写 ${escapeHtml(f)}" />
@@ -1142,6 +1175,7 @@
           template_id,
           data,
           copies: Number($('#manualCopies', root).value) || 1,
+          serial_per_copy: $('#manualSerialPerCopy', root).value !== '0',
           scan_id: $('#manualScanId', root).value.trim()
         });
         renderLabels(res.labels || []);
@@ -1160,12 +1194,16 @@
           batch_id: batchId,
           master_template_id: $('#printMasterTpl', root).value,
           child_template_id: $('#printChildTpl', root).value,
-          label_type: scope
+          label_type: scope,
+          copies_master: String(Number($('#orderMasterCopies', root).value) || 1),
+          copies_child: String(Number($('#orderChildCopies', root).value) || 1),
+          serial_per_copy: $('#orderSerialPerCopy', root).value === '0' ? '0' : '1'
         });
         const data = await API.get(`/labels/print-data?${q.toString()}`);
         renderLabels(data.labels || []);
         const tip = scope === 'master' ? '总包' : scope === 'child' ? '配件' : '全部';
-        flash($('#printFlash', root), `已加载 ${data.count} 张${tip}标签`, 'success');
+        const copyTip = `（总包×${data.copies_master || 1}/配件×${data.copies_child || 1}）`;
+        flash($('#printFlash', root), `已加载 ${data.count} 张${tip}标签${copyTip}`, 'success');
       } catch (err) {
         flash($('#printFlash', root), err.message, 'error');
       }
