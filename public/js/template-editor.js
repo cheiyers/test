@@ -939,6 +939,7 @@
           <label class="field"><span>Y mm</span><input id="elY" type="number" step="0.5" value="${fmtMm(el.y)}" /></label>
         </div>
         ${el.type === 'code' ? `
+          <p class="muted" style="font-size:12px;margin:0 0 8px">二维码从元素框<strong>左上角</strong>绘制，边长取宽/高较小值；请把框的 X/Y 对齐到码的目标位置，框宜接近正方形。</p>
           <label class="field"><span>码类型</span>
             <select id="elCodeType">
               <option value="qr" ${(el.codeType || draft.code_type) === 'qr' ? 'selected' : ''}>二维码</option>
