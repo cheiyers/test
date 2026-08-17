@@ -158,8 +158,9 @@
           </div>
           <div class="props" id="elProps"><p class="muted">选中元素后编辑属性</p></div>
         </div>
-        <div class="row" style="margin-top:12px">
+        <div class="row" style="margin-top:12px;flex-wrap:wrap;gap:8px">
           <button class="btn" id="saveTplBtn" type="button">保存模板</button>
+          <button class="btn secondary" id="saveAsTplBtn" type="button" title="在当前设计基础上创建一份新模板，不覆盖原模板">另存为新模板</button>
         </div>
       </div>
     `;
@@ -1179,21 +1180,58 @@
       };
     });
 
-    $('#saveTplBtn').onclick = async () => {
+    function prepareDraftForSave() {
       syncMeta();
       draft.code_segments = Array.isArray(draft.code_segments) ? draft.code_segments : [];
-      draft.elements = (draft.elements || []).map((el) => {
-        const copy = { ...el };
-        return copy;
-      });
+      draft.elements = (draft.elements || []).map((el) => ({ ...el }));
       draft.code_fields = (draft.code_segments || [])
         .filter((s) => s.type === 'field')
         .map((s) => s.field)
         .filter(Boolean);
+    }
+
+    async function persistTemplate({ asNew = false } = {}) {
+      prepareDraftForSave();
+      if (asNew) {
+        const base = String(draft.name || '未命名模板').trim() || '未命名模板';
+        const suggested = /副本$/.test(base) ? base : `${base} 副本`;
+        const name = prompt('另存为新模板名称：', suggested);
+        if (name == null) return; // cancelled
+        const newName = String(name).trim();
+        if (!newName) {
+          alert('请填写模板名称');
+          return;
+        }
+        const payload = { ...draft, name: newName };
+        delete payload.id;
+        const created = await API.post('/templates', payload);
+        draft.id = created.id;
+        draft.name = created.name || newName;
+        const nameInput = $('#tplName');
+        if (nameInput) nameInput.value = draft.name;
+        if (ctx?.onSaved) await ctx.onSaved(`已另存为「${draft.name}」`);
+        else alert(`已另存为「${draft.name}」`);
+        return;
+      }
+      if (draft.id) await API.put(`/templates/${draft.id}`, draft);
+      else {
+        const created = await API.post('/templates', draft);
+        draft.id = created.id;
+      }
+      if (ctx?.onSaved) await ctx.onSaved('模板已保存');
+    }
+
+    $('#saveTplBtn').onclick = async () => {
       try {
-        if (draft.id) await API.put(`/templates/${draft.id}`, draft);
-        else await API.post('/templates', draft);
-        if (ctx?.onSaved) ctx.onSaved();
+        await persistTemplate({ asNew: false });
+      } catch (err) {
+        alert(err.message);
+      }
+    };
+
+    $('#saveAsTplBtn').onclick = async () => {
+      try {
+        await persistTemplate({ asNew: true });
       } catch (err) {
         alert(err.message);
       }

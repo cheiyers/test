@@ -906,9 +906,10 @@
 
     const openEditor = (tpl) => {
       openTemplateEditor($('#tplEditor', root), tpl, {
-        onSaved: () => {
-          flash($('#tplFlash', root), '模板已保存', 'success');
-          navigate('templates');
+        onSaved: async (msg) => {
+          await navigate('templates');
+          const el = document.querySelector('#tplFlash');
+          if (el) flash(el, msg || '模板已保存', 'success');
         }
       });
     };
