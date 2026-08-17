@@ -1,4 +1,50 @@
 (function (global) {
+  /** CSS mm → 生成码图用的像素（2× 提高打印清晰度） */
+  function mmToGenPx(mm) {
+    return Math.max(32, Math.round(Number(mm) * (96 / 25.4) * 2));
+  }
+
+  /** 让 qrcodejs / JsBarcode 输出铺满容器，避免像素图偏小居中导致“不在设计位置” */
+  function fitGraphicToHost(host) {
+    if (!host) return;
+    host.style.width = '100%';
+    host.style.height = '100%';
+    host.style.overflow = 'hidden';
+    host.style.boxSizing = 'border-box';
+    host.querySelectorAll(':scope > div, :scope > canvas, :scope > img, :scope > svg, :scope > table').forEach((el) => {
+      el.style.width = '100%';
+      el.style.height = '100%';
+      el.style.maxWidth = '100%';
+      el.style.maxHeight = '100%';
+      el.style.display = 'block';
+      el.style.margin = '0';
+      el.style.padding = '0';
+      el.style.boxSizing = 'border-box';
+      if (el.tagName === 'IMG' || el.tagName === 'CANVAS') {
+        el.style.objectFit = 'contain';
+        el.style.objectPosition = 'left top';
+      }
+      if (el.tagName === 'SVG') {
+        el.setAttribute('preserveAspectRatio', 'xMinYMin meet');
+        el.style.width = '100%';
+        el.style.height = '100%';
+      }
+      el.querySelectorAll('canvas, img, table').forEach((inner) => {
+        inner.style.width = '100%';
+        inner.style.height = '100%';
+        inner.style.maxWidth = '100%';
+        inner.style.maxHeight = '100%';
+        inner.style.display = 'block';
+        inner.style.margin = '0';
+        inner.style.padding = '0';
+        if (inner.tagName === 'IMG' || inner.tagName === 'CANVAS') {
+          inner.style.objectFit = 'contain';
+          inner.style.objectPosition = 'left top';
+        }
+      });
+    });
+  }
+
   function fillCode(host, contentType, text, widthPx, heightPx) {
     host.innerHTML = '';
     const value = String(text || '');
@@ -14,9 +60,11 @@
           format: 'CODE128',
           displayValue: false,
           margin: 0,
-          height: Math.max(20, (heightPx || 40) - 4),
-          width: 1.1
+          height: Math.max(20, heightPx || 40),
+          width: 1.4
         });
+        svg.setAttribute('preserveAspectRatio', 'xMinYMin meet');
+        fitGraphicToHost(host);
       } catch {
         host.textContent = value;
       }
@@ -24,8 +72,10 @@
     }
     if (global.QRCode) {
       const box = document.createElement('div');
+      box.style.width = '100%';
+      box.style.height = '100%';
       host.appendChild(box);
-      const size = Math.max(40, Math.min(widthPx || 80, heightPx || 80) - 4);
+      const size = Math.max(48, Math.min(widthPx || 80, heightPx || 80));
       // eslint-disable-next-line no-new
       new global.QRCode(box, {
         text: value,
@@ -33,6 +83,7 @@
         height: size,
         correctLevel: global.QRCode.CorrectLevel.M
       });
+      fitGraphicToHost(host);
       return;
     }
     host.textContent = value;
@@ -45,13 +96,17 @@
     return s;
   }
 
-  /** 码图 + 可选下方文字 */
+  /**
+   * 码图 + 可选下方文字。
+   * 二维码：从元素框左上角起，边长 = min(宽, 可用高)，与设计器 X/Y 对齐。
+   * 一维码：铺满可用宽高区域顶部。
+   */
   function renderCodeBlock(host, contentType, text, widthMm, heightMm, opts = {}, options = {}) {
     host.innerHTML = '';
     host.style.display = 'flex';
     host.style.flexDirection = 'column';
-    host.style.alignItems = 'center';
-    host.style.justifyContent = 'center';
+    host.style.alignItems = 'flex-start';
+    host.style.justifyContent = 'flex-start';
     host.style.width = '100%';
     host.style.height = '100%';
     host.style.overflow = 'hidden';
@@ -61,25 +116,36 @@
     const fontPt = Number(opts.codeTextFontSize) || 8;
     const textHmm = showText ? Math.max(2.5, fontPt * 0.4 + 1.2) : 0;
     const codeHmm = Math.max(4, (Number(heightMm) || 20) - textHmm);
-    const codeWmm = Number(widthMm) || 20;
-    const pxW = Math.max(24, codeWmm * 3.5);
-    const pxH = Math.max(24, codeHmm * 3.5);
+    const codeWmm = Math.max(4, Number(widthMm) || 20);
+    const isQr = contentType !== 'barcode';
 
     const codeHost = document.createElement('div');
-    codeHost.style.flex = '1 1 auto';
-    codeHost.style.width = '100%';
-    codeHost.style.height = `${codeHmm}mm`;
-    codeHost.style.display = 'grid';
-    codeHost.style.placeItems = 'center';
+    codeHost.className = 'code-graphic';
+    codeHost.style.flex = '0 0 auto';
     codeHost.style.overflow = 'hidden';
+    codeHost.style.boxSizing = 'border-box';
+    if (isQr) {
+      const side = Math.min(codeWmm, codeHmm);
+      codeHost.style.width = `${side}mm`;
+      codeHost.style.height = `${side}mm`;
+    } else {
+      codeHost.style.width = '100%';
+      codeHost.style.height = `${codeHmm}mm`;
+    }
     host.appendChild(codeHost);
 
     if (options.previewOnly) {
-      codeHost.textContent = (contentType || 'code').toUpperCase();
-      codeHost.style.fontSize = '9px';
+      codeHost.textContent = isQr ? 'QR' : 'BAR';
+      codeHost.style.display = 'grid';
+      codeHost.style.placeItems = 'center';
+      codeHost.style.fontSize = '10px';
       codeHost.style.color = '#888';
       codeHost.style.border = '1px dashed #aaa';
+      codeHost.style.background = '#fafafa';
     } else {
+      const pxSide = mmToGenPx(isQr ? Math.min(codeWmm, codeHmm) : Math.max(codeWmm, codeHmm));
+      const pxW = isQr ? pxSide : mmToGenPx(codeWmm);
+      const pxH = isQr ? pxSide : mmToGenPx(codeHmm);
       fillCode(codeHost, contentType, text, pxW, pxH);
     }
 
@@ -155,9 +221,11 @@
         let text = Expr.resolveCellContent(cell, data, codeFallback);
         if (contentType === 'qr' || contentType === 'barcode') {
           const host = document.createElement('div');
-          // 单元格高度按行高估算
           const cellHmm = ((pct / 100) * usableH) * ((cell && cell.rowspan) || 1);
-          const cellWmm = (Number(el.w) || 30) * ((Number(colWidths[c]) || (100 / cols)) / 100);
+          const cellWmm = (Number(el.w) || 30) * ((Number(colWidths[c]) || (100 / cols)) / 100)
+            * ((cell && cell.colspan) || 1);
+          td.style.verticalAlign = 'top';
+          td.style.padding = '0';
           td.appendChild(host);
           renderCodeBlock(host, contentType, text, cellWmm, cellHmm, {
             showCodeText: !!(cell && cell.showCodeText),

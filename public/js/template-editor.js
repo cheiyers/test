@@ -472,13 +472,28 @@
           return html;
         }
         if (el.type === 'code') {
-          const tip = el.showCodeText ? 'CODE<br/><span style="font-size:9px">内容</span>' : 'CODE';
-          return `<div class="label-el code ${selected}" data-id="${el.id}" style="left:${el.x * pxPerMm}px;top:${el.y * pxPerMm}px;width:${el.w * pxPerMm}px;height:${el.h * pxPerMm}px"><div class="el-body" style="display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;line-height:1.2">${tip}</div>${handlesHtml(!!selected)}</div>`;
+          // 预览占位与打印同布局：二维码从左上角起的正方形（min(w,h)），避免整框居中造成位置错觉
+          return `<div class="label-el code ${selected}" data-id="${el.id}" style="left:${el.x * pxPerMm}px;top:${el.y * pxPerMm}px;width:${el.w * pxPerMm}px;height:${el.h * pxPerMm}px"><div class="el-body" data-code-preview="1"></div>${handlesHtml(!!selected)}</div>`;
         }
         const text = Expr.segmentsPreview(el.segments) || el.text || '';
         const fs = editorFontPx(el.fontSize || 12);
         return `<div class="label-el ${selected}" data-id="${el.id}" style="left:${el.x * pxPerMm}px;top:${el.y * pxPerMm}px;width:${el.w * pxPerMm}px;height:${el.h * pxPerMm}px;font-size:${fs}px;text-align:${el.align || 'left'};font-weight:${el.bold ? 700 : 400}"><div class="el-body">${escapeHtml(text)}</div>${handlesHtml(!!selected)}</div>`;
       }).join('');
+
+      // 设计器码区与打印 renderCodeBlock 同源布局（左上对齐）
+      $$('[data-code-preview]', canvas).forEach((body) => {
+        const node = body.closest('.label-el');
+        const el = draft.elements.find((e) => e.id === node?.dataset.id);
+        if (!el || !global.LabelRender?.renderCodeBlock) return;
+        const type = el.codeType || draft.code_type || 'qr';
+        LabelRender.renderCodeBlock(body, type, 'PREVIEW', el.w, el.h, {
+          showCodeText: !!el.showCodeText,
+          codeTextFontSize: el.codeTextFontSize || 8,
+          codeTextAlign: el.codeTextAlign || 'center',
+          codeTextBold: !!el.codeTextBold,
+          codeTextMaxLen: el.codeTextMaxLen || 0
+        }, { previewOnly: true });
+      });
 
       $$('.label-el', canvas).forEach((node) => {
         node.addEventListener('mousedown', (ev) => {

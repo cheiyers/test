@@ -1231,7 +1231,7 @@
       const lw = sample?.width_mm || 100;
       const lh = sample?.height_mm || 60;
       let pageCss = '';
-      // 标签纸：页面尺寸与模板一致。浏览器/驱动常有亚毫米误差，内容按 99% 轻微内缩，避免底行被裁。
+      // 标签纸：页面尺寸与模板一致。不用 transform 缩放（会整体偏移设计坐标）；底边用极小内边距防裁切。
       const labelSafe = opts.paper === 'label';
       if (labelSafe) {
         pageCss = `@page { size: ${lw}mm ${lh}mm; margin: 0; }`;
@@ -1278,8 +1278,6 @@
             width: ${lw}mm !important;
             height: ${lh}mm !important;
             overflow: hidden;
-            transform: scale(0.99);
-            transform-origin: top left;
             ` : 'margin: 0 auto;'}
           }
           .print-page { page-break-after: always; break-after: page; }
