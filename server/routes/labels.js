@@ -3,7 +3,20 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { requireRoles } = require('../auth');
-const { buildPrintCode } = require('../expr');
+const { buildPrintCode, templateIncludesScanId } = require('../expr');
+
+function assertBatchPrintTemplate(row, kind) {
+  if (!row) return null;
+  const tpl = formatTpl(row);
+  if (!templateIncludesScanId(tpl)) {
+    const err = new Error(
+      `${kind}模板「${tpl.name}」的条码/二维码未包含系统唯一码，不能用于订单批次打印。请改选含唯一码的模板，或在模板中加入唯一码字段。`
+    );
+    err.status = 400;
+    throw err;
+  }
+  return tpl;
+}
 
 function shortCode(prefix) {
   return `${prefix}${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
@@ -32,6 +45,12 @@ function labelRoutes(db) {
 
     if (!masterTpl || !childTpl) {
       return res.status(400).json({ error: '请先创建总包与子件标签模板' });
+    }
+    try {
+      assertBatchPrintTemplate(masterTpl, '总包');
+      assertBatchPrintTemplate(childTpl, '配件');
+    } catch (err) {
+      return res.status(err.status || 400).json({ error: err.message });
     }
 
     const masters = db.prepare(`
@@ -72,7 +91,7 @@ function labelRoutes(db) {
           db.prepare('DELETE FROM packages WHERE id = ?').run(oldPkg.id);
         }
 
-        // 扫码主键永远是系统唯一码；自定义条码内容只影响打印载荷，且必须包含唯一码
+        // 扫码主键永远是系统唯一码；打印载荷按模板拼接（可含唯一码）
         let packageCode = master.package_code || shortCode('M');
         let tryCode = packageCode;
         let n = 1;
@@ -137,8 +156,16 @@ function labelRoutes(db) {
     if ((want === 'all' || want === 'master') && !masterTpl) {
       return res.status(400).json({ error: '未找到总包标签模板' });
     }
+    if ((want === 'all' || want === 'master') && masterTpl) {
+      try { assertBatchPrintTemplate(masterTpl, '总包'); }
+      catch (err) { return res.status(err.status || 400).json({ error: err.message }); }
+    }
     if ((want === 'all' || want === 'child') && !childTpl) {
       return res.status(400).json({ error: '未找到配件标签模板' });
+    }
+    if ((want === 'all' || want === 'child') && childTpl) {
+      try { assertBatchPrintTemplate(childTpl, '配件'); }
+      catch (err) { return res.status(err.status || 400).json({ error: err.message }); }
     }
 
     const packages = db.prepare(`
@@ -306,7 +333,7 @@ function collectTemplateFields(tpl) {
 
 function formatTpl(row) {
   if (!row) return null;
-  return {
+  const tpl = {
     id: row.id,
     name: row.name,
     label_type: row.label_type,
@@ -318,6 +345,8 @@ function formatTpl(row) {
     code_type: row.code_type,
     elements: JSON.parse(row.elements_json || '[]')
   };
+  tpl.includes_scan_id = templateIncludesScanId(tpl);
+  return tpl;
 }
 
 module.exports = { labelRoutes };

@@ -68,8 +68,9 @@
         <h3>模板编辑器 — ${draft.label_type === 'master' ? '总包订单字段' : '配件订单字段'}</h3>
         <p class="muted">${fieldMeta.has_order_data ? '已检测到导入订单列，可直接点选拼接。' : '尚未导入订单时仍可手动填写列名；导入后会自动出现列清单。'}</p>
         <div class="flash info" style="margin-bottom:10px">
-          扫码匹配依赖系统唯一码字段 <code>${escapeHtml(fieldMeta.scan_id_field)}</code>。
-          条码/二维码内容可自定义拼接其他字段或固定文字，但<strong>必须包含该唯一码</strong>；保存时若缺失会自动补上。
+          系统唯一码字段为 <code>${escapeHtml(fieldMeta.scan_id_field)}</code>（可选写入条码）。
+          条码内容可自由拼接订单字段、固定文字、今日日期等；<strong>唯一码非必须</strong>。
+          若模板用于「订单批次打印」，需在条码中包含该唯一码，才会出现在打印模板列表中。
         </div>
         <div class="row">
           <label class="field"><span>名称</span><input id="tplName" value="${escapeHtml(draft.name)}" /></label>
@@ -84,7 +85,7 @@
           <label class="field"><span>标签码内容模式</span>
             <select id="tplCodeMode">
               <option value="unique" ${draft.code_mode === 'unique' ? 'selected' : ''}>仅系统唯一码</option>
-              <option value="fields" ${draft.code_mode === 'fields' ? 'selected' : ''}>唯一码 + 自定义拼接</option>
+              <option value="fields" ${draft.code_mode === 'fields' ? 'selected' : ''}>自定义拼接（唯一码可选）</option>
             </select>
           </label>
         </div>
@@ -184,13 +185,13 @@
       const box = $('#codeSegBox');
       const idField = fieldMeta.scan_id_field || Expr.scanIdField(draft.label_type);
       if (draft.code_mode !== 'fields') {
-        box.innerHTML = `<p class="muted">当前条码内容仅为系统唯一码 <code>${escapeHtml(idField)}</code>，扫码可精确匹配总包/配件。</p>`;
+        box.innerHTML = `<p class="muted">当前默认条码内容仅为系统唯一码 <code>${escapeHtml(idField)}</code>。单个码元素仍可自行配置拼接内容。</p>`;
         return;
       }
-      draft.code_segments = Expr.ensureScanIdInSegments(draft.code_segments || [], draft.label_type);
+      draft.code_segments = Array.isArray(draft.code_segments) ? draft.code_segments : [];
       box.innerHTML = `
-        <h4 style="margin:0 0 8px">条码内容拼接（必须含唯一码，可再加订单字段/固定文字）</h4>
-        <p class="muted" style="font-size:12px;margin:0 0 8px">唯一码字段：<code>${escapeHtml(idField)}</code>。可在其前后加订单号、料号等；扫码时只要内容里带有该唯一码即可匹配。</p>
+        <h4 style="margin:0 0 8px">条码内容拼接（唯一码可选；订单打印需含唯一码）</h4>
+        <p class="muted" style="font-size:12px;margin:0 0 8px">唯一码字段：<code>${escapeHtml(idField)}</code>。可加订单字段、固定文字、今日（<code>__today__</code>）。含唯一码的模板才会出现在订单批次打印列表。</p>
         <div id="codeSegments"></div>
         <div class="row" style="margin-top:8px">
           <button class="btn secondary" id="addCodeScanId" type="button">+ 唯一码</button>
@@ -206,7 +207,6 @@
           $('#codePreview').textContent = Expr.segmentsPreview(draft.code_segments);
         }, () => {
           draft.code_segments.splice(idx, 1);
-          draft.code_segments = Expr.ensureScanIdInSegments(draft.code_segments, draft.label_type);
           renderCodeSegBox();
         }));
       });
@@ -223,6 +223,29 @@
         draft.code_segments.push({ type: 'text', value: '-' });
         renderCodeSegBox();
       };
+    }
+
+
+    function fieldLabel(name) {
+      const f = String(name || '');
+      if (f === '__today__' || f === '今日' || f === '今日日期' || f.toLowerCase() === 'today') return '今日日期 (__today__)';
+      if (f === 'package_code') return '总包唯一码 (package_code)';
+      if (f === 'child_code') return '配件唯一码 (child_code)';
+      return f;
+    }
+
+    function isTodayFieldName(field) {
+      const f = String(field || '').trim().toLowerCase();
+      return f === '__today__' || f === 'today' || f === '今日' || f === '今日日期';
+    }
+
+    function fieldOptionsHtml(selected) {
+      const list = fieldMeta.fields || [];
+      const withToday = [...new Set(['__today__', ...list])];
+      return withToday.map((f) => {
+        const sel = f === (selected || '') ? 'selected' : '';
+        return `<option value="${escapeHtml(f)}" ${sel}>${escapeHtml(fieldLabel(f))}</option>`;
+      }).join('');
     }
 
     function formulaOptionsHtml(selected) {
@@ -246,17 +269,18 @@
         `;
       } else {
         const isScanId = String(seg.field || '').toLowerCase() === String(idField).toLowerCase();
+        const isToday = isTodayFieldName(seg.field);
         wrap.innerHTML = `
-          <span class="tag ${isScanId ? 'warn' : 'ok'}">${isScanId ? '唯一码' : '字段'}</span>
+          <span class="tag ${isScanId ? 'warn' : (isToday ? 'info' : 'ok')}">${isScanId ? '唯一码' : (isToday ? '今日' : '字段')}</span>
           <select data-k="field">
-            ${fieldMeta.fields.map((f) => `<option value="${escapeHtml(f)}" ${f === seg.field ? 'selected' : ''}>${escapeHtml(f)}</option>`).join('')}
-            ${seg.field && !fieldMeta.fields.includes(seg.field) ? `<option value="${escapeHtml(seg.field)}" selected>${escapeHtml(seg.field)}</option>` : ''}
+            ${fieldOptionsHtml(seg.field)}
+            ${seg.field && !(fieldMeta.fields || []).includes(seg.field) && seg.field !== '__today__' ? `<option value="${escapeHtml(seg.field)}" selected>${escapeHtml(seg.field)}</option>` : ''}
           </select>
           <input data-k="fieldManual" placeholder="或手输列名" value="" style="max-width:120px" />
           <select data-k="formulaPick" title="选择常用公式" style="max-width:160px">
             ${formulaOptionsHtml(seg.formula || '')}
           </select>
-          <input data-k="formula" list="formulaDatalist" value="${escapeHtml(seg.formula || '')}" placeholder="公式，可空；可链式" />
+          <input data-k="formula" list="formulaDatalist" value="${escapeHtml(seg.formula || '')}" placeholder="公式，可空；今日可用 FORMAT(TODAY(),&quot;yyyy-mm-dd&quot;)" />
           <button class="btn danger" type="button" data-rm>删</button>
         `;
       }
@@ -364,7 +388,8 @@
           return html;
         }
         if (el.type === 'code') {
-          return `<div class="label-el code ${selected}" data-id="${el.id}" style="left:${el.x * pxPerMm}px;top:${el.y * pxPerMm}px;width:${el.w * pxPerMm}px;height:${el.h * pxPerMm}px"><div class="el-body">CODE</div>${handlesHtml(!!selected)}</div>`;
+          const tip = el.showCodeText ? 'CODE<br/><span style="font-size:9px">内容</span>' : 'CODE';
+          return `<div class="label-el code ${selected}" data-id="${el.id}" style="left:${el.x * pxPerMm}px;top:${el.y * pxPerMm}px;width:${el.w * pxPerMm}px;height:${el.h * pxPerMm}px"><div class="el-body" style="display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;line-height:1.2">${tip}</div>${handlesHtml(!!selected)}</div>`;
         }
         const text = Expr.segmentsPreview(el.segments) || el.text || '';
         const fs = editorFontPx(el.fontSize || 12);
@@ -640,6 +665,19 @@
             </label>
           </div>
           <label class="field"><span><input type="checkbox" id="cellBold" ${cell.bold ? 'checked' : ''}/> 加粗</span></label>
+          <label class="field"><span><input type="checkbox" id="cellShowCodeText" ${cell.showCodeText ? 'checked' : ''}/> 码下方显示内容文字（二维码/一维码）</span></label>
+          <div class="grid-2" id="cellCodeTextOpts" style="${cell.showCodeText ? '' : 'display:none'}">
+            <label class="field"><span>内容字号 pt</span><input id="cellCodeTextSize" type="number" min="5" max="36" value="${cell.codeTextFontSize || 7}" /></label>
+            <label class="field"><span>内容对齐</span>
+              <select id="cellCodeTextAlign">
+                <option value="left" ${cell.codeTextAlign === 'left' ? 'selected' : ''}>左</option>
+                <option value="center" ${(cell.codeTextAlign || 'center') === 'center' ? 'selected' : ''}>中</option>
+                <option value="right" ${cell.codeTextAlign === 'right' ? 'selected' : ''}>右</option>
+              </select>
+            </label>
+            <label class="field"><span><input type="checkbox" id="cellCodeTextBold" ${cell.codeTextBold ? 'checked' : ''}/> 内容加粗</span></label>
+            <label class="field"><span>最大字符（0=不限）</span><input id="cellCodeTextMax" type="number" min="0" max="200" value="${cell.codeTextMaxLen || 0}" /></label>
+          </div>
           <h4 style="margin-top:10px">内容拼接</h4>
           <div id="cellSegs"></div>
           <div class="row" style="margin-top:8px">
@@ -652,6 +690,13 @@
           <div class="row" style="margin-top:12px"><button class="btn danger" id="delEl" type="button">删除表格</button></div>
         `;
         $('#cellAlign').value = cell.align || 'center';
+        if ($('#cellShowCodeText')) {
+          $('#cellShowCodeText').onchange = () => {
+            const on = $('#cellShowCodeText').checked;
+            const box = $('#cellCodeTextOpts');
+            if (box) box.style.display = on ? '' : 'none';
+          };
+        }
         const segHost = $('#cellSegs');
         (cell.segments || []).forEach((seg, idx) => {
           segHost.appendChild(segmentEditorRow(seg, idx, (next) => {
@@ -712,14 +757,16 @@
           cell.fontSize = Number($('#cellSize').value) || 10;
           cell.align = $('#cellAlign').value;
           cell.bold = $('#cellBold').checked;
+          cell.showCodeText = !!( $('#cellShowCodeText') && $('#cellShowCodeText').checked );
+          cell.codeTextFontSize = Number($('#cellCodeTextSize')?.value) || 7;
+          cell.codeTextAlign = $('#cellCodeTextAlign')?.value || 'center';
+          cell.codeTextBold = !!( $('#cellCodeTextBold') && $('#cellCodeTextBold').checked );
+          cell.codeTextMaxLen = Number($('#cellCodeTextMax')?.value) || 0;
           if ($('#cellColW')) {
             el.colWidths = Expr.setPercentAt(el.colWidths, cell.c, Number($('#cellColW').value), el.cols);
           }
           if ($('#cellRowH')) {
             el.rowHeights = Expr.setPercentAt(el.rowHeights, cell.r, Number($('#cellRowH').value), el.rows);
-          }
-          if (cell.contentType === 'qr' || cell.contentType === 'barcode') {
-            cell.segments = Expr.ensureScanIdInSegments(cell.segments || [], draft.label_type);
           }
           Expr.ensureTableLayout(el);
           renderCanvas();
@@ -766,7 +813,20 @@
               <option value="qr" ${(el.codeType || draft.code_type) === 'qr' ? 'selected' : ''}>二维码</option>
               <option value="barcode" ${(el.codeType || draft.code_type) === 'barcode' ? 'selected' : ''}>一维码</option>
             </select>
-          </label>` : `
+          </label>
+          <label class="field"><span><input type="checkbox" id="elShowCodeText" ${el.showCodeText ? 'checked' : ''}/> 在码下方显示内容文字</span></label>
+          <div class="grid-2" id="elCodeTextOpts" style="${el.showCodeText ? '' : 'display:none'}">
+            <label class="field"><span>内容字号 pt</span><input id="elCodeTextSize" type="number" min="5" max="36" value="${el.codeTextFontSize || 8}" /></label>
+            <label class="field"><span>内容对齐</span>
+              <select id="elCodeTextAlign">
+                <option value="left" ${el.codeTextAlign === 'left' ? 'selected' : ''}>左</option>
+                <option value="center" ${(el.codeTextAlign || 'center') === 'center' ? 'selected' : ''}>中</option>
+                <option value="right" ${el.codeTextAlign === 'right' ? 'selected' : ''}>右</option>
+              </select>
+            </label>
+            <label class="field"><span><input type="checkbox" id="elCodeTextBold" ${el.codeTextBold ? 'checked' : ''}/> 内容加粗</span></label>
+            <label class="field"><span>最大字符（0=不限）</span><input id="elCodeTextMax" type="number" min="0" max="200" value="${el.codeTextMaxLen || 0}" /></label>
+          </div>` : `
           <label class="field"><span>字号</span><input id="elSize" type="number" value="${el.fontSize || 12}" /></label>
           <label class="field"><span>对齐</span>
             <select id="elAlign"><option value="left">左</option><option value="center">中</option><option value="right">右</option></select>
@@ -785,6 +845,13 @@
         <div class="muted" style="margin-top:6px">预览：<code id="elPreview"></code></div>
       `;
       if ($('#elAlign')) $('#elAlign').value = el.align || 'left';
+      if ($('#elShowCodeText')) {
+        $('#elShowCodeText').onchange = () => {
+          const on = $('#elShowCodeText').checked;
+          const box = $('#elCodeTextOpts');
+          if (box) box.style.display = on ? '' : 'none';
+        };
+      }
       const segHost = $('#elSegs');
       (el.segments || []).forEach((seg, idx) => {
         segHost.appendChild(segmentEditorRow(seg, idx, (next) => {
@@ -813,7 +880,11 @@
         el.y = Number($('#elY').value);
         if (el.type === 'code') {
           el.codeType = $('#elCodeType').value;
-          el.segments = Expr.ensureScanIdInSegments(el.segments || [], draft.label_type);
+          el.showCodeText = !!( $('#elShowCodeText') && $('#elShowCodeText').checked );
+          el.codeTextFontSize = Number($('#elCodeTextSize')?.value) || 8;
+          el.codeTextAlign = $('#elCodeTextAlign')?.value || 'center';
+          el.codeTextBold = !!( $('#elCodeTextBold') && $('#elCodeTextBold').checked );
+          el.codeTextMaxLen = Number($('#elCodeTextMax')?.value) || 0;
         } else {
           el.fontSize = Number($('#elSize').value) || 12;
           el.align = $('#elAlign').value;
@@ -895,22 +966,9 @@
 
     $('#saveTplBtn').onclick = async () => {
       syncMeta();
-      if (draft.code_mode === 'fields') {
-        draft.code_segments = Expr.ensureScanIdInSegments(draft.code_segments || [], draft.label_type);
-      }
+      draft.code_segments = Array.isArray(draft.code_segments) ? draft.code_segments : [];
       draft.elements = (draft.elements || []).map((el) => {
         const copy = { ...el };
-        if (copy.type === 'code') {
-          copy.segments = Expr.ensureScanIdInSegments(copy.segments || [], draft.label_type);
-        }
-        if (copy.type === 'table' && Array.isArray(copy.cells)) {
-          copy.cells = copy.cells.map((cell) => {
-            if (cell.contentType === 'qr' || cell.contentType === 'barcode') {
-              return { ...cell, segments: Expr.ensureScanIdInSegments(cell.segments || [], draft.label_type) };
-            }
-            return cell;
-          });
-        }
         return copy;
       });
       draft.code_fields = (draft.code_segments || [])

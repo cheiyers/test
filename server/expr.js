@@ -14,6 +14,11 @@
 
 const FORMULA_CATALOG = [
   { value: '', label: '无（原值）', hint: '不做变换' },
+  { value: 'FORMAT(TODAY(),"yyyy-mm-dd")', label: '今日 FORMAT(TODAY(),"yyyy-mm-dd")', hint: '取今天，输出 2026-08-17' },
+  { value: 'FORMAT(TODAY(),"yyyy/mm/dd")', label: '今日 FORMAT(TODAY(),"yyyy/mm/dd")', hint: '取今天' },
+  { value: 'FORMAT(TODAY(),"yyyy年mm月dd日")', label: '今日中文日期', hint: '2026年08月17日' },
+  { value: 'FORMAT(TODAY(),"yyyymmdd")', label: '今日紧凑日期', hint: '20260817' },
+  { value: 'TODAY()', label: 'TODAY()', hint: '今日（默认 yyyy-mm-dd），可再套 FORMAT' },
   { value: 'FORMAT(,"yyyy-mm-dd")', label: '日期格式 FORMAT(,"yyyy-mm-dd")', hint: '2026/7/25 → 2026-07-25' },
   { value: 'FORMAT(,"yyyy/mm/dd")', label: '日期 FORMAT(,"yyyy/mm/dd")', hint: '2026/7/25 → 2026/07/25' },
   { value: 'FORMAT(,"yyyy年mm月dd日")', label: '中文日期 FORMAT(,"yyyy年mm月dd日")', hint: '2026/7/25 → 2026年07月25日' },
@@ -39,8 +44,34 @@ const FORMULA_CATALOG = [
   { value: 'format:yyyy-mm-dd', label: '旧式 format:yyyy-mm-dd', hint: '仍兼容' }
 ];
 
+function todayIsoDate() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function todayIsoDateTime() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return `${y}-${m}-${day} ${hh}:${mi}:${ss}`;
+}
+
+function isTodayFieldName(field) {
+  const f = String(field || '').trim().toLowerCase();
+  return f === '__today__' || f === 'today' || f === '今日' || f === '今日日期';
+}
+
 function getField(data, field) {
-  if (!field || !data) return '';
+  if (!field) return '';
+  if (isTodayFieldName(field)) return todayIsoDate();
+  if (!data) return '';
   if (Object.prototype.hasOwnProperty.call(data, field)) {
     return data[field] == null ? '' : String(data[field]);
   }
@@ -263,7 +294,7 @@ function looksLikeExcelExpr(formula) {
   if (/\{[^}]+\}/.test(f)) return true;
   if (findTopLevelOp(f) && /[A-Za-z_(]/.test(f)) return true;
   if (findTopLevelAddSub(f) || findTopLevelMulDiv(f)) return true;
-  if (/^(IF|TEXT|FORMAT|LEFT|RIGHT|MID|TRIM|UPPER|LOWER|LEN|FIELD|VALUE|CONCAT)\b/i.test(f)) return true;
+  if (/^(IF|TEXT|FORMAT|LEFT|RIGHT|MID|TRIM|UPPER|LOWER|LEN|FIELD|VALUE|CONCAT|TODAY|NOW)\b/i.test(f)) return true;
   return false;
 }
 
@@ -503,6 +534,8 @@ function callFunc(name, args, ctx) {
   const a0 = () => (args.length && args[0] !== '' && args[0] != null ? String(args[0]) : cur());
 
   if (n === 'VALUE' || n === 'VAL') return cur();
+  if (n === 'TODAY') return todayIsoDate();
+  if (n === 'NOW') return todayIsoDateTime();
   if (n === 'FIELD') {
     const key = unquote(args[0] || '');
     return getField(ctx.data, key);
@@ -970,7 +1003,7 @@ function ensureScanIdInSegments(segments, labelType) {
 function buildPrintCode(tpl, data, uniqueId, labelType) {
   const uid = String(uniqueId || '').trim();
   const idField = scanIdField(labelType || tpl?.label_type);
-  const merged = { ...(data || {}), [idField]: uid };
+  const merged = { ...(data || {}), [idField]: uid, __today__: todayIsoDate() };
   const mode = tpl?.code_mode || 'unique';
   if (mode === 'unique') return uid;
 
@@ -984,11 +1017,36 @@ function buildPrintCode(tpl, data, uniqueId, labelType) {
       segs = fields.map((f) => ({ type: 'field', field: f, formula: '' }));
     }
   }
-  segs = ensureScanIdInSegments(segs || [], labelType || tpl?.label_type);
-  const printed = evalSegments(segs, merged).trim();
-  if (!printed) return uid;
-  if (printed.includes(uid)) return printed;
-  return `${printed}|${uid}`;
+  // 唯一码非必须：按用户配置的片段原样拼接
+  const printed = evalSegments(segs || [], merged).trim();
+  return printed;
+}
+
+/** 模板中条码/二维码是否包含系统唯一码（订单批次打印可选模板用） */
+function templateIncludesScanId(tpl) {
+  if (!tpl) return false;
+  const labelType = tpl.label_type === 'child' ? 'child' : 'master';
+  if (tpl.code_mode === 'unique') {
+    const els = tpl.elements || [];
+    return els.some((el) => {
+      if (el.type === 'code') return true;
+      if (el.type === 'table') {
+        return (el.cells || []).some((c) => c.contentType === 'qr' || c.contentType === 'barcode');
+      }
+      return false;
+    });
+  }
+  if (segmentsIncludeScanId(tpl.code_segments, labelType)) return true;
+  return (tpl.elements || []).some((el) => {
+    if (el.type === 'code' && segmentsIncludeScanId(el.segments, labelType)) return true;
+    if (el.type === 'table') {
+      return (el.cells || []).some((c) =>
+        (c.contentType === 'qr' || c.contentType === 'barcode') &&
+        segmentsIncludeScanId(c.segments, labelType)
+      );
+    }
+    return false;
+  });
 }
 
 module.exports = {
@@ -1002,6 +1060,8 @@ module.exports = {
   scanIdField,
   segmentsIncludeScanId,
   ensureScanIdInSegments,
+  templateIncludesScanId,
+  todayIsoDate,
   buildPrintCode,
   formatValue,
   parseDateLoose,

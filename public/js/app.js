@@ -891,7 +891,7 @@
                 <td>${escapeHtml(t.name)}</td>
                 <td>${t.label_type === 'master' ? '总包' : '子件'}</td>
                 <td>${t.width_mm} × ${t.height_mm}</td>
-                <td>${t.code_mode === 'unique' ? '唯一编号' : '字段拼接'} / ${t.code_type}</td>
+                <td>${t.code_mode === 'unique' ? '唯一编号' : '自定义拼接'} / ${t.code_type}${t.includes_scan_id ? ' · 含唯一码' : ' · 无唯一码'}</td>
                 <td>${escapeHtml(t.updated_at)}</td>
                 <td>
                   <button class="btn secondary" data-edit="${t.id}" type="button">编辑</button>
@@ -955,8 +955,15 @@
     ]);
     const labelled = (batches.items || []).filter((b) => b.status === 'associated' || b.status === 'labelled');
     const templates = allTpls.items || [...(masterTpls.items || []), ...(childTpls.items || [])];
+    const orderMasterTpls = (masterTpls.items || []).filter((t) => t.includes_scan_id);
+    const orderChildTpls = (childTpls.items || []).filter((t) => t.includes_scan_id);
     let printMode = 'order'; // order | manual
     let lastLabels = [];
+
+    function tplOptions(list, emptyText) {
+      if (!list.length) return `<option value="">${escapeHtml(emptyText || '暂无可用模板')}</option>`;
+      return list.map((t) => `<option value="${t.id}">${escapeHtml(t.name)}（${t.width_mm}×${t.height_mm}mm）</option>`).join('');
+    }
 
     root.innerHTML = `
       <div class="card">
@@ -982,13 +989,14 @@
                 <option value="child">仅配件标签</option>
               </select>
             </label>
-            <label class="field"><span>总包模板</span>
-              <select id="printMasterTpl">${(masterTpls.items || []).map((t) => `<option value="${t.id}">${escapeHtml(t.name)}（${t.width_mm}×${t.height_mm}mm）</option>`).join('')}</select>
+            <label class="field"><span>总包模板（含唯一码）</span>
+              <select id="printMasterTpl">${tplOptions(orderMasterTpls, '无含唯一码的总包模板')}</select>
             </label>
-            <label class="field"><span>配件模板</span>
-              <select id="printChildTpl">${(childTpls.items || []).map((t) => `<option value="${t.id}">${escapeHtml(t.name)}（${t.width_mm}×${t.height_mm}mm）</option>`).join('')}</select>
+            <label class="field"><span>配件模板（含唯一码）</span>
+              <select id="printChildTpl">${tplOptions(orderChildTpls, '无含唯一码的配件模板')}</select>
             </label>
           </div>
+          <p class="muted" style="margin-top:8px;font-size:12px">订单批次打印仅列出条码/二维码中包含系统唯一码的模板；不含唯一码的模板请用「自定义打印」。</p>
           <div class="row" style="margin-top:12px;flex-wrap:wrap;gap:8px">
             <button class="btn" id="genLabelsBtn" type="button">生成标签码</button>
             <button class="btn secondary" id="loadPrintBtn" type="button">加载预览</button>

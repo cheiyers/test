@@ -38,13 +38,67 @@
     host.textContent = value;
   }
 
-  function ensureCodeHasScanId(content, scanId) {
-    const c = String(content || '');
-    const id = String(scanId || '');
-    if (!id) return c;
-    if (!c) return id;
-    if (c.includes(id)) return c;
-    return `${c}|${id}`;
+  function formatCodeCaption(text, opts = {}) {
+    let s = String(text || '');
+    const max = Number(opts.codeTextMaxLen) || 0;
+    if (max > 0 && s.length > max) s = `${s.slice(0, max)}…`;
+    return s;
+  }
+
+  /** 码图 + 可选下方文字 */
+  function renderCodeBlock(host, contentType, text, widthMm, heightMm, opts = {}, options = {}) {
+    host.innerHTML = '';
+    host.style.display = 'flex';
+    host.style.flexDirection = 'column';
+    host.style.alignItems = 'center';
+    host.style.justifyContent = 'center';
+    host.style.width = '100%';
+    host.style.height = '100%';
+    host.style.overflow = 'hidden';
+    host.style.boxSizing = 'border-box';
+
+    const showText = !!opts.showCodeText;
+    const fontPt = Number(opts.codeTextFontSize) || 8;
+    const textHmm = showText ? Math.max(2.5, fontPt * 0.4 + 1.2) : 0;
+    const codeHmm = Math.max(4, (Number(heightMm) || 20) - textHmm);
+    const codeWmm = Number(widthMm) || 20;
+    const pxW = Math.max(24, codeWmm * 3.5);
+    const pxH = Math.max(24, codeHmm * 3.5);
+
+    const codeHost = document.createElement('div');
+    codeHost.style.flex = '1 1 auto';
+    codeHost.style.width = '100%';
+    codeHost.style.height = `${codeHmm}mm`;
+    codeHost.style.display = 'grid';
+    codeHost.style.placeItems = 'center';
+    codeHost.style.overflow = 'hidden';
+    host.appendChild(codeHost);
+
+    if (options.previewOnly) {
+      codeHost.textContent = (contentType || 'code').toUpperCase();
+      codeHost.style.fontSize = '9px';
+      codeHost.style.color = '#888';
+      codeHost.style.border = '1px dashed #aaa';
+    } else {
+      fillCode(codeHost, contentType, text, pxW, pxH);
+    }
+
+    if (showText) {
+      const caption = document.createElement('div');
+      caption.className = 'code-caption';
+      caption.textContent = formatCodeCaption(text, opts);
+      caption.style.flex = '0 0 auto';
+      caption.style.width = '100%';
+      caption.style.maxHeight = `${textHmm}mm`;
+      caption.style.overflow = 'hidden';
+      caption.style.fontSize = `${fontPt}pt`;
+      caption.style.lineHeight = '1.15';
+      caption.style.textAlign = opts.codeTextAlign || 'center';
+      caption.style.fontWeight = opts.codeTextBold ? '700' : '400';
+      caption.style.wordBreak = 'break-all';
+      caption.style.paddingTop = '0.3mm';
+      host.appendChild(caption);
+    }
   }
 
   function renderTableElement(el, data, codeFallback, options = {}) {
@@ -64,9 +118,8 @@
     const colWidths = el.colWidths || Array.from({ length: cols }, () => 100 / cols);
     const rowHeights = el.rowHeights || Array.from({ length: rows }, () => 100 / rows);
 
-    // 百分比行高 + 边框在固定高度容器内常把末行挤没；改为按元件高度(mm)分配，并预留边框厚度
     const elH = Math.max(1, Number(el.h) || 10);
-    const borderMm = 0.27; // ≈1 CSS px @ 96dpi
+    const borderMm = 0.27;
     const usableH = Math.max(1, elH - borderMm * (rows + 1));
 
     const colgroup = document.createElement('colgroup');
@@ -101,21 +154,18 @@
         const contentType = (cell && cell.contentType) || 'text';
         let text = Expr.resolveCellContent(cell, data, codeFallback);
         if (contentType === 'qr' || contentType === 'barcode') {
-          text = ensureCodeHasScanId(text, codeFallback || data?.child_code || data?.package_code);
           const host = document.createElement('div');
-          host.style.width = '100%';
-          host.style.height = '100%';
-          host.style.minHeight = '20px';
-          host.style.display = 'grid';
-          host.style.placeItems = 'center';
+          // 单元格高度按行高估算
+          const cellHmm = ((pct / 100) * usableH) * ((cell && cell.rowspan) || 1);
+          const cellWmm = (Number(el.w) || 30) * ((Number(colWidths[c]) || (100 / cols)) / 100);
           td.appendChild(host);
-          if (!options.previewOnly) {
-            fillCode(host, contentType, text, 72, 48);
-          } else {
-            host.textContent = contentType.toUpperCase();
-            host.style.fontSize = '9px';
-            host.style.color = '#888';
-          }
+          renderCodeBlock(host, contentType, text, cellWmm, cellHmm, {
+            showCodeText: !!(cell && cell.showCodeText),
+            codeTextFontSize: (cell && cell.codeTextFontSize) || 7,
+            codeTextAlign: (cell && cell.codeTextAlign) || (cell && cell.align) || 'center',
+            codeTextBold: !!(cell && cell.codeTextBold),
+            codeTextMaxLen: (cell && cell.codeTextMaxLen) || 0
+          }, options);
         } else {
           td.textContent = text;
         }
@@ -153,19 +203,17 @@
       if (el.type === 'table') {
         node.appendChild(renderTableElement(el, label.data, label.scan_id || label.code, options));
       } else if (el.type === 'code') {
-        node.style.display = 'grid';
-        node.style.placeItems = 'center';
         let content = Expr.resolveElementContent(el, label.data, label.code);
-        content = ensureCodeHasScanId(content, label.scan_id || label.data?.child_code || label.data?.package_code || label.code);
+        // 不再强制追加唯一码；按模板片段原样输出
+        if (!content) content = label.scan_id || label.code || '';
         const type = el.codeType || tpl.code_type || 'qr';
-        if (options.previewOnly) {
-          node.textContent = 'CODE';
-          node.style.fontSize = '10px';
-          node.style.color = '#888';
-          node.style.border = '1px dashed #aaa';
-        } else {
-          fillCode(node, type, content, el.w * 3.5, el.h * 3.5);
-        }
+        renderCodeBlock(node, type, content, el.w, el.h, {
+          showCodeText: !!el.showCodeText,
+          codeTextFontSize: el.codeTextFontSize || 8,
+          codeTextAlign: el.codeTextAlign || 'center',
+          codeTextBold: !!el.codeTextBold,
+          codeTextMaxLen: el.codeTextMaxLen || 0
+        }, options);
       } else {
         node.style.fontSize = `${el.fontSize || 11}pt`;
         node.style.textAlign = el.align || 'left';
@@ -178,5 +226,5 @@
     });
   }
 
-  global.LabelRender = { renderLabelTo, renderTableElement, fillCode };
+  global.LabelRender = { renderLabelTo, renderTableElement, fillCode, renderCodeBlock };
 })(window);
