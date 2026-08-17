@@ -924,14 +924,130 @@ function applyFormula(raw, formula, data) {
   return val == null ? '' : String(val);
 }
 
+
+function clampSerialWidth(w) {
+  const n = Number(w);
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.min(12, Math.floor(n));
+}
+
+function normalizeSerialStyle(style) {
+  const s = String(style || 'numeric').toLowerCase();
+  if (s === 'upper' || s === 'upper_alpha' || s === 'alpha' || s === 'letter' || s === 'en') return 'upper';
+  if (s === 'lower' || s === 'lower_alpha') return 'lower';
+  if (s === 'alnum' || s === 'alphanum' || s === 'base36') return 'alnum';
+  return 'numeric';
+}
+
+/** Parse user start value into 1-based sequence number */
+/** Parse start into a 0-based sequence counter for the given style */
+function parseSerialStart(start, style) {
+  const st = normalizeSerialStyle(style);
+  const raw = String(start == null ? '' : start).trim();
+  if (st === 'numeric') {
+    const n = parseInt(raw || '1', 10);
+    // numeric uses 1-based display values: start 1 -> counter 1
+    return Number.isFinite(n) && n > 0 ? n : 1;
+  }
+  if (st === 'upper' || st === 'lower') {
+    // A=0, B=1, ... Z=25, AA=26 (fixed-base alphabet, A=0)
+    const letters = raw.replace(/[^a-zA-Z]/g, '') || 'A';
+    const s = letters.toUpperCase();
+    let n = 0;
+    for (let i = 0; i < s.length; i++) {
+      n = n * 26 + (s.charCodeAt(i) - 65);
+    }
+    return Math.max(0, n);
+  }
+  // alnum base36 0-9A-Z, 0-based
+  const s = (raw || '0').toUpperCase().replace(/[^0-9A-Z]/g, '') || '0';
+  let n = 0;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    const v = ch >= '0' && ch <= '9' ? ch.charCodeAt(0) - 48 : ch.charCodeAt(0) - 55;
+    n = n * 36 + v;
+  }
+  return Math.max(0, n);
+}
+
+function toFixedAlpha(n0, width, lower) {
+  let x = Math.max(0, Math.floor(n0));
+  let out = '';
+  const w = Math.max(1, width);
+  for (let i = 0; i < w; i++) {
+    out = String.fromCharCode((lower ? 97 : 65) + (x % 26)) + out;
+    x = Math.floor(x / 26);
+  }
+  while (x > 0) {
+    out = String.fromCharCode((lower ? 97 : 65) + (x % 26)) + out;
+    x = Math.floor(x / 26);
+  }
+  return out;
+}
+
+function toAlnum(n0, width) {
+  let x = Math.max(0, Math.floor(n0));
+  const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  let out = '';
+  const w = Math.max(1, width);
+  for (let i = 0; i < w; i++) {
+    out = chars[x % 36] + out;
+    x = Math.floor(x / 36);
+  }
+  while (x > 0) {
+    out = chars[x % 36] + out;
+    x = Math.floor(x / 36);
+  }
+  return out;
+}
+
+/**
+ * Format serial for label index (0-based offset from start).
+ * seg: { style, width, start, connector }
+ */
+function formatSerialSeg(seg, serialIndex) {
+  const style = normalizeSerialStyle(seg && seg.style);
+  const width = clampSerialWidth(seg && seg.width);
+  const startNum = parseSerialStart(seg && seg.start, style);
+  const idx = Math.max(0, Number(serialIndex) || 0);
+  const n = startNum + idx;
+  let body = '';
+  if (style === 'numeric') {
+    body = String(n).padStart(width, '0');
+    if (body.length > width) body = String(n);
+  } else if (style === 'upper') {
+    body = toFixedAlpha(n, width, false);
+  } else if (style === 'lower') {
+    body = toFixedAlpha(n, width, true);
+  } else {
+    body = toAlnum(n, width);
+  }
+  const conn = seg && seg.connector != null ? String(seg.connector) : '-';
+  return conn + body;
+}
+
+function serialSegPreview(seg) {
+  const conn = seg && seg.connector != null ? String(seg.connector) : '-';
+  const sample = formatSerialSeg(seg || {}, 0);
+  // sample already includes connector
+  const style = normalizeSerialStyle(seg && seg.style);
+  const width = clampSerialWidth(seg && seg.width);
+  return `[序号${style}:${width}位 起${String((seg && seg.start) || '1')} → ${sample}]`;
+}
+
+
 function evalSegments(segments, data) {
   if (!Array.isArray(segments) || !segments.length) return '';
+  const serialIndex = data && (data.__serial_index != null ? data.__serial_index : data._serial_index);
   return segments.map((seg) => {
     if (!seg) return '';
     if (seg.type === 'text') return seg.value == null ? '' : String(seg.value);
     if (seg.type === 'field') {
       const raw = getField(data, seg.field);
       return applyFormula(raw, seg.formula, data);
+    }
+    if (seg.type === 'serial') {
+      return formatSerialSeg(seg, serialIndex);
     }
     return '';
   }).join('');
@@ -1039,6 +1155,7 @@ function templateIncludesScanId(tpl) {
     return segments.map((s) => {
       if (s.type === 'text') return s.value || '';
       if (s.type === 'field') return '{' + (s.field || '?') + (s.formula ? '|' + s.formula : '') + '}';
+      if (s.type === 'serial') return formatSerialSeg(s, 0);
       return '';
     }).join('');
   }
@@ -1123,6 +1240,7 @@ function templateIncludesScanId(tpl) {
     FORMULA_CATALOG, getField, applyFormula, evalSegments, evalTemplateText,
     resolveElementContent, resolveCellContent, segmentsPreview, scanIdField,
     segmentsIncludeScanId, ensureScanIdInSegments, templateIncludesScanId, buildPrintCode, formatValue, todayIsoDate,
+    formatSerialSeg, parseSerialStart, serialSegPreview, normalizeSerialStyle,
     parseDateLoose, evalExpr, buildOccupiedMap, ensureTableCells, normalizePercents,
     resizePercents, setPercentAt, ensureTableLayout
   };

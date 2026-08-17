@@ -177,6 +177,7 @@ function labelRoutes(db) {
     `).all(batch_id);
 
     const labels = [];
+    let serialIndex = 0;
     for (const pkg of packages) {
       const masterRaw = JSON.parse(pkg.master_raw);
       const masterData = {
@@ -188,15 +189,17 @@ function labelRoutes(db) {
 
       if (want === 'all' || want === 'master') {
         const masterTplFmt = formatTpl(masterTpl);
-        const masterPrintCode = buildPrintCode(masterTplFmt, masterData, pkg.package_code, 'master');
+        const dataWithSerial = { ...masterData, __serial_index: serialIndex };
+        const masterPrintCode = buildPrintCode(masterTplFmt, dataWithSerial, pkg.package_code, 'master');
         labels.push({
           type: 'master',
           code: masterPrintCode,
           scan_id: pkg.package_code,
           order_no: pkg.order_no,
-          data: masterData,
+          data: dataWithSerial,
           template: masterTplFmt
         });
+        serialIndex += 1;
       }
 
       if (want === 'all' || want === 'child') {
@@ -216,7 +219,8 @@ function labelRoutes(db) {
             part_no: ch.part_no,
             qty: ch.qty,
             child_code: ch.child_code,
-            package_code: pkg.package_code
+            package_code: pkg.package_code,
+            __serial_index: serialIndex
           };
           const childTplFmt = formatTpl(childTpl);
           const childPrintCode = buildPrintCode(childTplFmt, childData, ch.child_code, 'child');
@@ -228,6 +232,7 @@ function labelRoutes(db) {
             data: childData,
             template: childTplFmt
           });
+          serialIndex += 1;
         }
       }
     }
@@ -254,23 +259,23 @@ function labelRoutes(db) {
       data.package_code = scanId;
     }
 
-    let printCode = String(body.code || '').trim();
-    if (!printCode) {
-      try {
-        printCode = buildPrintCode(tpl, data, scanId, tpl.label_type);
-      } catch {
-        printCode = scanId;
-      }
-    }
-
     const labels = [];
     for (let i = 0; i < copies; i++) {
+      const dataWithSerial = { ...data, __serial_index: i };
+      let copyCode = String(body.code || '').trim();
+      if (!copyCode) {
+        try {
+          copyCode = buildPrintCode(tpl, dataWithSerial, scanId, tpl.label_type);
+        } catch {
+          copyCode = scanId;
+        }
+      }
       labels.push({
         type: tpl.label_type,
-        code: printCode,
+        code: copyCode,
         scan_id: scanId,
         order_no: data.order_no || '',
-        data: { ...data },
+        data: dataWithSerial,
         template: tpl,
         manual: true
       });

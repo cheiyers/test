@@ -69,8 +69,9 @@
         <p class="muted">${fieldMeta.has_order_data ? '已检测到导入订单列，可直接点选拼接。' : '尚未导入订单时仍可手动填写列名；导入后会自动出现列清单。'}</p>
         <div class="flash info" style="margin-bottom:10px">
           系统唯一码字段为 <code>${escapeHtml(fieldMeta.scan_id_field)}</code>（可选写入条码）。
-          条码内容可自由拼接订单字段、固定文字、今日日期等；<strong>唯一码非必须</strong>。
+          条码内容可自由拼接订单字段、固定文字、今日日期、序列号等；<strong>唯一码非必须</strong>。
           若模板用于「订单批次打印」，需在条码中包含该唯一码，才会出现在打印模板列表中。
+          序列号可自定义连接符、数字/英文样式、位数与起始值，打印时按张递增。
         </div>
         <div class="row">
           <label class="field"><span>名称</span><input id="tplName" value="${escapeHtml(draft.name)}" /></label>
@@ -197,6 +198,7 @@
           <button class="btn secondary" id="addCodeScanId" type="button">+ 唯一码</button>
           <button class="btn secondary" id="addCodeField" type="button">+ 订单字段</button>
           <button class="btn secondary" id="addCodeText" type="button">+ 任意字符</button>
+          <button class="btn secondary" id="addCodeSerial" type="button">+ 序列号</button>
         </div>
         <div class="muted" style="margin-top:6px">预览：<code id="codePreview"></code></div>
       `;
@@ -221,6 +223,10 @@
       };
       $('#addCodeText').onclick = () => {
         draft.code_segments.push({ type: 'text', value: '-' });
+        renderCodeSegBox();
+      };
+      $('#addCodeSerial').onclick = () => {
+        draft.code_segments.push(defaultSerialSeg());
         renderCodeSegBox();
       };
     }
@@ -267,6 +273,30 @@
           <input data-k="value" value="${escapeHtml(seg.value || '')}" placeholder="任意字符，如 - / _ 空格" />
           <button class="btn danger" type="button" data-rm>删</button>
         `;
+      } else if (seg.type === 'serial') {
+        const style = Expr.normalizeSerialStyle ? Expr.normalizeSerialStyle(seg.style) : (seg.style || 'numeric');
+        wrap.innerHTML = `
+          <span class="tag warn">序列号</span>
+          <label class="muted" style="font-size:12px">连接符
+            <input data-k="connector" value="${escapeHtml(seg.connector != null ? seg.connector : '-')}" placeholder="如 - / _" style="width:56px" title="主内容与序列号之间的字符，可留空" />
+          </label>
+          <label class="muted" style="font-size:12px">样式
+            <select data-k="style" style="max-width:110px">
+              <option value="numeric" ${style === 'numeric' ? 'selected' : ''}>数字 001</option>
+              <option value="upper" ${style === 'upper' ? 'selected' : ''}>大写英文 AAA</option>
+              <option value="lower" ${style === 'lower' ? 'selected' : ''}>小写英文 aaa</option>
+              <option value="alnum" ${style === 'alnum' ? 'selected' : ''}>数字+大写 0-9A-Z</option>
+            </select>
+          </label>
+          <label class="muted" style="font-size:12px">位数
+            <input data-k="width" type="number" min="1" max="12" value="${Number(seg.width) || 3}" style="width:56px" />
+          </label>
+          <label class="muted" style="font-size:12px">起始
+            <input data-k="start" value="${escapeHtml(seg.start != null ? seg.start : (style === 'upper' ? 'A' : style === 'lower' ? 'a' : '1'))}" placeholder="1 / A" style="width:64px" />
+          </label>
+          <span class="muted" style="font-size:11px">例 ${escapeHtml((Expr.formatSerialSeg && Expr.formatSerialSeg(seg, 0)) || '')}</span>
+          <button class="btn danger" type="button" data-rm>删</button>
+        `;
       } else {
         const isScanId = String(seg.field || '').toLowerCase() === String(idField).toLowerCase();
         const isToday = isTodayFieldName(seg.field);
@@ -300,12 +330,29 @@
             next.formula = input.value;
           } else if (input.dataset.k === 'value') {
             next.value = input.value;
+          } else if (input.dataset.k === 'connector') {
+            next.connector = input.value;
+          } else if (input.dataset.k === 'style') {
+            next.style = input.value;
+          } else if (input.dataset.k === 'width') {
+            next.width = Number(input.value) || 3;
+          } else if (input.dataset.k === 'start') {
+            next.start = input.value;
           }
           onChange(next);
+          // live sample for serial
+          if (next.type === 'serial') {
+            const tip = wrap.querySelector('.muted[style*="font-size:11px"]');
+            if (tip && Expr.formatSerialSeg) tip.textContent = '例 ' + Expr.formatSerialSeg(next, 0);
+          }
         });
       });
       wrap.querySelector('[data-rm]').onclick = onRemove;
       return wrap;
+    }
+
+    function defaultSerialSeg() {
+      return { type: 'serial', connector: '-', style: 'numeric', width: 3, start: '1' };
     }
 
     const RESIZE_HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
@@ -684,6 +731,7 @@
             <button class="btn secondary" id="addCellScanId" type="button">+ 唯一码</button>
             <button class="btn secondary" id="addCellField" type="button">+ 订单字段</button>
             <button class="btn secondary" id="addCellText" type="button">+ 任意字符</button>
+            <button class="btn secondary" id="addCellSerial" type="button">+ 序列号</button>
             <button class="btn" id="applyCell" type="button">应用单元格</button>
           </div>
           <div class="muted" style="margin-top:6px">预览：<code id="cellPreview"></code></div>
@@ -750,6 +798,11 @@
         $('#addCellText').onclick = () => {
           cell.segments = cell.segments || [];
           cell.segments.push({ type: 'text', value: '-' });
+          renderProps();
+        };
+        $('#addCellSerial').onclick = () => {
+          cell.segments = cell.segments || [];
+          cell.segments.push(defaultSerialSeg());
           renderProps();
         };
         $('#applyCell').onclick = () => {
@@ -839,6 +892,7 @@
           <button class="btn secondary" id="addElScanId" type="button">+ 唯一码</button>
           <button class="btn secondary" id="addElField" type="button">+ 订单字段</button>
           <button class="btn secondary" id="addElText" type="button">+ 任意字符</button>
+          <button class="btn secondary" id="addElSerial" type="button">+ 序列号</button>
           <button class="btn" id="applyEl" type="button">应用</button>
           <button class="btn danger" id="delEl" type="button">删除</button>
         </div>
@@ -873,6 +927,10 @@
       };
       $('#addElText').onclick = () => {
         el.segments.push({ type: 'text', value: '-' });
+        renderProps();
+      };
+      $('#addElSerial').onclick = () => {
+        el.segments.push(defaultSerialSeg());
         renderProps();
       };
       $('#applyEl').onclick = () => {
