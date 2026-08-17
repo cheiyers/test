@@ -738,6 +738,8 @@
             <label class="field"><span>列数</span><input id="tCols" type="number" min="1" value="${el.cols}" /></label>
             <label class="field"><span>X mm</span><input id="elX" type="number" step="0.5" value="${fmtMm(el.x)}" /></label>
             <label class="field"><span>Y mm</span><input id="elY" type="number" step="0.5" value="${fmtMm(el.y)}" /></label>
+            <label class="field"><span>宽 mm</span><input id="elW" type="number" step="0.5" min="4" value="${fmtMm(el.w)}" /></label>
+            <label class="field"><span>高 mm</span><input id="elH" type="number" step="0.5" min="4" value="${fmtMm(el.h)}" /></label>
           </div>
           <div class="row" style="margin-top:8px">
             <button class="btn secondary" id="applyTable" type="button">应用行列/位置</button>
