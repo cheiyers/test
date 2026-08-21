@@ -157,7 +157,7 @@ tr:hover td { background: #f7fbf9; }
   display: flex; justify-content: space-between; gap: 10px; margin-top: 18px;
 }
 .stats {
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 14px;
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px;
 }
 .stat {
   background: linear-gradient(180deg, #fff, #f6faf8);
@@ -212,6 +212,53 @@ tr:hover td { background: #f7fbf9; }
 .alert.info { background: var(--primary-soft); color: #085041; }
 .merge-header td { background: #eef8f3; font-weight: 600; }
 .footer-note { text-align: center; color: var(--text-muted); font-size: 12px; margin-top: 20px; }
+.mode-tabs { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+.mode-tab {
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.mode-tab.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+.bom-list { margin-top: 12px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.bom-list-item {
+  display: flex; align-items: center; gap: 10px; justify-content: space-between;
+  padding: 10px 12px; border-bottom: 1px solid var(--border); background: #fff;
+  cursor: pointer;
+}
+.bom-list-item:last-child { border-bottom: none; }
+.bom-list-item:hover { background: #f7fbf9; }
+.bom-list-item.active { background: var(--primary-soft); }
+.bom-list-item .name { font-weight: 600; }
+.bom-list-item .meta { font-size: 12px; color: var(--text-muted); }
+.manual-box {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fff, #f7fafc);
+  padding: 16px;
+  margin-top: 14px;
+}
+.price-input {
+  width: 100px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 6px;
+}
+.cost-bar {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, #e8f7f1, #fff7ef);
+  border: 1px solid var(--border);
+  display: flex; gap: 24px; flex-wrap: wrap; align-items: center;
+}
+.cost-bar strong { color: var(--accent); font-size: 18px; }
 @media (max-width: 900px) {
   .grid-2, .grid-3, .stats, .steps { grid-template-columns: 1fr; }
   .hero { flex-direction: column; align-items: flex-start; }
@@ -238,10 +285,16 @@ tr:hover td { background: #f7fbf9; }
 
   <!-- Step 1 -->
   <section class="panel step-panel" data-step="1">
-    <h2>1. 上传文件</h2>
-    <p class="desc">支持 .xlsx / .xls。BOM 可保存到本地，刷新后可直接加载。</p>
+    <h2>1. 上传文件 / 手输料号</h2>
+    <p class="desc">可上传订单，也可不上传订单、直接输入母件料号匹配 BOM。支持下载上传模板；已保存的 BOM 可列表查看并点击加载修改。</p>
+
+    <div class="mode-tabs" id="modeTabs">
+      <button type="button" class="mode-tab active" data-mode="order">订单上传模式</button>
+      <button type="button" class="mode-tab" data-mode="manual">手输料号模式（无订单）</button>
+    </div>
+
     <div class="grid-2">
-      <div class="upload-box">
+      <div class="upload-box" id="orderUploadBox">
         <h3>订单文件</h3>
         <div class="meta" id="orderMeta">尚未选择文件</div>
         <div class="row">
@@ -249,11 +302,12 @@ tr:hover td { background: #f7fbf9; }
             选择订单
             <input type="file" id="orderFile" accept=".xlsx,.xls" class="hidden" />
           </label>
+          <button class="btn secondary sm" id="btnDlOrderTpl">下载订单模板</button>
           <button class="btn secondary sm" id="btnClearOrder">清除</button>
         </div>
       </div>
       <div class="upload-box">
-        <h3>BOM 文件</h3>
+        <h3>BOM 文件 / BOM 库</h3>
         <div class="meta" id="bomMeta">尚未选择文件</div>
         <div class="row">
           <label class="btn">
@@ -264,13 +318,44 @@ tr:hover td { background: #f7fbf9; }
             追加 BOM
             <input type="file" id="bomFileAppend" accept=".xlsx,.xls" class="hidden" multiple />
           </label>
-          <button class="btn secondary sm" id="btnSaveBom">保存 BOM</button>
-          <button class="btn secondary sm" id="btnLoadBom">加载已保存</button>
-          <button class="btn secondary sm" id="btnClearBom">清除</button>
+          <button class="btn secondary sm" id="btnDlBomTpl">下载BOM模板</button>
+          <button class="btn secondary sm" id="btnSaveBom">保存到列表</button>
+          <button class="btn secondary sm" id="btnClearBom">清除当前</button>
         </div>
-        <div class="muted" style="margin-top:8px">支持一次选择多个 BOM；后续订单行只要匹配其中任一母件代码，即可展开对应子件并计算。</div>
+        <div class="muted" style="margin-top:8px">支持多文件/追加；保存后可在下方列表点击加载并继续修改。</div>
+        <div class="section-title">已保存的 BOM 列表</div>
+        <div class="bom-list" id="savedBomList"><div class="muted" style="padding:10px">暂无已保存 BOM</div></div>
       </div>
     </div>
+
+    <div class="manual-box hidden" id="manualModeBox">
+      <h3 style="margin:0 0 8px; font-size:15px">手输母件料号</h3>
+      <p class="muted" style="margin:0 0 10px">每行一个：母件代码，可选数量（如 <code>HL0230002C,2</code>）。系统按 BOM 库匹配并展开子件。</p>
+      <div class="grid-2">
+        <div>
+          <label class="label">母件料号列表</label>
+          <textarea id="manualCodes" placeholder="母件代码,数量&#10;HL0230002C,1&#10;BOM010,2" style="min-height:120px"></textarea>
+        </div>
+        <div>
+          <label class="label">默认数量（未写数量时使用）</label>
+          <input type="number" id="manualDefaultQty" value="1" min="0" step="any" />
+          <label class="label" style="margin-top:10px">单据编号（可选）</label>
+          <input type="text" id="manualDocNo" placeholder="如 MANUAL-001" />
+          <div class="row" style="margin-top:12px">
+            <button class="btn" id="btnManualMatch">匹配 BOM 并生成参数表</button>
+          </div>
+          <div class="muted" id="manualMatchHint" style="margin-top:8px"></div>
+        </div>
+      </div>
+      <div class="section-title">参数值（手输）</div>
+      <div class="table-wrap" style="max-height:280px">
+        <table>
+          <thead><tr><th>参数别名</th><th>输入值</th><th>说明</th></tr></thead>
+          <tbody id="manualParamBody"></tbody>
+        </table>
+      </div>
+    </div>
+
     <div id="uploadSummary" class="alert info hidden" style="margin-top:14px"></div>
   </section>
 
@@ -397,7 +482,13 @@ tr:hover td { background: #f7fbf9; }
     <div class="stats">
       <div class="stat"><div class="n" id="statLines">0</div><div class="t">物料行数</div></div>
       <div class="stat"><div class="n" id="statQty">0</div><div class="t">总需求数量</div></div>
-      <div class="stat"><div class="n" id="statOrders">0</div><div class="t">订单行数</div></div>
+      <div class="stat"><div class="n" id="statOrders">0</div><div class="t">订单/母件行数</div></div>
+      <div class="stat"><div class="n" id="statCost">0</div><div class="t">总成本</div></div>
+    </div>
+    <div class="cost-bar">
+      <span>可在清单中为各料号填写<strong>单价</strong>，系统自动计算金额与总成本</span>
+      <span>总成本：<strong id="costTotalLabel">0</strong></span>
+      <button class="btn secondary sm" id="btnSavePrices">保存单价</button>
     </div>
     <div id="debugPanel" class="debug hidden"></div>
     <div class="table-wrap" style="max-height:480px; margin-top:12px">
@@ -510,29 +601,32 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
   // ===================== State =====================
   const state = {
     step: 1,
+    mode: 'order', // 'order' | 'manual'
     order: { name: '', headers: [], rows: [], raw: null },
     bom: { name: '', headers: [], rows: [], parents: [], childrenByParent: {}, raw: null, headerRow: 0, levelCol: '', remarkCol: '' },
     matchCfg: {
       orderMatchCol: '', orderSpecCol: '', orderCustCol: '', orderQtyCol: '',
       bomParentCodeCol: '', bomSpecCol: ''
     },
-    matches: [], // { orderIdx, orderValue, method, parentCode, children, ok, reason }
-    formulas: {}, // key: parentCode||childCode -> formula text
+    matches: [],
+    formulas: {},
     aliases: [],
-    paramMap: {}, // alias -> { type: 'order'|'formula'|'fixed', value: string }
-    template: {
-      header: [],
-      body: []
-    },
+    paramMap: {},
+    manualParams: {}, // alias -> user typed value in manual mode
+    priceMap: {}, // materialCode -> unit price
+    activeBomId: null, // currently loaded saved BOM id
+    template: { header: [], body: [] },
     resultRows: [],
-    resultMeta: { lines: 0, qty: 0, orders: 0 },
+    resultMeta: { lines: 0, qty: 0, orders: 0, cost: 0 },
     debugLogs: [],
     activeFormulaInput: null
   };
 
   const STEPS = [
-    '上传文件', '匹配配置', '公式配置', '参数映射', '输出映射', '预览', '导出'
+    '上传/手输', '匹配配置', '公式配置', '参数映射', '输出映射', '预览', '导出'
   ];
+  const BOM_LIB_KEY = 'oc_bom_library';
+  const PRICE_KEY = 'oc_price_map';
 
   const EXCEL_FUNCS = new Set([
     'IF','AND','OR','NOT','ROUND','ROUNDUP','ROUNDDOWN','MAX','MIN','ABS','INT','CEILING','FLOOR',
@@ -1535,6 +1629,314 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     return env;
   }
 
+
+  // ===================== Saved BOM Library =====================
+  function uid() {
+    return 'bom_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+  }
+  function listSavedBoms() {
+    const list = Store.get(BOM_LIB_KEY, []);
+    return Array.isArray(list) ? list : [];
+  }
+  function migrateLegacyBom() {
+    const list = listSavedBoms();
+    if (list.length) return;
+    const legacy = Store.get('oc_bom');
+    if (legacy && legacy.matrix) {
+      const item = {
+        id: uid(),
+        name: legacy.name || '历史BOM',
+        savedAt: legacy.savedAt || Date.now(),
+        data: legacy.matrix
+      };
+      Store.set(BOM_LIB_KEY, [item]);
+      Store.remove('oc_bom');
+    }
+  }
+  function buildBomPayload() {
+    return state.bom.raw && state.bom.raw.type === 'bom-library'
+      ? state.bom.raw
+      : {
+          type: 'bom-library',
+          sources: state.bom.sources || [state.bom.name],
+          parents: state.bom.parents,
+          childrenByParent: state.bom.childrenByParent,
+          parentByCode: state.bom.parentByCode,
+          headers: state.bom.headers,
+          formulas: state.formulas,
+          meta: {
+            levelCol: state.bom.levelCol, typeCol: state.bom.typeCol, remarkCol: state.bom.remarkCol,
+            codeCol: state.bom.codeCol, nameCol: state.bom.nameCol, specCol: state.bom.specCol,
+            qtyCol: state.bom.qtyCol, levelScheme: state.bom.levelScheme
+          }
+        };
+  }
+  function saveBomToLibrary(overwriteId) {
+    if (!state.bom.parents.length) { toast('请先上传或加载 BOM', 'warn'); return; }
+    const list = listSavedBoms();
+    const payload = buildBomPayload();
+    payload.formulas = state.formulas;
+    if (overwriteId) {
+      const idx = list.findIndex(x => x.id === overwriteId);
+      if (idx >= 0) {
+        list[idx].data = payload;
+        list[idx].name = state.bom.name || list[idx].name;
+        list[idx].savedAt = Date.now();
+        list[idx].parentCount = state.bom.parents.length;
+        Store.set(BOM_LIB_KEY, list);
+        state.activeBomId = overwriteId;
+        renderSavedBomList();
+        toast('已更新保存的 BOM：' + list[idx].name, 'ok');
+        return;
+      }
+    }
+    const name = prompt('请输入 BOM 名称', state.bom.name || ('BOM_' + todayStr()));
+    if (!name) return;
+    const item = {
+      id: uid(),
+      name: str(name),
+      savedAt: Date.now(),
+      parentCount: state.bom.parents.length,
+      data: payload
+    };
+    list.unshift(item);
+    Store.set(BOM_LIB_KEY, list);
+    state.activeBomId = item.id;
+    state.bom.name = item.name;
+    renderSavedBomList();
+    toast('BOM 已保存到列表：' + item.name, 'ok');
+  }
+  function deleteSavedBom(id) {
+    let list = listSavedBoms().filter(x => x.id !== id);
+    Store.set(BOM_LIB_KEY, list);
+    if (state.activeBomId === id) state.activeBomId = null;
+    renderSavedBomList();
+    toast('已删除', 'ok');
+  }
+  function renameSavedBom(id) {
+    const list = listSavedBoms();
+    const item = list.find(x => x.id === id);
+    if (!item) return;
+    const name = prompt('重命名 BOM', item.name);
+    if (!name) return;
+    item.name = str(name);
+    item.savedAt = Date.now();
+    Store.set(BOM_LIB_KEY, list);
+    if (state.activeBomId === id) state.bom.name = item.name;
+    renderSavedBomList();
+    toast('已重命名', 'ok');
+  }
+  async function loadSavedBomItem(id) {
+    const item = listSavedBoms().find(x => x.id === id);
+    if (!item) { toast('未找到该 BOM', 'warn'); return; }
+    await handleBomFile(null, { name: item.name, matrix: item.data });
+    if (item.data && item.data.formulas) {
+      state.formulas = Object.assign({}, item.data.formulas);
+      try { renderFormulaList(); } catch (e) {}
+    }
+    state.activeBomId = id;
+    renderSavedBomList();
+    toast('已加载 BOM：' + item.name + '（可继续修改后保存）', 'ok');
+  }
+  function renderSavedBomList() {
+    migrateLegacyBom();
+    const wrap = $('savedBomList');
+    if (!wrap) return;
+    const list = listSavedBoms();
+    if (!list.length) {
+      wrap.innerHTML = '<div class="muted" style="padding:10px">暂无已保存 BOM，上传后点「保存到列表」</div>';
+      return;
+    }
+    wrap.innerHTML = list.map(item => {
+      const dt = new Date(item.savedAt || Date.now());
+      const t = dt.getFullYear() + '-' + String(dt.getMonth()+1).padStart(2,'0') + '-' + String(dt.getDate()).padStart(2,'0') +
+        ' ' + String(dt.getHours()).padStart(2,'0') + ':' + String(dt.getMinutes()).padStart(2,'0');
+      const active = state.activeBomId === item.id ? 'active' : '';
+      return `<div class="bom-list-item ${active}" data-bom-id="${esc(item.id)}">
+        <div>
+          <div class="name">${esc(item.name)}</div>
+          <div class="meta">母件 ${item.parentCount != null ? item.parentCount : '-'} · ${t}</div>
+        </div>
+        <div class="row">
+          <button class="btn sm" data-act="load" data-id="${esc(item.id)}">加载/修改</button>
+          <button class="btn secondary sm" data-act="rename" data-id="${esc(item.id)}">重命名</button>
+          <button class="btn danger sm" data-act="del" data-id="${esc(item.id)}">删除</button>
+        </div>
+      </div>`;
+    }).join('');
+    wrap.querySelectorAll('[data-act]').forEach(btn => {
+      btn.onclick = (ev) => {
+        ev.stopPropagation();
+        const id = btn.getAttribute('data-id');
+        const act = btn.getAttribute('data-act');
+        if (act === 'load') loadSavedBomItem(id);
+        else if (act === 'rename') renameSavedBom(id);
+        else if (act === 'del') {
+          if (confirm('确认删除该 BOM？')) deleteSavedBom(id);
+        }
+      };
+    });
+    wrap.querySelectorAll('.bom-list-item').forEach(el => {
+      el.onclick = () => loadSavedBomItem(el.getAttribute('data-bom-id'));
+    });
+  }
+
+  // ===================== Upload Templates =====================
+  function downloadOrderTemplate() {
+    const aoa = [
+      ['单据编号','日期','物料代码','规格型号','客户物料号','数量','轿厢宽度BB','轿厢深度DD','类别LHLB'],
+      ['SO001','2026-08-01','HL0230002C','A型','CUST-A',1,1200,1900,'LF18']
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '订单模板');
+    XLSX.writeFile(wb, '订单上传模板.xlsx');
+    toast('已下载订单模板', 'ok');
+  }
+  function downloadBomTemplate() {
+    const aoa = [
+      ['级次','子项类型','物料代码','物料名称','规格','单位','标准用量','备注'],
+      [1,'母件','HL0230002C','示例母件','A型','套',1,''],
+      [2,'子件','1123101017','立边','双饰面','张',1,'N1=ROUNDUP((DD-54)/250,0);N2=IF(N1=0,1,N1)'],
+      [2,'子件','P001','侧板','','张',2,'=IF(LHLB="LF18",2,1)']
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'BOM模板');
+    XLSX.writeFile(wb, 'BOM上传模板.xlsx');
+    toast('已下载 BOM 模板', 'ok');
+  }
+
+  // ===================== Manual Mode =====================
+  function setAppMode(mode) {
+    state.mode = mode === 'manual' ? 'manual' : 'order';
+    document.querySelectorAll('#modeTabs .mode-tab').forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-mode') === state.mode);
+    });
+    const orderBox = $('orderUploadBox');
+    const manualBox = $('manualModeBox');
+    if (orderBox) orderBox.classList.toggle('hidden', state.mode === 'manual');
+    if (manualBox) manualBox.classList.toggle('hidden', state.mode !== 'manual');
+  }
+
+  function parseManualCodeLines() {
+    const raw = ($('manualCodes') && $('manualCodes').value) || '';
+    const defQty = toNum(($('manualDefaultQty') && $('manualDefaultQty').value) || 1) || 1;
+    const lines = raw.split(/[\n\r]+/).map(s => s.trim()).filter(Boolean);
+    const rows = [];
+    lines.forEach(line => {
+      const parts = line.split(/[,，\t ]+/).map(s => s.trim()).filter(Boolean);
+      if (!parts.length) return;
+      const code = parts[0];
+      const qty = parts.length > 1 ? toNum(parts[1]) : defQty;
+      rows.push({ code, qty: qty > 0 ? qty : defQty });
+    });
+    return rows;
+  }
+
+  function applyManualParamsToParamMap() {
+    Object.keys(state.manualParams || {}).forEach(alias => {
+      state.paramMap[alias] = { type: 'fixed', value: String(state.manualParams[alias] == null ? '' : state.manualParams[alias]) };
+    });
+  }
+
+  function renderManualParamTable() {
+    const tb = $('manualParamBody');
+    if (!tb) return;
+    try { extractAliases(); } catch (e) {}
+    const aliases = state.aliases.slice();
+    if (!aliases.length) {
+      tb.innerHTML = '<tr><td colspan="3" class="muted">匹配后将显示公式参数，供手输</td></tr>';
+      return;
+    }
+    tb.innerHTML = aliases.map(a => {
+      const v = state.manualParams[a] != null ? state.manualParams[a] : (state.paramMap[a] && state.paramMap[a].type === 'fixed' ? state.paramMap[a].value : '');
+      return `<tr>
+        <td><strong>${esc(a)}</strong></td>
+        <td><input type="text" data-manual-param="${esc(a)}" value="${esc(v)}" placeholder="输入参数值" /></td>
+        <td class="muted">公式别名，将用于用量计算</td>
+      </tr>`;
+    }).join('');
+    tb.querySelectorAll('[data-manual-param]').forEach(inp => {
+      const sync = () => {
+        const alias = inp.getAttribute('data-manual-param');
+        state.manualParams[alias] = inp.value;
+        state.paramMap[alias] = { type: 'fixed', value: inp.value };
+      };
+      inp.addEventListener('input', sync);
+      inp.addEventListener('change', sync);
+    });
+  }
+
+  function runManualMatch() {
+    if (!state.bom.parents.length) { toast('请先加载 BOM 库', 'warn'); return; }
+    const items = parseManualCodeLines();
+    if (!items.length) { toast('请输入至少一个母件料号', 'warn'); return; }
+    const docNo = str(($('manualDocNo') && $('manualDocNo').value) || '') || ('MANUAL-' + todayStr());
+    const headers = ['单据编号','日期','物料代码','规格型号','客户物料号','数量'];
+    // also expose known alias columns as blank so auto map can still work if needed
+    state.aliases.forEach(a => { if (!headers.includes(a)) headers.push(a); });
+    const rows = items.map((it, i) => {
+      const row = {
+        '单据编号': docNo,
+        '日期': todayStr().replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'),
+        '物料代码': it.code,
+        '规格型号': '',
+        '客户物料号': '',
+        '数量': it.qty
+      };
+      return row;
+    });
+    state.order = { name: '手输料号', headers, rows, raw: null, headerRow: 0 };
+    state.mode = 'manual';
+    autoGuessOrderCols();
+    state.matchCfg.orderMatchCol = '物料代码';
+    state.matchCfg.orderQtyCol = '数量';
+    state.matchCfg.orderSpecCol = '规格型号';
+    state.matchCfg.orderCustCol = '客户物料号';
+    try { fillOrderSelects(); } catch (e) {}
+    runMatch();
+    // after match, extract aliases and show manual param inputs
+    try { extractAliases(); } catch (e) {}
+    // seed manual params from existing fixed mappings
+    state.aliases.forEach(a => {
+      if (state.manualParams[a] == null && state.paramMap[a] && state.paramMap[a].type === 'fixed') {
+        state.manualParams[a] = state.paramMap[a].value;
+      }
+    });
+    renderManualParamTable();
+    applyManualParamsToParamMap();
+    const ok = state.matches.filter(m => m.ok).length;
+    const hint = $('manualMatchHint');
+    if (hint) hint.textContent = `已匹配 ${ok}/${items.length} 个母件。请在下方填写参数值，然后到「预览」生成清单。`;
+    $('orderMeta').textContent = `手输料号 · ${rows.length} 行`;
+    updateUploadSummary();
+    toast(`手输匹配完成：成功 ${ok} / 共 ${items.length}`, ok === items.length ? 'ok' : 'warn');
+  }
+
+  function getMaterialCodeFromResultRow(r) {
+    return str(r.materialCode || (r.bodyVals && (r.bodyVals['物料代码'] || r.bodyVals['料号'])) || '');
+  }
+  function getQtyFromResultRow(r) {
+    if (r.stdQty != null) return toNum(r.stdQty);
+    const q = r.bodyVals && (r.bodyVals['标准用量'] != null ? r.bodyVals['标准用量'] : r.bodyVals['用量']);
+    return toNum(q);
+  }
+  function calcRowCost(r) {
+    const code = getMaterialCodeFromResultRow(r);
+    const price = toNum(state.priceMap[code]);
+    const qty = getQtyFromResultRow(r);
+    return Math.round(price * qty * 10000) / 10000;
+  }
+  function calcTotalCost(rows) {
+    return Math.round((rows || state.resultRows).reduce((s, r) => s + calcRowCost(r), 0) * 100) / 100;
+  }
+  function savePriceMap() {
+    Store.set(PRICE_KEY, state.priceMap || {});
+    toast('单价已保存', 'ok');
+  }
+
+
   // ===================== Template =====================
   function defaultTemplate() {
     return {
@@ -1572,6 +1974,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     ensureTemplate();
     syncTemplateOrderSources();
     readMatchCfgFromUI();
+    if (state.mode === 'manual') applyManualParamsToParamMap();
     const merge = $('optMerge').checked;
     const skipZero = $('optSkipZero').checked;
     const qtyCol = state.matchCfg.orderQtyCol;
@@ -1692,14 +2095,18 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
 
     state.resultRows = rows;
     state.debugLogs = debug;
+    if (state.mode === 'manual') applyManualParamsToParamMap();
     const totalQty = rows.reduce((s, r) => s + (Number(r.stdQty) || 0), 0);
     const orderSet = new Set(rows.map(r => r.orderIdx));
-    state.resultMeta = { lines: rows.length, qty: Math.round(totalQty * 1000) / 1000, orders: orderSet.size };
+    const totalCost = calcTotalCost(rows);
+    state.resultMeta = { lines: rows.length, qty: Math.round(totalQty * 1000) / 1000, orders: orderSet.size, cost: totalCost };
     renderPreview();
     $('statLines').textContent = state.resultMeta.lines;
     $('statQty').textContent = state.resultMeta.qty;
     $('statOrders').textContent = state.resultMeta.orders;
-    $('exportHint').textContent = `可导出 ${rows.length} 行 · ${todayStr()}`;
+    if ($('statCost')) $('statCost').textContent = totalCost;
+    if ($('costTotalLabel')) $('costTotalLabel').textContent = totalCost;
+    $('exportHint').textContent = `可导出 ${rows.length} 行 · 总成本 ${totalCost} · ${todayStr()}`;
     toast('预览已生成', 'ok');
   }
 
@@ -1816,34 +2223,45 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     const merge = $('optMerge').checked;
     const headerCols = state.template.header;
     const bodyCols = state.template.body;
-    const cols = headerCols.map(c => c.name).concat(bodyCols.map(c => c.name));
+    const cols = headerCols.map(c => c.name).concat(bodyCols.map(c => c.name)).concat(['单价','金额']);
     const aoa = [cols];
     let lastDoc = null;
+    let totalCost = 0;
     state.resultRows.forEach(r => {
       const sameDoc = merge && lastDoc != null && String(r.docNo) === String(lastDoc);
       lastDoc = r.docNo;
       const headerPart = headerCols.map(c => {
-        if (sameDoc) return ''; // 同订单号表头（含单据编号）只保留首行
+        if (sameDoc) return '';
         const raw = r.headerVals[c.name];
         if (raw != null && str(raw) !== '') return raw;
         if (isDocNoTemplateCol(c)) return r.docNo || '';
         return raw == null ? '' : raw;
       });
       const bodyPart = bodyCols.map(c => r.bodyVals[c.name]);
-      aoa.push(headerPart.concat(bodyPart));
+      const code = getMaterialCodeFromResultRow(r);
+      const price = toNum(state.priceMap[code]);
+      const amount = calcRowCost(r);
+      totalCost += amount;
+      aoa.push(headerPart.concat(bodyPart).concat([price || '', amount]));
     });
-    return { cols, aoa, merge };
+    // summary row
+    aoa.push(cols.map((c, i) => {
+      if (i === 0) return '合计';
+      if (c === '金额') return Math.round(totalCost * 100) / 100;
+      return '';
+    }));
+    return { cols, aoa, merge, totalCost: Math.round(totalCost * 100) / 100 };
   }
 
   function exportExcel() {
     if (!state.resultRows.length) { toast('请先生成预览', 'warn'); return; }
-    const { aoa } = buildOutputMatrix();
+    const { aoa, totalCost } = buildOutputMatrix();
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, '转换结果');
     const filename = `订单转换_${todayStr()}.xlsx`;
     XLSX.writeFile(wb, filename);
-    toast('已导出 ' + filename + '（与预览一致）', 'ok');
+    toast('已导出 ' + filename + '（含单价/金额，总成本 ' + totalCost + '）', 'ok');
   }
 
   // ===================== File handlers =====================
@@ -2048,7 +2466,9 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     const el = $('uploadSummary');
     if (!state.order.rows.length && !state.bom.parents.length) { el.classList.add('hidden'); return; }
     el.classList.remove('hidden');
-    el.textContent = `订单 ${state.order.rows.length} 行；BOM 母件 ${state.bom.parents.length} 个；存储模式 ${storageMode === 'local' ? 'localStorage' : '内存回退'}`;
+    el.textContent = `订单 ${state.order.rows.length} 行；BOM 库母件 ${state.bom.parents.length} 个` +
+      (state.bom.sources && state.bom.sources.length ? `（来源 ${state.bom.sources.length}）` : '') +
+      `；存储模式 ${storageMode === 'local' ? 'localStorage' : '内存回退'}`;
   }
 
   // ===================== UI render =====================
@@ -2408,23 +2828,62 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
 
   function renderPreview() {
     const merge = $('optMerge').checked;
-    const { aoa } = buildOutputMatrix();
+    const { aoa, totalCost } = buildOutputMatrix();
     const heads = aoa[0] || [];
+    const priceIdx = heads.indexOf('单价');
+    const amountIdx = heads.indexOf('金额');
     $('previewHead').innerHTML = '<tr>' + heads.map(c => `<th>${esc(c)}</th>`).join('') + '</tr>';
     let lastDoc = null;
+    // aoa has summary row at end; data rows = resultRows length
     const bodyHtml = state.resultRows.map((r, idx) => {
       const row = aoa[idx + 1] || [];
       const sameDoc = merge && lastDoc != null && String(r.docNo) === String(lastDoc);
       lastDoc = r.docNo;
       const headerLen = state.template.header.length;
+      const code = getMaterialCodeFromResultRow(r);
       const tds = row.map((v, i) => {
         const isHeaderCol = i < headerLen;
         const cls = isHeaderCol && !sameDoc ? 'merge-header' : '';
+        if (i === priceIdx) {
+          const price = state.priceMap[code] != null ? state.priceMap[code] : '';
+          return `<td><input class="price-input" type="number" min="0" step="any" data-price-code="${esc(code)}" value="${esc(price)}" /></td>`;
+        }
         return `<td class="${cls}">${esc(v)}</td>`;
       });
-      return '<tr>' + tds.join('') + '</tr>';
+      return '<tr data-row-idx="' + idx + '">' + tds.join('') + '</tr>';
     }).join('');
-    $('previewBody').innerHTML = bodyHtml || '<tr><td class="muted">暂无数据</td></tr>';
+    // summary
+    const sumRow = aoa[aoa.length - 1] || [];
+    const sumHtml = '<tr class="merge-header">' + sumRow.map((v, i) => {
+      if (i === amountIdx) return `<td><strong>${esc(v)}</strong></td>`;
+      return `<td><strong>${esc(v)}</strong></td>`;
+    }).join('') + '</tr>';
+    $('previewBody').innerHTML = (bodyHtml + sumHtml) || '<tr><td class="muted">暂无数据</td></tr>';
+    if ($('statCost')) $('statCost').textContent = totalCost;
+    if ($('costTotalLabel')) $('costTotalLabel').textContent = totalCost;
+    // bind price editors
+    $('previewBody').querySelectorAll('[data-price-code]').forEach(inp => {
+      const apply = () => {
+        const code = inp.getAttribute('data-price-code');
+        state.priceMap[code] = inp.value === '' ? '' : toNum(inp.value);
+        // refresh amounts without full regenerate
+        const cost = calcTotalCost(state.resultRows);
+        if ($('statCost')) $('statCost').textContent = cost;
+        if ($('costTotalLabel')) $('costTotalLabel').textContent = cost;
+        state.resultMeta.cost = cost;
+        // update amount cells
+        const { aoa: m2 } = buildOutputMatrix();
+        const aIdx = (m2[0] || []).indexOf('金额');
+        state.resultRows.forEach((_, i) => {
+          const tr = $('previewBody').querySelector(`tr[data-row-idx="${i}"]`);
+          if (tr && aIdx >= 0 && tr.children[aIdx]) tr.children[aIdx].textContent = m2[i + 1][aIdx];
+        });
+        const sumTr = $('previewBody').querySelector('tr.merge-header:last-child') || $('previewBody').lastElementChild;
+        if (sumTr && aIdx >= 0 && sumTr.children[aIdx]) sumTr.children[aIdx].innerHTML = '<strong>' + cost + '</strong>';
+      };
+      inp.addEventListener('change', apply);
+      inp.addEventListener('input', apply);
+    });
     if (!$('debugPanel').classList.contains('hidden')) renderDebug();
   }
 
@@ -2487,16 +2946,30 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
   function bindEvents() {
     $('btnPrev').onclick = () => goStep(state.step - 1);
     $('btnNext').onclick = () => {
-      if (state.step === 1 && (!state.order.rows.length || !state.bom.parents.length)) {
-        toast('请先上传订单和BOM', 'warn'); return;
+      if (state.step === 1) {
+        if (!state.bom.parents.length) { toast('请先上传或加载 BOM', 'warn'); return; }
+        if (state.mode === 'order' && !state.order.rows.length) {
+          toast('请上传订单，或切换到手输料号模式', 'warn'); return;
+        }
+        if (state.mode === 'manual' && !state.order.rows.length) {
+          toast('请先输入母件料号并点击「匹配 BOM」', 'warn'); return;
+        }
       }
       if (state.step === 2 && !state.matches.length) {
-        // auto run match
         try { runMatch(); } catch (e) { toast('匹配失败', 'err'); return; }
       }
+      if (state.step === 4 && state.mode === 'manual') applyManualParamsToParamMap();
       if (state.step >= 7) { toast('流程完成，可导出Excel', 'ok'); return; }
       goStep(state.step + 1);
     };
+
+    document.querySelectorAll('#modeTabs .mode-tab').forEach(btn => {
+      btn.onclick = () => setAppMode(btn.getAttribute('data-mode'));
+    });
+    if ($('btnDlOrderTpl')) $('btnDlOrderTpl').onclick = () => downloadOrderTemplate();
+    if ($('btnDlBomTpl')) $('btnDlBomTpl').onclick = () => downloadBomTemplate();
+    if ($('btnManualMatch')) $('btnManualMatch').onclick = () => runManualMatch();
+    if ($('btnSavePrices')) $('btnSavePrices').onclick = () => savePriceMap();
 
     $('orderFile').addEventListener('change', e => {
       const f = e.target.files && e.target.files[0];
@@ -2523,35 +2996,20 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     $('btnClearBom').onclick = () => {
       state.bom = emptyBomLibrary();
       state.formulas = {};
+      state.activeBomId = null;
       $('bomMeta').textContent = '尚未选择文件';
       $('bomFile').value = '';
       if ($('bomFileAppend')) $('bomFileAppend').value = '';
       updateUploadSummary();
+      renderSavedBomList();
     };
     $('btnSaveBom').onclick = () => {
       if (!state.bom.parents.length) { toast('请先上传BOM', 'warn'); return; }
-      const payload = state.bom.raw && state.bom.raw.type === 'bom-library'
-        ? state.bom.raw
-        : {
-            type: 'bom-library',
-            sources: state.bom.sources || [state.bom.name],
-            parents: state.bom.parents,
-            childrenByParent: state.bom.childrenByParent,
-            parentByCode: state.bom.parentByCode,
-            headers: state.bom.headers,
-            meta: {
-              levelCol: state.bom.levelCol, typeCol: state.bom.typeCol, remarkCol: state.bom.remarkCol,
-              codeCol: state.bom.codeCol, nameCol: state.bom.nameCol, specCol: state.bom.specCol,
-              qtyCol: state.bom.qtyCol, levelScheme: state.bom.levelScheme
-            }
-          };
-      const ok = Store.set('oc_bom', { name: state.bom.name, matrix: payload, savedAt: Date.now() });
-      toast(ok ? 'BOM 库已保存到本地' : 'localStorage不可用，已保存到内存', ok ? 'ok' : 'warn');
-    };
-    $('btnLoadBom').onclick = async () => {
-      const data = Store.get('oc_bom');
-      if (!data || !data.matrix) { toast('没有已保存的BOM', 'warn'); return; }
-      await handleBomFile(null, data);
+      if (state.activeBomId && confirm('是否覆盖当前已加载的已保存 BOM？\n取消则另存为新项')) {
+        saveBomToLibrary(state.activeBomId);
+      } else {
+        saveBomToLibrary(null);
+      }
     };
 
     $('btnRunMatch').onclick = () => runMatch();
@@ -2627,10 +3085,13 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       toast('XLSX 库未加载，请检查文件完整性', 'err');
     }
     state.template = defaultTemplate();
-    // restore param map / scheme soft
     try {
       const pm = Store.get('oc_param_map');
       if (pm) state.paramMap = pm;
+    } catch (e) {}
+    try {
+      const prices = Store.get(PRICE_KEY, {});
+      if (prices && typeof prices === 'object') state.priceMap = prices;
     } catch (e) {}
     try {
       const scheme = Store.get('oc_scheme');
@@ -2640,6 +3101,9 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     } catch (e) {}
     bindEvents();
     renderSteps();
+    setAppMode('order');
+    migrateLegacyBom();
+    renderSavedBomList();
     updateUploadSummary();
   }
 
