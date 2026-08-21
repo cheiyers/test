@@ -170,11 +170,57 @@ tr:hover td { background: #f7fbf9; }
 .formula-item {
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 12px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   background: var(--surface-2);
+  overflow: hidden;
 }
-.formula-item .title { font-weight: 600; margin-bottom: 6px; }
+.formula-item .title {
+  font-weight: 600;
+  margin: 0;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.formula-item .title:hover { background: #eef7f3; }
+.formula-item .chev {
+  width: 18px; color: var(--text-muted); font-size: 12px; flex: 0 0 auto;
+}
+.formula-item .formula-body {
+  display: none;
+  padding: 0 12px 12px;
+  border-top: 1px dashed var(--border);
+}
+.formula-item.open .formula-body { display: block; padding-top: 10px; }
+.formula-item.open .chev::before { content: '▼'; }
+.formula-item:not(.open) .chev::before { content: '▶'; }
+.bom-editor {
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  padding: 14px;
+}
+.bom-editor.hidden { display: none !important; }
+.bom-parent-block {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.bom-parent-hd {
+  background: #eef8f3;
+  padding: 8px 10px;
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  font-weight: 600;
+}
+.bom-parent-hd input { font-weight: 500; }
+.bom-editor .table-wrap { max-height: 260px; }
+.bom-editor input[type="text"], .bom-editor input[type="number"] {
+  width: 100%; min-width: 70px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px;
+}
 .muted { color: var(--text-muted); font-size: 12px; }
 .debug {
   border: 1px solid var(--border);
@@ -328,6 +374,21 @@ tr:hover td { background: #f7fbf9; }
       </div>
     </div>
 
+    <div class="bom-editor hidden" id="bomEditorPanel">
+      <div class="row" style="justify-content:space-between; margin-bottom:8px">
+        <div>
+          <h3 style="margin:0; font-size:15px">当前 BOM 内容（可直接修改）</h3>
+          <div class="muted" id="bomEditorHint">选择或上传 BOM 后在此查看/编辑母件与子件</div>
+        </div>
+        <div class="row">
+          <button class="btn secondary sm" id="btnBomAddParent">+ 母件</button>
+          <button class="btn sm" id="btnBomApplyEdit">应用修改</button>
+          <button class="btn secondary sm" id="btnBomSaveEdit">保存到列表</button>
+        </div>
+      </div>
+      <div id="bomEditorBody"></div>
+    </div>
+
     <div class="manual-box hidden" id="manualModeBox">
       <h3 style="margin:0 0 8px; font-size:15px">手输母件料号</h3>
       <p class="muted" style="margin:0 0 10px">每行一个：母件代码，可选数量（如 <code>HL0230002C,2</code>）。系统按 BOM 库匹配并展开子件。</p>
@@ -414,7 +475,11 @@ tr:hover td { background: #f7fbf9; }
     <div class="chips" id="varChips"></div>
     <div class="row" style="margin:12px 0 8px; justify-content:space-between">
       <div class="section-title" style="margin:0">子件公式 <span class="muted" id="formulaCountHint"></span></div>
-      <label class="checkline"><input type="checkbox" id="optFormulaMatchedOnly" /> 仅显示已匹配母件</label>
+      <div class="row">
+        <label class="checkline"><input type="checkbox" id="optFormulaMatchedOnly" /> 仅显示已匹配母件</label>
+        <button class="btn secondary sm" id="btnFormulaExpandAll" type="button">全部展开</button>
+        <button class="btn secondary sm" id="btnFormulaCollapseAll" type="button">全部折叠</button>
+      </div>
     </div>
     <div id="formulaList"></div>
     <div class="row" style="margin-top:8px">
@@ -1710,7 +1775,8 @@ tr:hover td { background: #f7fbf9; }
     }
     state.activeBomId = id;
     renderSavedBomList();
-    toast('已加载 BOM：' + item.name + '（可继续修改后保存）', 'ok');
+    renderBomEditor();
+    toast('已加载 BOM：' + item.name + '（下方可直接查看/修改）', 'ok');
   }
   function renderSavedBomList() {
     migrateLegacyBom();
@@ -2347,6 +2413,7 @@ tr:hover td { background: #f7fbf9; }
           if (!state.paramMap[a]) state.paramMap[a] = { type: 'order', value: '' };
         });
         try { renderFormulaList(); } catch (e2) { console.warn(e2); }
+        try { renderBomEditor(); } catch (e2) { console.warn(e2); }
         if (state.order.headers.length) autoMapParams(true);
         else refreshParamUI();
         toast((append ? '已追加' : '已加载') + ' BOM 库：母件 ' + lib.parents.length + '，公式 ' + loaded + ' 条' +
@@ -2412,6 +2479,7 @@ tr:hover td { background: #f7fbf9; }
         syncFormulasFromBom(true);
         extractAliases();
         renderFormulaList();
+        renderBomEditor();
         if (state.order.headers.length) autoMapParams(true);
         else refreshParamUI();
         toast('已加载本地 BOM 库', 'ok');
@@ -2623,29 +2691,229 @@ tr:hover td { background: #f7fbf9; }
         (matchedOnly ? '；已按匹配母件过滤' : `；BOM库 ${parentList.length} 个母件`) + '）';
     }
 
-    wrap.innerHTML = items.map(it => {
+    wrap.innerHTML = items.map((it, idx) => {
       const remarkText = str(it.remark) || '(空)';
       const hasRemarkFormula = /^=/.test(str(it.remark)) || /IF\(|ROUND|≤|＞|N\d\s*=|时[：:]/.test(str(it.remark));
-      return `<div class="formula-item">
-      <div class="title">
-        ${esc(it.parent)} → ${esc(it.child.code)}
-        <span class="muted child-name">${esc(it.child.name || '')}</span>
-        ${it.matched ? '<span class="tag ok">已匹配</span>' : '<span class="tag">未匹配订单</span>'}
-        ${hasRemarkFormula ? '<span class="tag info">备注含公式</span>' : ''}
+      const preview = str(it.formula).replace(/\s+/g, ' ').slice(0, 48);
+      return `<div class="formula-item" data-fidx="${idx}">
+      <div class="title" data-toggle-formula="1">
+        <span class="chev"></span>
+        <span style="flex:1">${esc(it.parent)} → ${esc(it.child.code)}
+          <span class="muted child-name">${esc(it.child.name || '')}</span>
+          ${it.matched ? '<span class="tag ok">已匹配</span>' : '<span class="tag">未匹配订单</span>'}
+          ${hasRemarkFormula ? '<span class="tag info">含公式</span>' : ''}
+        </span>
+        <span class="muted" style="max-width:42%; overflow:hidden; text-overflow:ellipsis">${esc(preview || '(无公式)')}</span>
       </div>
-      <div class="remark-line muted" style="margin-bottom:6px; white-space:pre-wrap; font-family:var(--mono); background:#fff; border:1px dashed var(--border); border-radius:8px; padding:8px">原备注（${esc(state.bom.remarkCol || '备注')}）：${esc(remarkText)}</div>
-      <label class="label">编辑公式</label>
-      <textarea data-fkey="${esc(it.key)}" placeholder="从 BOM 备注提取，可手动修改">${esc(it.formula)}</textarea>
+      <div class="formula-body">
+        <div class="remark-line muted" style="margin-bottom:6px; white-space:pre-wrap; font-family:var(--mono); background:#fff; border:1px dashed var(--border); border-radius:8px; padding:8px">原备注（${esc(state.bom.remarkCol || '备注')}）：${esc(remarkText)}</div>
+        <label class="label">编辑公式</label>
+        <textarea data-fkey="${esc(it.key)}" placeholder="从 BOM 备注提取，可手动修改">${esc(it.formula)}</textarea>
+      </div>
     </div>`;
     }).join('');
 
+    wrap.querySelectorAll('[data-toggle-formula]').forEach(hd => {
+      hd.addEventListener('click', () => {
+        const item = hd.closest('.formula-item');
+        if (item) item.classList.toggle('open');
+      });
+    });
     wrap.querySelectorAll('textarea').forEach(ta => {
       ta.addEventListener('focus', () => { state.activeFormulaInput = ta; });
+      ta.addEventListener('click', (e) => e.stopPropagation());
       ta.addEventListener('input', () => {
         state.formulas[ta.dataset.fkey] = ta.value;
+        // sync back into child.remark/formula for BOM editor consistency
+        const key = ta.dataset.fkey || '';
+        const parts = key.split('||');
+        if (parts.length === 2) {
+          const kids = getChildrenOfParent(parts[0]) || [];
+          const ch = kids.find(c => str(c.code) === parts[1]);
+          if (ch) { ch.formula = ta.value; ch.remark = ta.value; }
+        }
       });
     });
   }
+
+  function setAllFormulasOpen(open) {
+    document.querySelectorAll('#formulaList .formula-item').forEach(el => {
+      el.classList.toggle('open', !!open);
+    });
+  }
+
+  // ===================== Inline BOM Editor =====================
+  function renderBomEditor() {
+    const panel = $('bomEditorPanel');
+    const body = $('bomEditorBody');
+    const hint = $('bomEditorHint');
+    if (!panel || !body) return;
+    if (!state.bom.parents.length) {
+      panel.classList.add('hidden');
+      body.innerHTML = '';
+      return;
+    }
+    panel.classList.remove('hidden');
+    if (hint) {
+      hint.textContent = (state.bom.name || '当前BOM') +
+        ' · 母件 ' + state.bom.parents.length +
+        (state.activeBomId ? ' · 已从列表加载，可直接改后保存' : ' · 可直接编辑后保存到列表');
+    }
+    const map = state.bom.childrenByParent || {};
+    const seen = new Set();
+    const blocks = [];
+    state.bom.parents.forEach((p, pi) => {
+      const pc = str(p.code);
+      const nk = normBomCode(pc);
+      if (!pc || seen.has(nk)) return;
+      seen.add(nk);
+      const kids = map[pc] || map[nk] || [];
+      const rows = kids.map((ch, ci) => {
+        const fkey = pc + '||' + ch.code;
+        const formula = state.formulas[fkey] != null ? state.formulas[fkey] : (ch.formula || ch.remark || '');
+        return `<tr data-p="${esc(pc)}" data-ci="${ci}" data-old-code="${esc(ch.code)}">
+          <td><input type="text" data-f="code" value="${esc(ch.code)}" /></td>
+          <td><input type="text" data-f="name" value="${esc(ch.name || '')}" /></td>
+          <td><input type="text" data-f="spec" value="${esc(ch.spec || '')}" /></td>
+          <td><input type="number" data-f="baseQty" step="any" value="${esc(ch.baseQty != null ? ch.baseQty : '')}" /></td>
+          <td><input type="text" data-f="remark" value="${esc(formula)}" title="${esc(formula)}" /></td>
+          <td><button class="btn danger sm" data-del-child="${esc(pc)}|${ci}">删</button></td>
+        </tr>`;
+      }).join('');
+      blocks.push(`<div class="bom-parent-block" data-parent-idx="${pi}" data-parent-code="${esc(pc)}">
+        <div class="bom-parent-hd">
+          <span>母件</span>
+          <input type="text" data-pf="code" value="${esc(p.code)}" style="width:160px" />
+          <input type="text" data-pf="name" value="${esc(p.name || '')}" style="width:160px" placeholder="名称" />
+          <input type="text" data-pf="spec" value="${esc(p.spec || '')}" style="width:120px" placeholder="规格" />
+          <button class="btn secondary sm" data-add-child="${esc(pc)}">+ 子件</button>
+          <button class="btn danger sm" data-del-parent="${esc(pc)}">删除母件</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>子件代码</th><th>名称</th><th>规格</th><th>用量</th><th>备注/公式</th><th></th></tr></thead>
+            <tbody>${rows || '<tr><td colspan="6" class="muted">无子件</td></tr>'}</tbody>
+          </table>
+        </div>
+      </div>`);
+    });
+    body.innerHTML = blocks.join('') || '<div class="muted">暂无母件</div>';
+
+    body.querySelectorAll('[data-add-child]').forEach(btn => {
+      btn.onclick = () => {
+        applyBomEditorFromDom(false);
+        const pc = btn.getAttribute('data-add-child');
+        const list = state.bom.childrenByParent[pc] || state.bom.childrenByParent[normBomCode(pc)] || [];
+        list.push({ code: 'NEW', name: '', spec: '', baseQty: 1, remark: '', formula: '', parentCode: pc, row: {} });
+        state.bom.childrenByParent[pc] = list;
+        state.bom.childrenByParent[normBomCode(pc)] = list;
+        renderBomEditor();
+      };
+    });
+    body.querySelectorAll('[data-del-child]').forEach(btn => {
+      btn.onclick = () => {
+        applyBomEditorFromDom(false);
+        const [pc, ci] = btn.getAttribute('data-del-child').split('|');
+        const list = state.bom.childrenByParent[pc] || [];
+        list.splice(Number(ci), 1);
+        state.bom.childrenByParent[pc] = list;
+        state.bom.childrenByParent[normBomCode(pc)] = list;
+        renderBomEditor();
+      };
+    });
+    body.querySelectorAll('[data-del-parent]').forEach(btn => {
+      btn.onclick = () => {
+        if (!confirm('确认删除该母件及其子件？')) return;
+        applyBomEditorFromDom(false);
+        const pc = btn.getAttribute('data-del-parent');
+        const nk = normBomCode(pc);
+        state.bom.parents = state.bom.parents.filter(p => normBomCode(p.code) !== nk);
+        delete state.bom.childrenByParent[pc];
+        delete state.bom.childrenByParent[nk];
+        delete state.bom.parentByCode[pc];
+        delete state.bom.parentByCode[nk];
+        renderBomEditor();
+        updateBomMetaLine();
+      };
+    });
+  }
+
+  function applyBomEditorFromDom(showToast) {
+    const body = $('bomEditorBody');
+    if (!body || !state.bom.parents.length) return false;
+    const newParents = [];
+    const newChildren = {};
+    const newIndex = {};
+    body.querySelectorAll('.bom-parent-block').forEach(block => {
+      const oldCode = block.getAttribute('data-parent-code');
+      const codeInp = block.querySelector('[data-pf="code"]');
+      const nameInp = block.querySelector('[data-pf="name"]');
+      const specInp = block.querySelector('[data-pf="spec"]');
+      const code = str(codeInp && codeInp.value);
+      if (!code) return;
+      const parent = {
+        code,
+        name: str(nameInp && nameInp.value),
+        spec: str(specInp && specInp.value),
+        row: {},
+        rowIndex: newParents.length
+      };
+      parent.row[state.bom.codeCol || '物料代码'] = code;
+      parent.row[state.bom.nameCol || '物料名称'] = parent.name;
+      parent.row[state.bom.specCol || '规格'] = parent.spec;
+      newParents.push(parent);
+      newIndex[code] = parent;
+      newIndex[normBomCode(code)] = parent;
+      const kids = [];
+      block.querySelectorAll('tbody tr[data-ci]').forEach(tr => {
+        const get = (f) => {
+          const el = tr.querySelector('[data-f="' + f + '"]');
+          return el ? el.value : '';
+        };
+        const ccode = str(get('code'));
+        if (!ccode) return;
+        const remark = str(get('remark'));
+        const child = {
+          code: ccode,
+          name: str(get('name')),
+          spec: str(get('spec')),
+          baseQty: toNum(get('baseQty')),
+          remark,
+          formula: extractFormulaFromRemark(remark) || remark,
+          parentCode: code,
+          row: {}
+        };
+        kids.push(child);
+        state.formulas[code + '||' + ccode] = child.formula;
+        const oldChild = str(tr.getAttribute('data-old-code'));
+        if (oldCode && oldChild && (oldCode !== code || oldChild !== ccode)) {
+          delete state.formulas[oldCode + '||' + oldChild];
+        }
+      });
+      newChildren[code] = kids;
+      newChildren[normBomCode(code)] = kids;
+    });
+    state.bom.parents = newParents;
+    state.bom.childrenByParent = newChildren;
+    state.bom.parentByCode = newIndex;
+    state.bom.raw = buildBomPayload();
+    updateBomMetaLine();
+    try { extractAliases(); } catch (e) {}
+    try { renderFormulaList(); } catch (e) {}
+    try { refreshParamUI(); } catch (e) {}
+    if (showToast !== false) toast('BOM 修改已应用', 'ok');
+    return true;
+  }
+
+  function updateBomMetaLine() {
+    const childCount = state.bom.parents.reduce((n, p) => n + getChildrenOfParent(p).length, 0);
+    if ($('bomMeta')) {
+      $('bomMeta').textContent = (state.bom.name || '当前BOM') +
+        ' · 母件 ' + state.bom.parents.length + ' · 子件 ' + childCount;
+    }
+    updateUploadSummary();
+  }
+
 
 
   function refreshParamUI() {
@@ -2976,15 +3244,41 @@ tr:hover td { background: #f7fbf9; }
       if ($('bomFileAppend')) $('bomFileAppend').value = '';
       updateUploadSummary();
       renderSavedBomList();
+      renderBomEditor();
     };
     $('btnSaveBom').onclick = () => {
       if (!state.bom.parents.length) { toast('请先上传BOM', 'warn'); return; }
+      applyBomEditorFromDom(false);
       if (state.activeBomId && confirm('是否覆盖当前已加载的已保存 BOM？\n取消则另存为新项')) {
         saveBomToLibrary(state.activeBomId);
       } else {
         saveBomToLibrary(null);
       }
     };
+    if ($('btnBomApplyEdit')) $('btnBomApplyEdit').onclick = () => applyBomEditorFromDom(true);
+    if ($('btnBomSaveEdit')) $('btnBomSaveEdit').onclick = () => {
+      applyBomEditorFromDom(false);
+      if (state.activeBomId && confirm('是否覆盖当前已加载的已保存 BOM？\n取消则另存为新项')) {
+        saveBomToLibrary(state.activeBomId);
+      } else {
+        saveBomToLibrary(null);
+      }
+    };
+    if ($('btnBomAddParent')) $('btnBomAddParent').onclick = () => {
+      applyBomEditorFromDom(false);
+      const code = 'PARENT' + (state.bom.parents.length + 1);
+      const p = { code, name: '新母件', spec: '', row: {}, rowIndex: state.bom.parents.length };
+      p.row[state.bom.codeCol || '物料代码'] = code;
+      state.bom.parents.push(p);
+      state.bom.childrenByParent[code] = [];
+      state.bom.childrenByParent[normBomCode(code)] = state.bom.childrenByParent[code];
+      state.bom.parentByCode[code] = p;
+      state.bom.parentByCode[normBomCode(code)] = p;
+      renderBomEditor();
+      updateBomMetaLine();
+    };
+    if ($('btnFormulaExpandAll')) $('btnFormulaExpandAll').onclick = () => setAllFormulasOpen(true);
+    if ($('btnFormulaCollapseAll')) $('btnFormulaCollapseAll').onclick = () => setAllFormulasOpen(false);
 
     $('btnRunMatch').onclick = () => runMatch();
     $('btnAutoConvertCn').onclick = () => convertAllChineseFormulas();
