@@ -357,20 +357,20 @@ tr:hover td { background: #f7fbf9; }
         <div class="meta" id="bomMeta">尚未选择文件</div>
         <div class="row">
           <label class="btn">
-            选择 BOM
+            上传 BOM
             <input type="file" id="bomFile" accept=".xlsx,.xls" class="hidden" multiple />
           </label>
           <label class="btn secondary sm">
-            追加 BOM
+            再上传
             <input type="file" id="bomFileAppend" accept=".xlsx,.xls" class="hidden" multiple />
           </label>
           <button class="btn secondary sm" id="btnDlBomTpl">下载BOM模板</button>
           <button class="btn secondary sm" id="btnSaveBom">保存到列表</button>
           <button class="btn secondary sm" id="btnClearBom">清除当前</button>
         </div>
-        <div class="muted" style="margin-top:8px">支持多文件/追加；保存后可在下方列表点击加载并继续修改。</div>
-        <div class="section-title">已保存的 BOM 列表</div>
-        <div class="bom-list" id="savedBomList"><div class="muted" style="padding:10px">暂无已保存 BOM</div></div>
+        <div class="muted" style="margin-top:8px">每个上传的 BOM 文件会单独加入下方列表（不会合并到当前）；点击列表项即可查看/修改。匹配时会在全部已保存 BOM 中查找母件。</div>
+        <div class="section-title">已上传 / 已保存的 BOM 列表</div>
+        <div class="bom-list" id="savedBomList"><div class="muted" style="padding:10px">暂无 BOM，请上传文件</div></div>
       </div>
     </div>
 
@@ -1520,36 +1520,54 @@ tr:hover td { background: #f7fbf9; }
 
   function runMatch() {
     readMatchCfgFromUI();
-    // ensure every parent in library has formulas ready
-    try { syncFormulasFromBom(false); } catch (e) { console.warn(e); }
-    state.matches = state.order.rows.map((row, idx) => {
-      const m = matchOrderRow(row);
-      const parentCode = m.parent ? getParentCode(m.parent) : '';
-      const children = m.parent ? getChildrenOfParent(m.parent) : [];
-      return {
-        orderIdx: idx,
-        orderValue: m.value,
-        method: m.method,
-        parentCode,
-        parent: m.parent,
-        children,
-        ok: !!(m.ok && children.length >= 0 && m.parent),
-        reason: m.ok && !children.length ? `已匹配母件 ${parentCode}，但未找到子件` : (m.reason || '')
-      };
-    });
-    // mark ok false when matched parent has zero children? Still ok for structure - user may want to see. Keep ok true if parent matched.
-    state.matches.forEach(m => {
-      if (m.parent && !m.children.length) {
-        m.ok = true; // parent matched; empty children still "matched"
-        m.reason = m.reason || '';
-      } else if (m.parent) {
-        m.ok = true;
-      }
-    });
+    const ctx = buildUnifiedMatchContext();
+    const prevBom = state.bom;
+    const prevFormulas = state.formulas;
+    const parentPool = ctx.bom.parents.length;
+    state.bom = ctx.bom;
+    state.formulas = Object.assign({}, ctx.formulas);
+    const keepFormulas = {};
+    try {
+      try { syncFormulasFromBom(false); } catch (e) { console.warn(e); }
+      state.matches = state.order.rows.map((row, idx) => {
+        const m = matchOrderRow(row);
+        const parentCode = m.parent ? getParentCode(m.parent) : '';
+        const children = m.parent ? getChildrenOfParent(m.parent).map(ch => Object.assign({}, ch)) : [];
+        children.forEach(ch => {
+          const key = parentCode + '||' + str(ch.code);
+          const f = state.formulas[key] != null ? state.formulas[key] : (ch.formula || '');
+          if (f) {
+            keepFormulas[key] = f;
+            ch.formula = f;
+          }
+        });
+        return {
+          orderIdx: idx,
+          orderValue: m.value,
+          method: m.method,
+          parentCode,
+          parent: m.parent,
+          children,
+          ok: !!(m.ok && m.parent),
+          reason: m.ok && !children.length ? `已匹配母件 ${parentCode}，但未找到子件` : (m.reason || '')
+        };
+      });
+      state.matches.forEach(m => {
+        if (m.parent && !m.children.length) {
+          m.ok = true;
+          m.reason = m.reason || '';
+        } else if (m.parent) {
+          m.ok = true;
+        }
+      });
+    } finally {
+      state.bom = prevBom;
+      state.formulas = Object.assign({}, prevFormulas, keepFormulas);
+    }
     renderMatchTable();
     const ok = state.matches.filter(m => m.ok).length;
     const bad = state.matches.length - ok;
-    $('matchSummary').textContent = `成功 ${ok} / 失败 ${bad} / 共 ${state.matches.length}（BOM库母件 ${state.bom.parents.length}）`;
+    $('matchSummary').textContent = `成功 ${ok} / 失败 ${bad} / 共 ${state.matches.length}（全部BOM库母件 ${parentPool}）`;
     if (bad) {
       const details = state.matches.filter(m => !m.ok).map(m => `第${m.orderIdx+1}行: ${m.reason || m.orderValue}`).join('；');
       $('matchAlert').classList.remove('hidden');
@@ -1557,7 +1575,7 @@ tr:hover td { background: #f7fbf9; }
       toast(`有 ${bad} 行未匹配到BOM`, 'warn');
     } else {
       $('matchAlert').classList.add('hidden');
-      toast(`全部订单行匹配成功（库内 ${state.bom.parents.length} 个母件）`, 'ok');
+      toast(`全部订单行匹配成功（库内 ${parentPool} 个母件）`, 'ok');
     }
     try { extractAliases(); } catch (e) {}
     try { renderFormulaList(); } catch (e) {}
@@ -1565,17 +1583,26 @@ tr:hover td { background: #f7fbf9; }
   }
 
   // ===================== Param mapping =====================
+  /** Only aliases from successfully matched BOM children. No match → no params shown. */
   function extractAliases() {
-    const { aliases } = collectBomFormulasAndAliases();
-    // also from currently matched children (covers stale structure)
-    state.matches.forEach(m => {
+    const aliasSet = new Set();
+    const matched = (state.matches || []).filter(m => m.ok && m.parent);
+    if (!matched.length) {
+      state.aliases = [];
+      return state.aliases;
+    }
+    matched.forEach(m => {
+      const pc = m.parentCode || getParentCode(m.parent);
       (m.children || []).forEach(ch => {
-        extractAliasesFromFormula(ch.formula || ch.remark || '').forEach(a => {
-          if (!aliases.includes(a)) aliases.push(a);
-        });
+        const key = pc + '||' + str(ch.code);
+        const formula = state.formulas[key] != null
+          ? state.formulas[key]
+          : (ch.formula || extractFormulaFromRemark(ch.remark || '') || '');
+        extractAliasesFromFormula(formula).forEach(a => aliasSet.add(a));
+        extractAliasesFromFormula(ch.remark || '').forEach(a => aliasSet.add(a));
       });
     });
-    state.aliases = aliases.sort();
+    state.aliases = Array.from(aliasSet).sort();
     state.aliases.forEach(a => {
       if (!state.paramMap[a]) state.paramMap[a] = { type: 'order', value: '' };
     });
@@ -1677,6 +1704,111 @@ tr:hover td { background: #f7fbf9; }
     const list = Store.get(BOM_LIB_KEY, []);
     return Array.isArray(list) ? list : [];
   }
+  function uniqueBomListName(base) {
+    const list = listSavedBoms();
+    let name = str(base) || 'BOM';
+    if (!list.some(x => x.name === name)) return name;
+    let i = 2;
+    while (list.some(x => x.name === name + ' (' + i + ')')) i++;
+    return name + ' (' + i + ')';
+  }
+  /** Persist a parsed BOM library as its own list entry (no merge with others). */
+  function autoAddBomToList(lib, formulas, preferredName) {
+    const list = listSavedBoms();
+    const name = uniqueBomListName(preferredName || lib.name || 'BOM');
+    lib.name = name;
+    const payload = {
+      type: 'bom-library',
+      sources: (lib.sources || []).slice(),
+      parents: lib.parents,
+      childrenByParent: lib.childrenByParent,
+      parentByCode: lib.parentByCode,
+      headers: lib.headers,
+      formulas: formulas || {},
+      meta: {
+        levelCol: lib.levelCol, typeCol: lib.typeCol, remarkCol: lib.remarkCol,
+        codeCol: lib.codeCol, nameCol: lib.nameCol, specCol: lib.specCol,
+        qtyCol: lib.qtyCol, levelScheme: lib.levelScheme
+      }
+    };
+    const item = {
+      id: uid(),
+      name,
+      savedAt: Date.now(),
+      parentCount: (lib.parents || []).length,
+      data: payload
+    };
+    list.unshift(item);
+    Store.set(BOM_LIB_KEY, list);
+    return item;
+  }
+  /** Merge all saved BOMs (+ current editor) for matching across the whole library. */
+  function buildUnifiedMatchContext() {
+    const lib = emptyBomLibrary();
+    const formulas = {};
+    function ingest(data, sourceName) {
+      if (!data) return;
+      if (data.type === 'bom-library') {
+        if (!lib.codeCol && data.meta) {
+          lib.levelCol = data.meta.levelCol || '';
+          lib.typeCol = data.meta.typeCol || '';
+          lib.levelScheme = data.meta.levelScheme || null;
+          lib.remarkCol = data.meta.remarkCol || '';
+          lib.codeCol = data.meta.codeCol || '';
+          lib.nameCol = data.meta.nameCol || '';
+          lib.specCol = data.meta.specCol || '';
+          lib.qtyCol = data.meta.qtyCol || '';
+        }
+        (data.headers || []).forEach(h => { if (h && !lib.headers.includes(h)) lib.headers.push(h); });
+        (data.parents || []).forEach(p => {
+          const code = str(p.code);
+          const key = normBomCode(code);
+          if (!key) return;
+          lib.parents = lib.parents.filter(x => normBomCode(x.code) !== key);
+          const parent = Object.assign({}, p, { code, source: sourceName || p.source || '' });
+          lib.parents.push(parent);
+          lib.parentByCode[key] = parent;
+          lib.parentByCode[code] = parent;
+          const kidsSrc = (data.childrenByParent && (data.childrenByParent[code] || data.childrenByParent[key])) || [];
+          const children = kidsSrc.map(ch => {
+            const c = Object.assign({}, ch, { parentCode: code });
+            const fk = code + '||' + str(c.code);
+            if (data.formulas && data.formulas[fk] != null) {
+              c.formula = data.formulas[fk];
+              if (!c.remark) c.remark = data.formulas[fk];
+            }
+            return c;
+          });
+          lib.childrenByParent[code] = children;
+          lib.childrenByParent[key] = children;
+        });
+        Object.assign(formulas, data.formulas || {});
+        if (sourceName && !lib.sources.includes(sourceName)) lib.sources.push(sourceName);
+        return;
+      }
+      // legacy matrix: parse structure
+      try {
+        const headerRow = detectHeaderRow(data);
+        const table = matrixToTable(data, headerRow);
+        const struct = parseBomStructure(table.headers, table.rows);
+        mergeBomIntoLibrary(lib, struct, {
+          sourceName: sourceName || 'BOM',
+          headers: table.headers,
+          rows: table.rows,
+          headerRow
+        });
+      } catch (e) { console.warn(e); }
+    }
+    // older → newer, then current editor overrides
+    listSavedBoms().slice().reverse().forEach(item => ingest(item.data, item.name));
+    if (state.bom && state.bom.parents && state.bom.parents.length) {
+      const cur = buildBomPayload();
+      cur.formulas = Object.assign({}, state.formulas || {});
+      ingest(cur, state.bom.name || '当前BOM');
+    }
+    lib.name = '全部BOM(' + lib.parents.length + '母件)';
+    return { bom: lib, formulas };
+  }
   function migrateLegacyBom() {
     const list = listSavedBoms();
     if (list.length) return;
@@ -1765,18 +1897,28 @@ tr:hover td { background: #f7fbf9; }
     renderSavedBomList();
     toast('已重命名', 'ok');
   }
-  async function loadSavedBomItem(id) {
+  async function loadSavedBomItem(id, opts) {
+    const silent = !!(opts && opts.silent);
     const item = listSavedBoms().find(x => x.id === id);
     if (!item) { toast('未找到该 BOM', 'warn'); return; }
-    await handleBomFile(null, { name: item.name, matrix: item.data });
-    if (item.data && item.data.formulas) {
-      state.formulas = Object.assign({}, item.data.formulas);
-      try { renderFormulaList(); } catch (e) {}
-    }
+    // keep formulas needed by existing matches (other BOMs)
+    const preserve = {};
+    (state.matches || []).forEach(m => {
+      const pc = m.parentCode || (m.parent ? getParentCode(m.parent) : '');
+      (m.children || []).forEach(ch => {
+        const key = pc + '||' + str(ch.code);
+        if (state.formulas[key] != null) preserve[key] = state.formulas[key];
+        else if (ch.formula) preserve[key] = ch.formula;
+      });
+    });
+    await handleBomFile(null, { name: item.name, matrix: item.data, silent: true });
+    state.formulas = Object.assign({}, (item.data && item.data.formulas) || state.formulas || {}, preserve);
+    try { renderFormulaList(); } catch (e) {}
     state.activeBomId = id;
     renderSavedBomList();
     renderBomEditor();
-    toast('已加载 BOM：' + item.name + '（下方可直接查看/修改）', 'ok');
+    try { refreshParamUI(); } catch (e) {}
+    if (!silent) toast('已加载 BOM：' + item.name + '（下方可直接查看/修改）', 'ok');
   }
   function renderSavedBomList() {
     migrateLegacyBom();
@@ -1784,7 +1926,7 @@ tr:hover td { background: #f7fbf9; }
     if (!wrap) return;
     const list = listSavedBoms();
     if (!list.length) {
-      wrap.innerHTML = '<div class="muted" style="padding:10px">暂无已保存 BOM，上传后点「保存到列表」</div>';
+      wrap.innerHTML = '<div class="muted" style="padding:10px">暂无 BOM，上传文件后将自动出现在此列表</div>';
       return;
     }
     wrap.innerHTML = list.map(item => {
@@ -1798,7 +1940,7 @@ tr:hover td { background: #f7fbf9; }
           <div class="meta">母件 ${item.parentCount != null ? item.parentCount : '-'} · ${t}</div>
         </div>
         <div class="row">
-          <button class="btn sm" data-act="load" data-id="${esc(item.id)}">加载/修改</button>
+          <button class="btn sm" data-act="load" data-id="${esc(item.id)}">查看/修改</button>
           <button class="btn secondary sm" data-act="rename" data-id="${esc(item.id)}">重命名</button>
           <button class="btn danger sm" data-act="del" data-id="${esc(item.id)}">删除</button>
         </div>
@@ -1909,14 +2051,13 @@ tr:hover td { background: #f7fbf9; }
   }
 
   function runManualMatch() {
-    if (!state.bom.parents.length) { toast('请先加载 BOM 库', 'warn'); return; }
+    const unified = buildUnifiedMatchContext();
+    if (!unified.bom.parents.length) { toast('请先上传 BOM 到列表', 'warn'); return; }
     const items = parseManualCodeLines();
     if (!items.length) { toast('请输入至少一个母件料号', 'warn'); return; }
     const docNo = str(($('manualDocNo') && $('manualDocNo').value) || '') || ('MANUAL-' + todayStr());
     const headers = ['单据编号','日期','物料代码','规格型号','客户物料号','数量'];
-    // also expose known alias columns as blank so auto map can still work if needed
-    state.aliases.forEach(a => { if (!headers.includes(a)) headers.push(a); });
-    const rows = items.map((it, i) => {
+    const rows = items.map((it) => {
       const row = {
         '单据编号': docNo,
         '日期': todayStr().replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'),
@@ -1936,7 +2077,7 @@ tr:hover td { background: #f7fbf9; }
     state.matchCfg.orderCustCol = '客户物料号';
     try { fillOrderSelects(); } catch (e) {}
     runMatch();
-    // after match, extract aliases and show manual param inputs
+    // after match, extract aliases (matched only) and show manual param inputs
     try { extractAliases(); } catch (e) {}
     // seed manual params from existing fixed mappings
     state.aliases.forEach(a => {
@@ -2335,93 +2476,70 @@ tr:hover td { background: #f7fbf9; }
   }
 
   async function handleBomFiles(fileList, opts) {
-    const append = !!(opts && opts.append);
     const files = Array.from(fileList || []).filter(Boolean);
     if (!files.length) return;
+    const addedIds = [];
     try {
-      let lib = append && state.bom.parents.length ? Object.assign(emptyBomLibrary(), {
-        name: state.bom.name,
-        sources: (state.bom.sources || []).slice(),
-        headers: (state.bom.headers || []).slice(),
-        rows: (state.bom.rows || []).slice(),
-        parents: (state.bom.parents || []).slice(),
-        childrenByParent: Object.assign({}, state.bom.childrenByParent || {}),
-        parentByCode: Object.assign({}, state.bom.parentByCode || {}),
-        levelCol: state.bom.levelCol,
-        typeCol: state.bom.typeCol,
-        levelScheme: state.bom.levelScheme,
-        remarkCol: state.bom.remarkCol,
-        codeCol: state.bom.codeCol,
-        nameCol: state.bom.nameCol,
-        specCol: state.bom.specCol,
-        qtyCol: state.bom.qtyCol,
-        headerRow: state.bom.headerRow,
-        raw: state.bom.raw
-      }) : emptyBomLibrary();
-
       for (const file of files) {
+        const lib = emptyBomLibrary();
         const buf = await readFileAsArrayBuffer(file);
         const wb = XLSX.read(buf, { type: 'array', cellFormula: true, cellText: true });
         const tables = workbookToBomTables(wb);
         tables.forEach(t => {
           const struct = parseBomStructure(t.headers, t.rows);
           mergeBomIntoLibrary(lib, struct, {
-            sourceName: (files.length > 1 || tables.length > 1) ? (file.name + '#' + t.sheetName) : file.name,
+            sourceName: tables.length > 1 ? (file.name + '#' + t.sheetName) : file.name,
             headers: t.headers,
             rows: t.rows,
             headerRow: t.headerRow
           });
         });
-      }
-
-      state.bom = lib;
-      state.bom.raw = {
-        type: 'bom-library',
-        sources: lib.sources.slice(),
-        parents: lib.parents,
-        childrenByParent: lib.childrenByParent,
-        parentByCode: lib.parentByCode,
-        headers: lib.headers,
-        meta: {
-          levelCol: lib.levelCol, typeCol: lib.typeCol, remarkCol: lib.remarkCol,
-          codeCol: lib.codeCol, nameCol: lib.nameCol, specCol: lib.specCol, qtyCol: lib.qtyCol,
-          levelScheme: lib.levelScheme
+        if (!lib.parents.length) {
+          toast('文件未解析到母件：' + file.name, 'warn');
+          continue;
         }
-      };
-
-      const uniqueChildCount = lib.parents.reduce((n, p) => n + getChildrenOfParent(p).length, 0);
-      const schemeLabel = lib.levelScheme
-        ? ('级次' + lib.levelScheme.parentLevel + '=母件/' + lib.levelScheme.childMin + '+=子件')
-        : '';
-      $('bomMeta').textContent =
-        lib.name + ' · 母件 ' + lib.parents.length + ' · 子件 ' + uniqueChildCount +
-        (lib.sources.length ? (' · 来源 ' + lib.sources.length + ' 个') : '') +
-        ' · 级次列 ' + (lib.levelCol || '-') +
-        (lib.typeCol ? (' · 类型列 ' + lib.typeCol) : '') +
-        ' · 备注列 ' + (lib.remarkCol || '-') +
-        (schemeLabel ? (' · ' + schemeLabel) : '');
-
-      autoGuessBomCols();
-      updateUploadSummary();
-      try { fillBomSelects(); } catch (e) {}
-      try {
-        if (!append) state.formulas = {};
-        const loaded = syncFormulasFromBom(!append);
-        const collected = collectBomFormulasAndAliases();
-        state.aliases = collected.aliases;
-        state.aliases.forEach(a => {
-          if (!state.paramMap[a]) state.paramMap[a] = { type: 'order', value: '' };
+        lib.raw = {
+          type: 'bom-library',
+          sources: lib.sources.slice(),
+          parents: lib.parents,
+          childrenByParent: lib.childrenByParent,
+          parentByCode: lib.parentByCode,
+          headers: lib.headers,
+          meta: {
+            levelCol: lib.levelCol, typeCol: lib.typeCol, remarkCol: lib.remarkCol,
+            codeCol: lib.codeCol, nameCol: lib.nameCol, specCol: lib.specCol, qtyCol: lib.qtyCol,
+            levelScheme: lib.levelScheme
+          }
+        };
+        // collect formulas for this file only
+        const formulas = {};
+        const seen = new Set();
+        lib.parents.forEach(p => {
+          const pc = str(p.code);
+          const nk = normBomCode(pc);
+          if (!pc || seen.has(nk)) return;
+          seen.add(nk);
+          (lib.childrenByParent[pc] || lib.childrenByParent[nk] || []).forEach(ch => {
+            const key = pc + '||' + str(ch.code);
+            const f = str(ch.formula) || extractFormulaFromRemark(ch.remark || '') || '';
+            formulas[key] = f;
+            ch.formula = f;
+          });
         });
-        try { renderFormulaList(); } catch (e2) { console.warn(e2); }
-        try { renderBomEditor(); } catch (e2) { console.warn(e2); }
-        if (state.order.headers.length) autoMapParams(true);
-        else refreshParamUI();
-        toast((append ? '已追加' : '已加载') + ' BOM 库：母件 ' + lib.parents.length + '，公式 ' + loaded + ' 条' +
-          (state.aliases.length ? ('，别名 ' + state.aliases.length + ' 个') : ''), 'ok');
-      } catch (e) {
-        console.warn(e);
-        toast(append ? 'BOM 已追加' : 'BOM 已加载', 'ok');
+        const baseName = String(file.name || 'BOM').replace(/\.(xlsx|xls)$/i, '');
+        const item = autoAddBomToList(lib, formulas, baseName);
+        addedIds.push(item.id);
       }
+      renderSavedBomList();
+      if (!addedIds.length) {
+        toast('未能添加任何 BOM', 'warn');
+        return;
+      }
+      // load the last uploaded into editor for viewing
+      await loadSavedBomItem(addedIds[addedIds.length - 1], { silent: true });
+      toast(addedIds.length > 1
+        ? `已添加 ${addedIds.length} 个 BOM 到列表，可点击查看`
+        : 'BOM 已加入列表，可点击查看/修改', 'ok');
     } catch (e) {
       console.error(e);
       toast('BOM 解析失败: ' + (e.message || e), 'err');
@@ -2476,13 +2594,13 @@ tr:hover td { background: #f7fbf9; }
         updateUploadSummary();
         fillBomSelects();
         state.formulas = {};
-        syncFormulasFromBom(true);
-        extractAliases();
+        if (matrix && matrix.formulas) state.formulas = Object.assign({}, matrix.formulas);
+        syncFormulasFromBom(false);
         renderFormulaList();
         renderBomEditor();
-        if (state.order.headers.length) autoMapParams(true);
-        else refreshParamUI();
-        toast('已加载本地 BOM 库', 'ok');
+        // params only after match — do not dump all BOM aliases here
+        try { refreshParamUI(); } catch (e) {}
+        if (!fromStorage.silent) toast('已加载 BOM：' + (state.bom.name || ''), 'ok');
       } catch (e) {
         console.error(e);
         toast('BOM 加载失败: ' + (e.message || e), 'err');
@@ -2506,10 +2624,13 @@ tr:hover td { background: #f7fbf9; }
 
   function updateUploadSummary() {
     const el = $('uploadSummary');
-    if (!state.order.rows.length && !state.bom.parents.length) { el.classList.add('hidden'); return; }
+    const savedN = listSavedBoms().length;
+    const unifiedN = (() => { try { return buildUnifiedMatchContext().bom.parents.length; } catch (e) { return state.bom.parents.length; } })();
+    if (!state.order.rows.length && !savedN && !state.bom.parents.length) { el.classList.add('hidden'); return; }
     el.classList.remove('hidden');
-    el.textContent = `订单 ${state.order.rows.length} 行；BOM 库母件 ${state.bom.parents.length} 个` +
-      (state.bom.sources && state.bom.sources.length ? `（来源 ${state.bom.sources.length}）` : '') +
+    el.textContent = `订单 ${state.order.rows.length} 行；BOM 列表 ${savedN} 个` +
+      `（可匹配母件 ${unifiedN}）` +
+      (state.activeBomId ? `；当前查看：${state.bom.name || ''}` : '') +
       `；存储模式 ${storageMode === 'local' ? 'localStorage' : '内存回退'}`;
   }
 
@@ -2922,7 +3043,10 @@ tr:hover td { background: #f7fbf9; }
     const headers = state.order.headers || [];
     const row0 = state.order.rows[0] || {};
     if (!state.aliases.length) {
-      tb.innerHTML = '<tr><td colspan="4" class="muted">暂无参数别名。请确认 BOM 备注列含公式（如 =IF(LHLB="LF18",2,1)），或在「公式配置」中提取。</td></tr>';
+      const hasMatch = (state.matches || []).some(m => m.ok && m.parent);
+      tb.innerHTML = hasMatch
+        ? '<tr><td colspan="4" class="muted">已匹配，但公式中未识别到参数别名。</td></tr>'
+        : '<tr><td colspan="4" class="muted">暂无参数。请先完成「匹配」；仅显示已匹配 BOM 公式中的参数。</td></tr>';
       return;
     }
     tb.innerHTML = state.aliases.map(alias => {
@@ -3282,7 +3406,17 @@ tr:hover td { background: #f7fbf9; }
 
     $('btnRunMatch').onclick = () => runMatch();
     $('btnAutoConvertCn').onclick = () => convertAllChineseFormulas();
-    $('btnExtractAliases').onclick = () => { extractAliases(); refreshParamUI(); toast('已提取别名 ' + state.aliases.length + ' 个', 'ok'); goStep(4); };
+    $('btnExtractAliases').onclick = () => {
+      if (!(state.matches || []).some(m => m.ok && m.parent)) {
+        toast('请先完成匹配；未匹配时不显示参数', 'warn');
+        refreshParamUI();
+        return;
+      }
+      extractAliases();
+      refreshParamUI();
+      toast('已提取别名 ' + state.aliases.length + ' 个', 'ok');
+      goStep(4);
+    };
     $('btnReloadBomFormulas').onclick = () => {
       const n = syncFormulasFromBom(true);
       renderFormulaList();
