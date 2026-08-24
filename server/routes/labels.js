@@ -328,7 +328,7 @@ function labelRoutes(db) {
     });
   });
 
-  /** 无订单/BOM 时：按模板 + 人工填写字段生成可打印标签 */
+  /** 无订单/BOM 时：按模板 + 人工填写字段生成可打印标签（支持序列号从…到…） */
   router.post('/manual-preview', canImport, (req, res) => {
     const body = req.body || {};
     const templateId = body.template_id;
@@ -338,8 +338,9 @@ function labelRoutes(db) {
 
     const tpl = formatTpl(row);
     const data = { ...(body.data && typeof body.data === 'object' ? body.data : {}) };
-    const copies = Math.max(1, Math.min(200, Number(body.copies) || tpl.copies_per_label || 1));
     const scanId = String(body.scan_id || body.code || '').trim() || shortCode(tpl.label_type === 'child' ? 'C' : 'M');
+    const serialMode = String(body.serial_mode || 'count') === 'range' ? 'range' : 'count';
+    const per = Math.max(1, Math.min(200, Number(body.copies) || tpl.copies_per_label || 1));
     const serialPerCopy = body.serial_per_copy === false || body.serial_per_copy === 0 || body.serial_per_copy === '0'
       ? false
       : true;
@@ -350,16 +351,47 @@ function labelRoutes(db) {
       data.package_code = scanId;
     }
 
+    /** @type {{ abs: number|null, index: number }[]} */
+    const plan = [];
+    if (serialMode === 'range') {
+      const from = Number(body.serial_from);
+      const to = Number(body.serial_to);
+      if (!Number.isFinite(from) || !Number.isFinite(to)) {
+        return res.status(400).json({ error: '请填写有效的序列号起止（从 / 到）' });
+      }
+      const fromN = Math.floor(from);
+      const toN = Math.floor(to);
+      const count = Math.abs(toN - fromN) + 1;
+      if (count > 2000) return res.status(400).json({ error: '序列号范围过大（最多 2000 个序号）' });
+      if (count * per > 5000) return res.status(400).json({ error: '生成标签过多（最多 5000 张）' });
+      const step = fromN <= toN ? 1 : -1;
+      for (let v = fromN, i = 0; i < count; i++, v += step) {
+        for (let c = 0; c < per; c++) {
+          plan.push({ abs: v, index: i });
+        }
+      }
+    } else {
+      // 指定张数：可选「序列号从」，有则用绝对序号，否则按模板起始+index
+      const fromRaw = body.serial_from;
+      const hasFrom = fromRaw != null && String(fromRaw).trim() !== '' && Number.isFinite(Number(fromRaw));
+      const fromN = hasFrom ? Math.floor(Number(fromRaw)) : null;
+      if (per > 2000) return res.status(400).json({ error: '打印张数过多（最多 2000 张）' });
+      for (let i = 0; i < per; i++) {
+        const idx = serialPerCopy ? i : 0;
+        const abs = hasFrom ? (serialPerCopy ? fromN + i : fromN) : null;
+        plan.push({ abs, index: idx });
+      }
+    }
+
     const labels = [];
-    let serialIndex = 0;
-    const baseSerial = 0;
-    for (let i = 0; i < copies; i++) {
-      const si = serialPerCopy ? serialIndex : baseSerial;
+    const total = plan.length;
+    plan.forEach((slot, i) => {
       const dataWithSerial = {
         ...data,
-        __serial_index: si,
+        __serial_index: slot.index,
+        __serial_abs: slot.abs,
         __copy_index: i,
-        __copies: copies
+        __copies: total
       };
       let copyCode = String(body.code || '').trim();
       if (!copyCode) {
@@ -378,16 +410,18 @@ function labelRoutes(db) {
         template: tpl,
         manual: true,
         copy_index: i,
-        copies
+        copies: total
       });
-      if (serialPerCopy) serialIndex += 1;
-    }
+    });
 
     res.json({
       labels,
       count: labels.length,
       fields: collectTemplateFields(tpl),
-      copies,
+      copies: per,
+      serial_mode: serialMode,
+      serial_from: body.serial_from != null ? body.serial_from : null,
+      serial_to: body.serial_to != null ? body.serial_to : null,
       serial_per_copy: serialPerCopy
     });
   });

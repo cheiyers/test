@@ -1021,17 +1021,19 @@ function toAlnum(n0, width) {
 /**
  * Format serial for label index (0-based offset from start).
  * seg: { style, width, start, connector }
+ * absValue: 打印时绝对序号（优先于 start+index），用于「从几到几」
  */
-function formatSerialSeg(seg, serialIndex) {
+function formatSerialSeg(seg, serialIndex, absValue) {
   const style = normalizeSerialStyle(seg && seg.style);
   const width = clampSerialWidth(seg && seg.width);
   const startNum = parseSerialStart(seg && seg.start, style);
   const idx = Math.max(0, Number(serialIndex) || 0);
-  const n = startNum + idx;
+  const abs = absValue != null && absValue !== '' ? Number(absValue) : NaN;
+  const n = Number.isFinite(abs) ? Math.max(0, Math.floor(abs)) : (startNum + idx);
   let body = '';
   if (style === 'numeric') {
-    body = String(n).padStart(width, '0');
-    if (body.length > width) body = String(n);
+    body = String(Math.max(0, n)).padStart(width, '0');
+    if (body.length > width) body = String(Math.max(0, n));
   } else if (style === 'upper') {
     body = toFixedAlpha(n, width, false);
   } else if (style === 'lower') {
@@ -1056,6 +1058,7 @@ function serialSegPreview(seg) {
 function evalSegments(segments, data) {
   if (!Array.isArray(segments) || !segments.length) return '';
   const serialIndex = data && (data.__serial_index != null ? data.__serial_index : data._serial_index);
+  const serialAbs = data && (data.__serial_abs != null ? data.__serial_abs : data._serial_abs);
   return segments.map((seg) => {
     if (!seg) return '';
     if (seg.type === 'text') return seg.value == null ? '' : String(seg.value);
@@ -1064,7 +1067,7 @@ function evalSegments(segments, data) {
       return applyFormula(raw, seg.formula, data);
     }
     if (seg.type === 'serial') {
-      return formatSerialSeg(seg, serialIndex);
+      return formatSerialSeg(seg, serialIndex, serialAbs);
     }
     return '';
   }).join('');

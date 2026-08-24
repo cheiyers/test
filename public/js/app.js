@@ -1058,7 +1058,7 @@
         </div>
 
         <div id="manualPrintPane" class="hidden">
-          <p class="muted">无需订单/BOM：选择模板后手工填写字段内容，即可预览并打印。同一条码的多份会连续打印，再进入下一张。</p>
+          <p class="muted">无需订单/BOM：选择模板后手工填写字段，可指定打印张数或序列号从几到几。</p>
           <div class="row" style="flex-wrap:wrap;gap:12px">
             <label class="field"><span>标签模板</span>
               <select id="manualTpl">
@@ -1066,16 +1066,30 @@
                 ${templates.map((t) => `<option value="${t.id}" data-type="${t.label_type}" data-copies="${t.copies_per_label || 1}">${escapeHtml(t.name)}（${t.label_type === 'child' ? '配件' : '总包'} · ${t.width_mm}×${t.height_mm}mm · 默认${t.copies_per_label || 1}份）</option>`).join('')}
               </select>
             </label>
-            <label class="field"><span>每码份数</span><input id="manualCopies" type="number" min="1" max="200" value="1" title="单个条码连续打印几份" /></label>
-            <label class="field"><span>序列号按份递增</span>
+            <label class="field"><span>序列号方式</span>
+              <select id="manualSerialMode">
+                <option value="count" selected>指定张数（从某号起连续）</option>
+                <option value="range">指定序号从…到…</option>
+              </select>
+            </label>
+            <label class="field" id="manualCopiesWrap"><span id="manualCopiesLabel">打印张数</span>
+              <input id="manualCopies" type="number" min="1" max="2000" value="1" title="指定张数时为总张数；指定范围时为每个序号打印几份" />
+            </label>
+            <label class="field"><span>序列号从</span>
+              <input id="manualSerialFrom" type="number" step="1" value="1" placeholder="如 1" title="数字样式即为打印号；英文样式为内部序号" />
+            </label>
+            <label class="field hidden" id="manualSerialToWrap"><span>序列号到</span>
+              <input id="manualSerialTo" type="number" step="1" value="10" placeholder="如 100" />
+            </label>
+            <label class="field" id="manualSerialPerCopyWrap"><span>序列号按张递增</span>
               <select id="manualSerialPerCopy">
-                <option value="1" selected>是（每份 +1）</option>
-                <option value="0">否（多份同号）</option>
+                <option value="1" selected>是（每张 +1）</option>
+                <option value="0">否（多张同号）</option>
               </select>
             </label>
             <label class="field"><span>条码/唯一码（可选）</span><input id="manualScanId" placeholder="留空则自动生成" /></label>
           </div>
-          <p class="muted" style="margin-top:8px;font-size:12px">每码份数默认取自模板「单个条码默认份数」，可在此临时修改。</p>
+          <p class="muted" id="manualSerialHint" style="margin-top:8px;font-size:12px">例：打印张数=5、序列号从=1 → 序号 1～5。模板中需包含「序列号」片段才会显示序号。</p>
           <div id="manualFields" class="manual-fields" style="margin-top:12px"></div>
           <div class="row" style="margin-top:12px">
             <button class="btn" id="manualPreviewBtn" type="button">生成预览</button>
@@ -1334,6 +1348,23 @@
     }
 
     $('#manualTpl', root).addEventListener('change', loadManualFields);
+    function syncManualSerialModeUI() {
+      const mode = $('#manualSerialMode', root)?.value || 'count';
+      const isRange = mode === 'range';
+      $('#manualSerialToWrap', root)?.classList.toggle('hidden', !isRange);
+      $('#manualSerialPerCopyWrap', root)?.classList.toggle('hidden', isRange);
+      const copiesLabel = $('#manualCopiesLabel', root);
+      if (copiesLabel) copiesLabel.textContent = isRange ? '每号份数' : '打印张数';
+      const hint = $('#manualSerialHint', root);
+      if (hint) {
+        hint.textContent = isRange
+          ? '例：序列号从=1 到=100、每号份数=1 → 共 100 张（1～100）；每号份数=2 则每个号打 2 张。'
+          : '例：打印张数=5、序列号从=1、按张递增 → 序号 1～5。模板中需包含「序列号」片段才会显示序号。';
+      }
+    }
+    $('#manualSerialMode', root)?.addEventListener('change', syncManualSerialModeUI);
+    syncManualSerialModeUI();
+
     $('#manualAddFieldBtn', root).addEventListener('click', () => {
       const name = prompt('自定义字段名（需与模板中 {字段名} / 绑定字段一致）');
       if (!name || !name.trim()) return;
@@ -1353,16 +1384,23 @@
       $$('[data-manual-field]', root).forEach((inp) => {
         data[inp.dataset.manualField] = inp.value;
       });
+      const serial_mode = $('#manualSerialMode', root)?.value || 'count';
       try {
         const res = await API.post('/labels/manual-preview', {
           template_id,
           data,
+          serial_mode,
           copies: Number($('#manualCopies', root).value) || 1,
-          serial_per_copy: $('#manualSerialPerCopy', root).value !== '0',
+          serial_from: $('#manualSerialFrom', root)?.value,
+          serial_to: $('#manualSerialTo', root)?.value,
+          serial_per_copy: $('#manualSerialPerCopy', root)?.value !== '0',
           scan_id: $('#manualScanId', root).value.trim()
         });
         renderLabels(res.labels || []);
-        flash($('#printFlash', root), `已生成自定义标签 ${res.count} 张`, 'success');
+        const rangeTip = serial_mode === 'range'
+          ? `（序号 ${res.serial_from}～${res.serial_to}）`
+          : '';
+        flash($('#printFlash', root), `已生成自定义标签 ${res.count} 张${rangeTip}`, 'success');
       } catch (err) {
         flash($('#printFlash', root), err.message, 'error');
       }
