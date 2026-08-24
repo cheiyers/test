@@ -62,7 +62,11 @@ const parts = process.versions.node.split('.').map(Number);
 const major = parts[0];
 const minor = parts[1] || 0;
 if (!Number.isFinite(major) || major < 22 || (major === 22 && minor < 5)) {
-  fail('需要 Node.js 22.5+，当前是 ' + process.version);
+  fail(
+    '需要 Node.js 22.5+，当前是 ' +
+      process.version +
+      '\n说明：电脑上“装了 Node”不等于版本够用。旧版 16/18/20 能 node -v，但本系统用不了。\n请到 https://nodejs.org 安装 22+，勾选 Add to PATH，重开 CMD 后再运行一键配置。'
+  );
 }
 
 log('[1/3] Set npm mirror (npmmirror.com) ...');

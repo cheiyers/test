@@ -27,7 +27,8 @@ const minor = parts[1] || 0;
 if (!Number.isFinite(major) || major < MIN_NODE || (major === 22 && minor < 5)) {
   fail([
     `当前 Node.js 版本为 ${process.version}，需要 22.5 或更高。`,
-    '请双击「一键配置环境.bat」，或到 https://nodejs.org 安装后重开终端。'
+    '说明：装了 Node 但版本太旧（16/18/20）也会失败。',
+    '请双击「一键配置环境.bat」，或到 https://nodejs.org 安装 22+ 后重开终端。'
   ]);
 }
 
@@ -35,7 +36,7 @@ if (!fs.existsSync(nodeModules) || !fs.existsSync(path.join(nodeModules, 'expres
   fail([
     '项目依赖尚未安装（缺少 node_modules / express）。',
     '说明：CMD 里能 node -v 只表示 Node 已安装；',
-    '      还需要在本项目目录安装依赖。',
+    '      还需要在本项目目录执行一次「一键配置环境」。',
     '请双击「一键配置环境.bat」，或在项目根目录执行：',
     '  npm install'
   ]);
