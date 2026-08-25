@@ -81,7 +81,7 @@ if not defined NODE_EXE if exist "C:\nodejs\node.exe" set "NODE_EXE=C:\nodejs\no
 if not defined NODE_EXE if exist "D:\nodejs\node.exe" set "NODE_EXE=D:\nodejs\node.exe"
 if not defined NODE_EXE if exist "E:\nodejs\node.exe" set "NODE_EXE=E:\nodejs\node.exe"
 if defined NODE_EXE (
-  set "PATH=%~dp0;!NODE_EXE:\node.exe=!;!PATH!"
+  for %%I in ("%NODE_EXE%") do set "PATH=%%~dpI;!PATH!"
   exit /b 0
 )
 REM 2) PATH 中的 node
