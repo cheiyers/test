@@ -58,10 +58,14 @@ if "%ERR%"=="0" (
 ) else (
   echo RESULT: SETUP FAILED  code=%ERR%
   echo.
+  echo See [ERROR] above and setup-log.txt in this folder.
+  echo Or run 诊断环境.bat and send diagnose-log.txt.
+  echo.
   echo Common causes:
   echo   - Network blocked npm install
   echo   - Antivirus locking node_modules
-  echo   - Disk full / no write permission in this folder
+  echo   - Project on OneDrive/USB/network drive
+  echo   - Node installed without npm
 )
 echo.
 echo Press any key to close...

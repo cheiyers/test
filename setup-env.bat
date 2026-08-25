@@ -58,10 +58,16 @@ if "%ERR%"=="0" (
 ) else (
   echo RESULT: SETUP FAILED  code=%ERR%
   echo.
+  echo 请先看窗口里的 [ERROR] 行。
+  echo 另外会生成日志: %CD%\setup-log.txt
+  echo.
+  echo 也可双击「诊断环境.bat」，把 diagnose-log.txt 发给管理员。
+  echo.
   echo Common causes:
-  echo   - Network blocked npm install
+  echo   - Network blocked npm install ^(试手机热点^)
   echo   - Antivirus locking node_modules
-  echo   - Disk full / no write permission in this folder
+  echo   - Project on OneDrive/USB/network drive ^(拷到本地磁盘^)
+  echo   - Node installed without npm ^(重装官网 Node 22+^)
 )
 echo.
 echo Press any key to close...
