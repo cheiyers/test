@@ -1,0 +1,1204 @@
+'use strict';
+
+/**
+ * Label template formula engine (Excel-like).
+ *
+ * Applied to a field value. Supports:
+ * - Nested functions: IF(LEFT(TRIM(),2)="SO","订单","其他")
+ * - FORMAT / TEXT for dates & numbers: FORMAT(,"yyyy-mm-dd")  FORMAT(,"0000")
+ * - Legacy colon forms: left:4  and pipe chains: trim|upper|left:4
+ *
+ * Current field value: omit arg, or use . / value / $ / VALUE()
+ * Other columns: field:列名  or FIELD("列名")
+ */
+
+const FORMULA_CATALOG = [
+  { value: '', label: '无（原值）', hint: '不做变换' },
+  { value: 'FORMAT(TODAY(),"yyyy-mm-dd")', label: '今日 FORMAT(TODAY(),"yyyy-mm-dd")', hint: '取今天，输出 2026-08-17' },
+  { value: 'FORMAT(TODAY(),"yyyy/mm/dd")', label: '今日 FORMAT(TODAY(),"yyyy/mm/dd")', hint: '取今天' },
+  { value: 'FORMAT(TODAY(),"yyyy年mm月dd日")', label: '今日中文日期', hint: '2026年08月17日' },
+  { value: 'FORMAT(TODAY(),"yyyymmdd")', label: '今日紧凑日期', hint: '20260817' },
+  { value: 'FORMAT(TODAY(),"yymmdd")', label: '今日短日期 yymmdd', hint: '260817（两位年+月+日）' },
+  { value: 'TODAY()', label: 'TODAY()', hint: '今日（默认 yyyy-mm-dd），可再套 FORMAT' },
+  { value: 'FORMAT(,"yyyy-mm-dd")', label: '日期格式 FORMAT(,"yyyy-mm-dd")', hint: '2026/7/25 → 2026-07-25' },
+  { value: 'FORMAT(,"yyyy/mm/dd")', label: '日期 FORMAT(,"yyyy/mm/dd")', hint: '2026/7/25 → 2026/07/25' },
+  { value: 'FORMAT(,"yyyy年mm月dd日")', label: '中文日期 FORMAT(,"yyyy年mm月dd日")', hint: '2026/7/25 → 2026年07月25日' },
+  { value: 'FORMAT(,"yyyymmdd")', label: '紧凑日期 FORMAT(,"yyyymmdd")', hint: '2026/7/25 → 20260725（不会错成 2001…）' },
+  { value: 'FORMAT(,"0000")', label: '数字补零 FORMAT(,"0000")', hint: '同 Excel 数字格式' },
+  { value: 'FORMAT(,"0.00")', label: '小数 FORMAT(,"0.00")', hint: '保留两位小数' },
+  { value: 'TEXT(,"yyyy-mm-dd")', label: 'TEXT(,"yyyy-mm-dd")', hint: 'FORMAT 同义，贴近 Excel' },
+  { value: 'IF(LEFT(TRIM(),2)="SO","订单","其他")', label: '嵌套 IF(LEFT(TRIM(),2)="SO",…)', hint: '公式可互相嵌套' },
+  { value: 'IF(VALUE()>10,"合格","不合格")', label: 'IF(VALUE()>10,"合格","不合格")', hint: '数值条件' },
+  { value: 'IF(FORMAT(,"yyyy")="2024","今年","往年")', label: 'IF+FORMAT 嵌套', hint: '先格式化再判断' },
+  { value: 'UPPER(LEFT(TRIM(),4))', label: 'UPPER(LEFT(TRIM(),4))', hint: '嵌套文本处理' },
+  { value: 'TRIM()', label: 'TRIM()', hint: '去空格' },
+  { value: 'UPPER()', label: 'UPPER()', hint: '转大写' },
+  { value: 'LOWER()', label: 'LOWER()', hint: '转小写' },
+  { value: 'LEFT(,4)', label: 'LEFT(,4)', hint: '左取 N 位；首参空=当前值' },
+  { value: 'RIGHT(,3)', label: 'RIGHT(,3)', hint: '右取 N 位' },
+  { value: 'MID(,2,3)', label: 'MID(,2,3)', hint: '从第 2 位起取 3 位' },
+  { value: 'LEN()', label: 'LEN()', hint: '字符长度' },
+  { value: 'REPLACE(,旧,新)', label: 'REPLACE(,旧,新)', hint: '替换全部' },
+  { value: 'IFEMPTY(,"无")', label: 'IFEMPTY(,"无")', hint: '空则默认值' },
+  { value: 'IF(FIELD("qty")>5,"多","少")', label: 'IF(FIELD("qty")>5,…)', hint: '用其他列判断' },
+  { value: 'trim|upper|left:4', label: '旧式链式 trim|upper|left:4', hint: '仍兼容' },
+  { value: 'format:yyyy-mm-dd', label: '旧式 format:yyyy-mm-dd', hint: '仍兼容' }
+];
+
+function todayIsoDate() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function todayIsoDateTime() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return `${y}-${m}-${day} ${hh}:${mi}:${ss}`;
+}
+
+function isTodayFieldName(field) {
+  const f = String(field || '').trim().toLowerCase();
+  return f === '__today__' || f === 'today' || f === '今日' || f === '今日日期';
+}
+
+function getField(data, field) {
+  if (!field) return '';
+  if (isTodayFieldName(field)) return todayIsoDate();
+  if (!data) return '';
+  if (Object.prototype.hasOwnProperty.call(data, field)) {
+    return data[field] == null ? '' : String(data[field]);
+  }
+  const key = Object.keys(data).find((k) => k.toLowerCase() === String(field).toLowerCase());
+  return key ? String(data[key] ?? '') : '';
+}
+
+function toNumber(val) {
+  if (val == null || val === '') return null;
+  if (typeof val === 'number' && Number.isFinite(val)) return val;
+  const n = Number(String(val).replace(/,/g, '').trim());
+  return Number.isFinite(n) ? n : null;
+}
+
+function splitArgs(inner) {
+  const args = [];
+  let buf = '';
+  let depth = 0;
+  let quote = null;
+  for (let i = 0; i < inner.length; i++) {
+    const ch = inner[i];
+    if (quote) {
+      buf += ch;
+      if (ch === quote && inner[i - 1] !== '\\') quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      buf += ch;
+      continue;
+    }
+    if (ch === '(') depth += 1;
+    if (ch === ')') depth = Math.max(0, depth - 1);
+    // support Chinese comma as argument separator
+    if ((ch === ',' || ch === '，') && depth === 0) {
+      args.push(buf.trim());
+      buf = '';
+      continue;
+    }
+    buf += ch;
+  }
+  if (buf.length || args.length) args.push(buf.trim());
+  return args;
+}
+
+function splitFormulaChain(formula) {
+  const s = String(formula || '');
+  const parts = [];
+  let buf = '';
+  let depth = 0;
+  let quote = null;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (quote) {
+      buf += ch;
+      if (ch === quote && s[i - 1] !== '\\') quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      buf += ch;
+      continue;
+    }
+    if (ch === '(') depth += 1;
+    if (ch === ')') depth = Math.max(0, depth - 1);
+    if (ch === '|' && depth === 0) {
+      if (buf.trim()) parts.push(buf.trim());
+      buf = '';
+      continue;
+    }
+    buf += ch;
+  }
+  if (buf.trim()) parts.push(buf.trim());
+  return parts.length ? parts : [s.trim()];
+}
+
+function unquote(s) {
+  const t = String(s ?? '').trim();
+  if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
+    return t.slice(1, -1);
+  }
+  return t;
+}
+
+function matchFuncCall(s) {
+  const t = String(s || '').trim();
+  const m = t.match(/^([A-Za-z_][\w]*)\(/);
+  if (!m) return null;
+  let depth = 0;
+  let quote = null;
+  for (let i = m[0].length - 1; i < t.length; i++) {
+    const ch = t[i];
+    if (quote) {
+      if (ch === quote && t[i - 1] !== '\\') quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+    if (ch === '(') depth += 1;
+    else if (ch === ')') {
+      depth -= 1;
+      if (depth === 0) {
+        if (i === t.length - 1) {
+          return { name: m[1], inner: t.slice(m[0].length, i) };
+        }
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+function findTopLevelOp(s) {
+  const ops = ['<>', '!=', '>=', '<=', '=', '>', '<', '&'];
+  let depth = 0;
+  let quote = null;
+  let found = null;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (quote) {
+      if (ch === quote && s[i - 1] !== '\\') quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+    if (ch === '(') {
+      depth += 1;
+      continue;
+    }
+    if (ch === ')') {
+      depth = Math.max(0, depth - 1);
+      continue;
+    }
+    if (depth !== 0) continue;
+    for (const op of ops) {
+      if (s.slice(i, i + op.length) === op) {
+        // skip lone = inside >= etc already handled by order
+        found = { op, index: i, len: op.length };
+        // keep scanning to get leftmost for & concat chains? leftmost is fine for comparisons
+        return found;
+      }
+    }
+  }
+  return found;
+}
+
+/** Find top-level + / - (binary), skip unary minus */
+function findTopLevelAddSub(s) {
+  let depth = 0;
+  let quote = null;
+  let lastFound = null;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (quote) {
+      if (ch === quote && s[i - 1] !== '\\') quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+    if (ch === '(') { depth += 1; continue; }
+    if (ch === ')') { depth = Math.max(0, depth - 1); continue; }
+    if (depth !== 0) continue;
+    if (ch === '+' || ch === '-') {
+      // unary if at start or after another operator / (
+      const prev = s.slice(0, i).trim().slice(-1);
+      if (i === 0 || prev === '' || /[+\-*/(=<>&,]/.test(prev)) continue;
+      lastFound = { op: ch, index: i, len: 1 }; // rightmost for left-assoc via recursion on left
+    }
+  }
+  return lastFound;
+}
+
+function findTopLevelMulDiv(s) {
+  let depth = 0;
+  let quote = null;
+  let lastFound = null;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (quote) {
+      if (ch === quote && s[i - 1] !== '\\') quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+    if (ch === '(') { depth += 1; continue; }
+    if (ch === ')') { depth = Math.max(0, depth - 1); continue; }
+    if (depth !== 0) continue;
+    if (ch === '*' || ch === '/') {
+      lastFound = { op: ch, index: i, len: 1 };
+    }
+  }
+  return lastFound;
+}
+
+function numOp(left, op, right) {
+  const a = toNumber(left);
+  const b = toNumber(right);
+  if (a == null || b == null) return '';
+  if (op === '+') return String(a + b);
+  if (op === '-') return String(a - b);
+  if (op === '*') return String(a * b);
+  if (op === '/') return b === 0 ? '' : String(a / b);
+  return '';
+}
+
+function looksLikeExcelExpr(formula) {
+  const f = String(formula || '').trim();
+  if (!f) return false;
+  if (matchFuncCall(f)) return true;
+  if ((f.startsWith('"') && f.endsWith('"')) || (f.startsWith("'") && f.endsWith("'"))) return true;
+  if (f.includes('&')) return true;
+  if (/\{[^}]+\}/.test(f)) return true;
+  if (findTopLevelOp(f) && /[A-Za-z_(]/.test(f)) return true;
+  if (findTopLevelAddSub(f) || findTopLevelMulDiv(f)) return true;
+  if (/^(IF|TEXT|FORMAT|LEFT|RIGHT|MID|TRIM|UPPER|LOWER|LEN|FIELD|VALUE|CONCAT|TODAY|NOW)\b/i.test(f)) return true;
+  return false;
+}
+
+/** Normalize date separators (fullwidth slash/dash etc.) */
+function normalizeDateString(s) {
+  return String(s || '')
+    .trim()
+    .replace(/[\uFF0F\u2215\u2044]/g, '/') // fullwidth / fraction slashes
+    .replace(/[\uFF0D\u2013\u2014]/g, '-') // fullwidth / en / em dash
+    .replace(/\./g, '/')
+    .replace(/\s+/g, ' ');
+}
+
+function dateFromYmd(y, m, d, hh = 0, mi = 0, ss = 0) {
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return null;
+  if (y < 100) y += y >= 70 ? 1900 : 2000; // 26 → 2026, 99 → 1999
+  if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+  // noon avoids DST edge cases
+  const dt = new Date(y, m - 1, d, hh || 0, mi || 0, ss || 0, 0);
+  if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) return null;
+  return dt;
+}
+
+/** Parse loose dates: Excel serial, ISO, slash/dash, YYYYMMDD, 中文年月日 */
+function parseDateLoose(val) {
+  if (val instanceof Date && !Number.isNaN(val.getTime())) {
+    return dateFromYmd(val.getFullYear(), val.getMonth() + 1, val.getDate(),
+      val.getHours(), val.getMinutes(), val.getSeconds());
+  }
+  if (val == null || val === '') return null;
+  const s0 = String(val).trim();
+  if (!s0) return null;
+  const s = normalizeDateString(s0);
+
+  const n = toNumber(s);
+  // Excel serial date (roughly 1900–2100). Build with UTC then read UTC parts.
+  if (n != null && n > 20000 && n < 80000 && !/[\/\-年月日]/.test(s) && !/^\d{8}$/.test(s)) {
+    const epoch = Date.UTC(1899, 11, 30);
+    const utc = new Date(epoch + Math.round(n) * 86400000);
+    if (!Number.isNaN(utc.getTime())) {
+      return dateFromYmd(utc.getUTCFullYear(), utc.getUTCMonth() + 1, utc.getUTCDate());
+    }
+  }
+
+  // 2026/7/25 or 2026-07-25 10:30:00
+  let m = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+  if (m) {
+    return dateFromYmd(+m[1], +m[2], +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+  }
+
+  // 7/25/2026 or 25/7/2026 (if day>12 treat as D/M/Y)
+  m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+  if (m) {
+    let a = +m[1];
+    let b = +m[2];
+    let y = +m[3];
+    let month;
+    let day;
+    if (a > 12 && b <= 12) {
+      day = a;
+      month = b; // D/M/Y
+    } else {
+      month = a;
+      day = b; // M/D/Y default
+    }
+    return dateFromYmd(y, month, day, +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+  }
+
+  m = s.match(/^(\d{4})年(\d{1,2})月(\d{1,2})日?(?:\s*(\d{1,2})[点时:](\d{1,2})分?(?::?(\d{1,2})秒?)?)?/);
+  if (m) {
+    return dateFromYmd(+m[1], +m[2], +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+  }
+
+  m = s.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (m) return dateFromYmd(+m[1], +m[2], +m[3]);
+
+  // Avoid locale-unstable Date.parse for bare numeric-looking strings
+  if (/[A-Za-z]/.test(s) || s.includes('T')) {
+    const parsed = Date.parse(s0);
+    if (!Number.isNaN(parsed)) {
+      const dt = new Date(parsed);
+      return dateFromYmd(dt.getFullYear(), dt.getMonth() + 1, dt.getDate(),
+        dt.getHours(), dt.getMinutes(), dt.getSeconds());
+    }
+  }
+  return null;
+}
+
+function pad2(n) {
+  return String(n).padStart(2, '0');
+}
+
+/**
+ * Excel-like date format. Uses longest-token regex (yyyy before yy, mm before m)
+ * to avoid the old placeholder bug that could scramble digits.
+ */
+function formatDateExcel(d, pattern) {
+  const y = d.getFullYear();
+  const m = d.getMonth() + 1;
+  const day = d.getDate();
+  const h = d.getHours();
+  const mi = d.getMinutes();
+  const sec = d.getSeconds();
+  const map = {
+    yyyy: String(y),
+    YYYY: String(y),
+    yy: String(y).slice(-2),
+    YY: String(y).slice(-2),
+    mm: pad2(m),
+    MM: pad2(m),
+    m: String(m),
+    dd: pad2(day),
+    DD: pad2(day),
+    d: String(day),
+    hh: pad2(h),
+    HH: pad2(h),
+    h: String(h),
+    mi: pad2(mi),
+    ss: pad2(sec),
+    SS: pad2(sec)
+  };
+  // Longest alternatives first — critical so yyyy wins over yy
+  return String(pattern).replace(
+    /yyyy|YYYY|yy|YY|mm|MM|dd|DD|hh|HH|mi|ss|SS|m|d|h/g,
+    (tok) => (Object.prototype.hasOwnProperty.call(map, tok) ? map[tok] : tok)
+  );
+}
+
+function isDatePattern(pattern) {
+  const p = String(pattern || '');
+  if (!p) return false;
+  if (/^[#0,\.Ee%]+$/.test(p)) return false;
+  // must contain a date token, not just any letter m/d from random text
+  return /yyyy|YYYY|yy|YY|mm|MM|dd|DD|年|月|日|(?:^|[^a-zA-Z])m(?:[^a-zA-Z]|$)|(?:^|[^a-zA-Z])d(?:[^a-zA-Z]|$)/.test(p)
+    || /^(y|m|d|Y|M|D|h|H|s|S|年|月|日|\/|\-|:|\s)+$/.test(p);
+}
+
+/** True when text is a FORMAT/TEXT pattern literal, not an expression */
+function isFormatPatternLiteral(s) {
+  const t = unquote(String(s || '').trim());
+  if (!t) return false;
+  if (isDatePattern(t)) return true;
+  if (/^[#0,\.Ee%]+$/.test(t)) return true;
+  if (/^0+\.0+$/.test(t) || t === '0.00' || t === '#,##0.00') return true;
+  return false;
+}
+
+function formatNumberExcel(n, pattern) {
+  const p = String(pattern || '');
+  if (/^0+$/.test(p)) {
+    const abs = String(Math.abs(Math.trunc(n)));
+    const body = abs.padStart(p.length, '0');
+    return n < 0 ? `-${body}` : body;
+  }
+  if (/^0+\.0+$/.test(p) || /^0\.0+$/.test(p)) {
+    const decimals = (p.split('.')[1] || '').length;
+    return n.toFixed(decimals);
+  }
+  if (p === '0.00' || p === '#,##0.00' || p === '#.##') {
+    const fixed = n.toFixed(2);
+    if (p.includes(',')) {
+      const [a, b] = fixed.split('.');
+      return `${Number(a).toLocaleString('en-US')}.${b}`;
+    }
+    return fixed;
+  }
+  if (p.endsWith('%')) {
+    const decimals = (p.replace('%', '').split('.')[1] || '').length;
+    return `${(n * 100).toFixed(decimals)}%`;
+  }
+  // generic 0.00 style from count of decimals
+  const dm = p.match(/\.([0#]+)/);
+  if (dm) return n.toFixed(dm[1].length);
+  if (/^0+$/.test(p.replace(/[#,]/g, ''))) {
+    return String(Math.round(n)).padStart(p.replace(/[#,]/g, '').length, '0');
+  }
+  return String(n);
+}
+
+/** Excel-like FORMAT / TEXT */
+function formatValue(val, pattern) {
+  const p = unquote(pattern);
+  if (!p) return val == null ? '' : String(val);
+
+  if (isDatePattern(p)) {
+    const d = parseDateLoose(val);
+    if (d && !Number.isNaN(d.getTime())) return formatDateExcel(d, p);
+    // fall through if not a date
+  }
+
+  const n = toNumber(val);
+  if (n != null) return formatNumberExcel(n, p);
+  return val == null ? '' : String(val);
+}
+
+function compareValues(left, op, right) {
+  const o = String(op || '').toLowerCase();
+  const ls = left == null ? '' : String(left);
+  const rs = right == null ? '' : String(right);
+  if (o === 'empty') return ls.trim() === '';
+  if (o === 'notempty') return ls.trim() !== '';
+  if (o === 'contains') return ls.includes(rs);
+  if (o === 'startswith') return ls.startsWith(rs);
+  if (o === 'endswith') return ls.endsWith(rs);
+  const ln = toNumber(ls);
+  const rn = toNumber(rs);
+  const bothNum = ln != null && rn != null;
+  switch (o) {
+    case '=':
+    case '==':
+    case 'eq':
+      return bothNum ? ln === rn : ls === rs;
+    case '<>':
+    case '!=':
+    case 'ne':
+      return bothNum ? ln !== rn : ls !== rs;
+    case '>':
+    case 'gt':
+      return bothNum ? ln > rn : ls > rs;
+    case '>=':
+    case 'gte':
+      return bothNum ? ln >= rn : ls >= rs;
+    case '<':
+    case 'lt':
+      return bothNum ? ln < rn : ls < rs;
+    case '<=':
+    case 'lte':
+      return bothNum ? ln <= rn : ls <= rs;
+    default:
+      return false;
+  }
+}
+
+function callFunc(name, args, ctx) {
+  const n = String(name || '').toUpperCase();
+  const cur = () => (ctx.value == null ? '' : String(ctx.value));
+  const a0 = () => (args.length && args[0] !== '' && args[0] != null ? String(args[0]) : cur());
+
+  if (n === 'VALUE' || n === 'VAL') return cur();
+  if (n === 'TODAY') return todayIsoDate();
+  if (n === 'NOW') return todayIsoDateTime();
+  if (n === 'FIELD') {
+    const key = unquote(args[0] || '');
+    return getField(ctx.data, key);
+  }
+  if (n === 'TRIM') return a0().trim();
+  if (n === 'UPPER' || n === 'UCASE') return a0().toUpperCase();
+  if (n === 'LOWER' || n === 'LCASE') return a0().toLowerCase();
+  if (n === 'LEN' || n === 'LENGTH') return String(a0().length);
+  if (n === 'REVERSE') return [...a0()].reverse().join('');
+  if (n === 'KEEPNUM') return a0().replace(/[^\d.-]/g, '');
+  if (n === 'KEEPALPHA') return a0().replace(/[^a-zA-Z]/g, '');
+
+  if (n === 'LEFT') {
+    const src = a0();
+    const len = toNumber(args[1]) ?? 0;
+    return src.slice(0, Math.max(0, len));
+  }
+  if (n === 'RIGHT') {
+    const src = a0();
+    const len = toNumber(args[1]) ?? 0;
+    return src.slice(-Math.max(0, len));
+  }
+  if (n === 'MID' || n === 'SUBSTR') {
+    const src = a0();
+    const start = Math.max(1, toNumber(args[1]) || 1);
+    const len = toNumber(args[2]) ?? 0;
+    return src.substr(start - 1, Math.max(0, len));
+  }
+  if (n === 'REPLACE' || n === 'SUBSTITUTE') {
+    const src = a0();
+    return src.split(String(args[1] ?? '')).join(String(args[2] ?? ''));
+  }
+  if (n === 'PREFIX') return `${args[1] ?? ''}${a0()}`;
+  if (n === 'SUFFIX') return `${a0()}${args[1] ?? ''}`;
+  if (n === 'IFEMPTY' || n === 'DEFAULT' || n === 'IFBLANK') {
+    const src = a0();
+    return src.trim() === '' ? String(args[1] ?? '') : src;
+  }
+  if (n === 'CONCAT' || n === 'CONCATENATE') {
+    return args.map((x) => (x == null ? '' : String(x))).join('');
+  }
+  if (n === 'SPLIT') {
+    const parts = a0().split(String(args[1] ?? ''));
+    const idx = toNumber(args[2]) ?? 0;
+    return parts[idx] != null ? parts[idx] : '';
+  }
+  if (n === 'ABS') {
+    const num = toNumber(a0());
+    return num == null ? a0() : String(Math.abs(num));
+  }
+  if (n === 'FLOOR') {
+    const num = toNumber(a0());
+    return num == null ? a0() : String(Math.floor(num));
+  }
+  if (n === 'CEIL' || n === 'CEILING') {
+    const num = toNumber(a0());
+    return num == null ? a0() : String(Math.ceil(num));
+  }
+  if (n === 'ROUND') {
+    const num = toNumber(a0());
+    const d = toNumber(args[1]) ?? 0;
+    if (num == null) return a0();
+    const p = 10 ** d;
+    return String(Math.round(num * p) / p);
+  }
+  if (n === 'FIXED') {
+    const num = toNumber(a0());
+    const d = toNumber(args[1]) ?? 2;
+    return num == null ? a0() : num.toFixed(d);
+  }
+  if (n === 'FORMAT' || n === 'TEXT') {
+    // FORMAT(value, pattern) or FORMAT(, pattern) or FORMAT(pattern) legacy
+    if (args.length >= 2) return formatValue(args[0] === '' || args[0] == null ? cur() : args[0], args[1]);
+    if (args.length === 1) return formatValue(cur(), args[0]);
+    return cur();
+  }
+  if (n === 'DATEVALUE' || n === 'TODATE') {
+    const d = parseDateLoose(a0());
+    return d ? formatDateExcel(d, 'yyyy-mm-dd') : a0();
+  }
+  if (n === 'YEAR') {
+    const d = parseDateLoose(a0());
+    return d ? String(d.getFullYear()) : '';
+  }
+  if (n === 'MONTH') {
+    const d = parseDateLoose(a0());
+    return d ? String(d.getMonth() + 1) : '';
+  }
+  if (n === 'DAY') {
+    const d = parseDateLoose(a0());
+    return d ? String(d.getDate()) : '';
+  }
+
+  if (n === 'IF') {
+    // IF(cond, then, else) — cond may be comparison expression already evaluated to boolean-ish
+    // When called via evalExpr, args are already evaluated... but cond like LEFT()="SO" is one arg before split
+    // Actually IF's first arg is evaluated as expression which handles comparison
+    const condVal = args[0];
+    const truthy = !(condVal === false || condVal === 0 || condVal === '0' || condVal === '' || condVal == null || condVal === 'false' || condVal === 'FALSE');
+    return truthy ? String(args[1] ?? '') : String(args[2] ?? '');
+  }
+
+  if (n === 'IFFIELD') {
+    // IFFIELD(field, opRhs, then, else) e.g. evaluated args already
+    // Prefer Excel: IF(FIELD("qty")>5,"多","少") instead
+    const left = getField(ctx.data, unquote(args[0] || ''));
+    const cond = String(args[1] || '');
+    const cm = cond.match(/^(>=|<=|<>|!=|=|>|<|contains|empty|notempty)\s*(.*)$/i);
+    const ok = cm ? compareValues(left, cm[1], cm[2]) : compareValues(left, '>', cond);
+    return ok ? String(args[2] ?? '') : String(args[3] ?? '');
+  }
+
+  // Unknown function: return as-is / treat as legacy
+  return applyLegacyOne(ctx.value, `${name}(${args.join(',')})`, ctx.data);
+}
+
+function evalExpr(input, ctx) {
+  const s = String(input ?? '').trim();
+  if (s === '') return ctx.value == null ? '' : String(ctx.value);
+
+  // Quoted literal
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    return unquote(s);
+  }
+
+  // Strip balanced outer parentheses: (VALUE()+1)
+  if (s.startsWith('(') && s.endsWith(')')) {
+    let depth = 0;
+    let balanced = true;
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i];
+      if (ch === '(') depth += 1;
+      else if (ch === ')') {
+        depth -= 1;
+        if (depth === 0 && i < s.length - 1) { balanced = false; break; }
+      }
+    }
+    if (balanced && depth === 0) return evalExpr(s.slice(1, -1), ctx);
+  }
+
+  // Current value aliases
+  if (s === '.' || s === 'value' || s === '$') return ctx.value == null ? '' : String(ctx.value);
+
+  // field:col
+  const fm = s.match(/^field:(.+)$/i);
+  if (fm) return getField(ctx.data, fm[1].trim());
+
+  // Top-level comparison / concat (before wrapping whole as func)
+  const opFound = findTopLevelOp(s);
+  if (opFound) {
+    const left = evalExpr(s.slice(0, opFound.index).trim(), ctx);
+    const right = evalExpr(s.slice(opFound.index + opFound.len).trim(), ctx);
+    if (opFound.op === '&') return `${left}${right}`;
+    return compareValues(left, opFound.op, right);
+  }
+
+  // Arithmetic: + - then * / (left-associative via rightmost split)
+  const addSub = findTopLevelAddSub(s);
+  if (addSub) {
+    const left = evalExpr(s.slice(0, addSub.index).trim(), ctx);
+    const right = evalExpr(s.slice(addSub.index + addSub.len).trim(), ctx);
+    return numOp(left, addSub.op, right);
+  }
+  const mulDiv = findTopLevelMulDiv(s);
+  if (mulDiv) {
+    const left = evalExpr(s.slice(0, mulDiv.index).trim(), ctx);
+    const right = evalExpr(s.slice(mulDiv.index + mulDiv.len).trim(), ctx);
+    return numOp(left, mulDiv.op, right);
+  }
+
+  // Function call (possibly nested inside already handled by recursion on args)
+  const call = matchFuncCall(s);
+  if (call) {
+    // Special-case IF: first argument should be evaluated as expression (may be comparison)
+    if (/^if$/i.test(call.name)) {
+      const parts = splitArgs(call.inner);
+      const cond = evalExpr(parts[0] || '', ctx);
+      const thenV = evalExpr(parts[1] != null ? parts[1] : '', ctx);
+      const elseV = evalExpr(parts[2] != null ? parts[2] : '', ctx);
+      return callFunc('IF', [cond, thenV, elseV], ctx);
+    }
+    // FORMAT/TEXT: last argument is always a pattern literal (yyyy-mm-dd / 0000), never an expression
+    if (/^(format|text)$/i.test(call.name)) {
+      const parts = splitArgs(call.inner);
+      if (parts.length >= 2) {
+        const valueExpr = parts[0];
+        const patternLit = unquote(parts[parts.length - 1] || '');
+        const value = valueExpr === '' ? (ctx.value == null ? '' : String(ctx.value)) : evalExpr(valueExpr, ctx);
+        return formatValue(value, patternLit);
+      }
+      if (parts.length === 1) {
+        return formatValue(ctx.value, unquote(parts[0] || ''));
+      }
+      return ctx.value == null ? '' : String(ctx.value);
+    }
+    const argVals = splitArgs(call.inner).map((a) => {
+      if (a === '') return ''; // explicit empty = current value placeholder
+      // format-like literals kept as-is when passed into other funcs
+      if (isFormatPatternLiteral(a)) return unquote(a);
+      return evalExpr(a, ctx);
+    });
+    // For unary text funcs with empty first arg, callFunc uses current value
+    return callFunc(call.name, argVals, ctx);
+  }
+
+  // Pure number
+  if (/^-?\d+(\.\d+)?$/.test(s)) return s;
+
+  // Boolean literals
+  if (/^(true|false)$/i.test(s)) return /^true$/i.test(s);
+
+  // Legacy colon / bare formula against current value
+  return applyLegacyOne(ctx.value, s, ctx.data);
+}
+
+function applyLegacyOne(raw, formula, data) {
+  let val = raw == null ? '' : String(raw);
+  if (!formula) return val;
+  const f = String(formula).trim();
+  if (!f) return val;
+
+  // Legacy if(>10,a,b) without nested left side
+  let m = f.match(/^if\((.*)\)$/i);
+  if (m && !matchFuncCall(f)?.name?.match(/^if$/i)) {
+    /* handled below via colon if */
+  }
+  // Simple if(cond,then,else) where cond is >10 style
+  m = f.match(/^if\((.*)\)$/i);
+  if (m) {
+    const args = splitArgs(m[1]);
+    const condRaw = args[0] || '';
+    const cm = condRaw.match(/^(>=|<=|<>|!=|=|>|<|contains|startswith|endswith|empty|notempty)\s*(.*)$/i);
+    if (cm) {
+      const ok = compareValues(val, cm[1], cm[2]);
+      const thenTok = args[1] != null ? args[1] : '';
+      const elseTok = args[2] != null ? args[2] : '';
+      if (/^field:/i.test(thenTok) || thenTok === '.' || thenTok === 'value') {
+        return ok ? resolveLegacyToken(thenTok, data, val) : resolveLegacyToken(elseTok, data, val);
+      }
+      // If then/else look like expressions, evaluate
+      const ctx = { value: val, data: data || {} };
+      return ok ? String(evalExpr(thenTok, ctx)) : String(evalExpr(elseTok, ctx));
+    }
+  }
+
+  m = f.match(/^iffield\((.*)\)$/i);
+  if (m) {
+    const args = splitArgs(m[1]);
+    const left = getField(data, unquote(args[0] || ''));
+    const condRaw = args[1] || '';
+    const cm = condRaw.match(/^(>=|<=|<>|!=|=|>|<|contains|startswith|endswith|empty|notempty)\s*(.*)$/i);
+    const ok = cm ? compareValues(left, cm[1], cm[2]) : false;
+    const ctx = { value: val, data: data || {} };
+    return ok ? String(evalExpr(args[2] != null ? args[2] : '', ctx)) : String(evalExpr(args[3] != null ? args[3] : '', ctx));
+  }
+
+  // format:pattern or format(pattern) — date or number
+  m = f.match(/^format\((.+)\)$/i) || f.match(/^format:(.+)$/i) || f.match(/^text:(.+)$/i);
+  if (m) return formatValue(val, m[1]);
+
+  if (f === 'trim') return val.trim();
+  if (f === 'upper') return val.toUpperCase();
+  if (f === 'lower') return val.toLowerCase();
+  if (f === 'reverse') return [...val].reverse().join('');
+  if (f === 'len' || f === 'length') return String(val.length);
+  if (f === 'keepnum') return val.replace(/[^\d.-]/g, '');
+  if (f === 'keepalpha') return val.replace(/[^a-zA-Z]/g, '');
+  if (f === 'floor') {
+    const num = toNumber(val);
+    return num == null ? val : String(Math.floor(num));
+  }
+  if (f === 'ceil') {
+    const num = toNumber(val);
+    return num == null ? val : String(Math.ceil(num));
+  }
+  if (f === 'abs') {
+    const num = toNumber(val);
+    return num == null ? val : String(Math.abs(num));
+  }
+
+  m = f.match(/^left:(\d+)$/i);
+  if (m) return val.slice(0, Number(m[1]));
+  m = f.match(/^right:(\d+)$/i);
+  if (m) return val.slice(-Number(m[1]));
+  m = f.match(/^mid:(\d+):(\d+)$/i);
+  if (m) return val.substr(Math.max(0, Number(m[1]) - 1), Number(m[2]));
+  m = f.match(/^padleft:(\d+):(.*)$/i);
+  if (m) return val.padStart(Number(m[1]), m[2] === '' ? '0' : m[2]);
+  m = f.match(/^padright:(\d+):(.*)$/i);
+  if (m) return val.padEnd(Number(m[1]), m[2] === '' ? '0' : m[2]);
+  m = f.match(/^replace:(.*?):(.*)$/i);
+  if (m) return val.split(m[1]).join(m[2]);
+  m = f.match(/^remove:(.+)$/i);
+  if (m) return val.split(m[1]).join('');
+  m = f.match(/^prefix:(.*)$/i);
+  if (m) return `${m[1]}${val}`;
+  m = f.match(/^suffix:(.*)$/i);
+  if (m) return `${val}${m[1]}`;
+  m = f.match(/^(?:default|ifempty):(.*)$/i);
+  if (m) return val.trim() === '' ? m[1] : val;
+  m = f.match(/^split:(.*?):(\d+)$/i);
+  if (m) {
+    const parts = val.split(m[1]);
+    const idx = Number(m[2]);
+    return parts[idx] != null ? parts[idx] : '';
+  }
+  m = f.match(/^fixed:(\d+)$/i);
+  if (m) {
+    const num = toNumber(val);
+    return num == null ? val : num.toFixed(Number(m[1]));
+  }
+  m = f.match(/^round:(\d+)$/i);
+  if (m) {
+    const num = toNumber(val);
+    if (num == null) return val;
+    const d = Number(m[1]);
+    const p = 10 ** d;
+    return String(Math.round(num * p) / p);
+  }
+  m = f.match(/^percent:(\d+)$/i);
+  if (m) {
+    const num = toNumber(val);
+    return num == null ? val : `${(num * 100).toFixed(Number(m[1]))}%`;
+  }
+  m = f.match(/^num([+\-*/])(-?\d+(?:\.\d+)?)$/i);
+  if (m) {
+    const num = toNumber(val);
+    const x = Number(m[2]);
+    if (num == null || !Number.isFinite(x)) return val;
+    if (m[1] === '+') return String(num + x);
+    if (m[1] === '-') return String(num - x);
+    if (m[1] === '*') return String(num * x);
+    if (m[1] === '/') return String(x === 0 ? num : num / x);
+  }
+
+  m = f.match(/^if:(>=|<=|<>|!=|=|>|<|contains|startswith|endswith|empty|notempty)(?::(.*))?$/i);
+  if (m) {
+    const op = m[1];
+    const rest = m[2] || '';
+    const parts = rest.split(':');
+    let ok = false;
+    let thenTok = '';
+    let elseTok = '';
+    if (/^(empty|notempty)$/i.test(op)) {
+      ok = compareValues(val, op, '');
+      thenTok = parts[0] != null ? parts[0] : '';
+      elseTok = parts.slice(1).join(':');
+    } else {
+      ok = compareValues(val, op, parts[0] != null ? parts[0] : '');
+      thenTok = parts[1] != null ? parts[1] : '';
+      elseTok = parts.slice(2).join(':');
+    }
+    return ok ? resolveLegacyToken(thenTok, data, val) : resolveLegacyToken(elseTok, data, val);
+  }
+
+  return val;
+}
+
+function resolveLegacyToken(token, data, currentVal) {
+  if (token == null) return '';
+  const t = String(token).trim();
+  if (!t) return '';
+  if (t === '.' || t === 'value' || t === '$') return currentVal == null ? '' : String(currentVal);
+  const fm = t.match(/^field:(.+)$/i);
+  if (fm) return getField(data, fm[1].trim());
+  return t;
+}
+
+function applyFormula(raw, formula, data) {
+  if (!formula) return raw == null ? '' : String(raw);
+  const ctx = { value: raw == null ? '' : raw, data: data || {} };
+  const f = String(formula).trim();
+  if (!f) return String(ctx.value);
+
+  // {列名} 模板：可与固定文字混写，如 {订单号}-{料号}
+  if (/\{[^}]+\}/.test(f) && !matchFuncCall(f)) {
+    return f.replace(/\{([^}]+)\}/g, (_, name) => {
+      const v = getField(data, String(name || '').trim());
+      return v == null ? '' : String(v);
+    });
+  }
+
+  // Prefer Excel-like nested expression when it looks like one
+  if (looksLikeExcelExpr(f) && !f.includes('|')) {
+    const out = evalExpr(f, ctx);
+    if (typeof out === 'boolean') return out ? 'TRUE' : 'FALSE';
+    return out == null ? '' : String(out);
+  }
+
+  // Pipe chain (each step may itself be nested expr)
+  const parts = splitFormulaChain(f);
+  let val = ctx.value;
+  for (const part of parts) {
+    const stepCtx = { value: val, data: ctx.data };
+    if (looksLikeExcelExpr(part)) {
+      const out = evalExpr(part, stepCtx);
+      val = typeof out === 'boolean' ? (out ? 'TRUE' : 'FALSE') : out;
+    } else {
+      val = applyLegacyOne(val, part, ctx.data);
+    }
+  }
+  return val == null ? '' : String(val);
+}
+
+
+function clampSerialWidth(w) {
+  const n = Number(w);
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.min(12, Math.floor(n));
+}
+
+function normalizeSerialStyle(style) {
+  const s = String(style || 'numeric').toLowerCase();
+  if (s === 'upper' || s === 'upper_alpha' || s === 'alpha' || s === 'letter' || s === 'en') return 'upper';
+  if (s === 'lower' || s === 'lower_alpha') return 'lower';
+  if (s === 'alnum' || s === 'alphanum' || s === 'base36') return 'alnum';
+  return 'numeric';
+}
+
+/** Parse user start value into 1-based sequence number */
+/** Parse start into a 0-based sequence counter for the given style */
+function parseSerialStart(start, style) {
+  const st = normalizeSerialStyle(style);
+  const raw = String(start == null ? '' : start).trim();
+  if (st === 'numeric') {
+    const n = parseInt(raw || '1', 10);
+    // numeric uses 1-based display values: start 1 -> counter 1
+    return Number.isFinite(n) && n > 0 ? n : 1;
+  }
+  if (st === 'upper' || st === 'lower') {
+    // A=0, B=1, ... Z=25, AA=26 (fixed-base alphabet, A=0)
+    const letters = raw.replace(/[^a-zA-Z]/g, '') || 'A';
+    const s = letters.toUpperCase();
+    let n = 0;
+    for (let i = 0; i < s.length; i++) {
+      n = n * 26 + (s.charCodeAt(i) - 65);
+    }
+    return Math.max(0, n);
+  }
+  // alnum base36 0-9A-Z, 0-based
+  const s = (raw || '0').toUpperCase().replace(/[^0-9A-Z]/g, '') || '0';
+  let n = 0;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    const v = ch >= '0' && ch <= '9' ? ch.charCodeAt(0) - 48 : ch.charCodeAt(0) - 55;
+    n = n * 36 + v;
+  }
+  return Math.max(0, n);
+}
+
+function toFixedAlpha(n0, width, lower) {
+  let x = Math.max(0, Math.floor(n0));
+  let out = '';
+  const w = Math.max(1, width);
+  for (let i = 0; i < w; i++) {
+    out = String.fromCharCode((lower ? 97 : 65) + (x % 26)) + out;
+    x = Math.floor(x / 26);
+  }
+  while (x > 0) {
+    out = String.fromCharCode((lower ? 97 : 65) + (x % 26)) + out;
+    x = Math.floor(x / 26);
+  }
+  return out;
+}
+
+function toAlnum(n0, width) {
+  let x = Math.max(0, Math.floor(n0));
+  const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  let out = '';
+  const w = Math.max(1, width);
+  for (let i = 0; i < w; i++) {
+    out = chars[x % 36] + out;
+    x = Math.floor(x / 36);
+  }
+  while (x > 0) {
+    out = chars[x % 36] + out;
+    x = Math.floor(x / 36);
+  }
+  return out;
+}
+
+/**
+ * Format serial for label index (0-based offset from start).
+ * seg: { style, width, start, connector }
+ * absValue: 打印时绝对序号（优先于 start+index），用于「从几到几」
+ */
+function formatSerialSeg(seg, serialIndex, absValue) {
+  const style = normalizeSerialStyle(seg && seg.style);
+  const width = clampSerialWidth(seg && seg.width);
+  const startNum = parseSerialStart(seg && seg.start, style);
+  const idx = Math.max(0, Number(serialIndex) || 0);
+  const abs = absValue != null && absValue !== '' ? Number(absValue) : NaN;
+  const n = Number.isFinite(abs) ? Math.max(0, Math.floor(abs)) : (startNum + idx);
+  let body = '';
+  if (style === 'numeric') {
+    body = String(Math.max(0, n)).padStart(width, '0');
+    if (body.length > width) body = String(Math.max(0, n));
+  } else if (style === 'upper') {
+    body = toFixedAlpha(n, width, false);
+  } else if (style === 'lower') {
+    body = toFixedAlpha(n, width, true);
+  } else {
+    body = toAlnum(n, width);
+  }
+  const conn = seg && seg.connector != null ? String(seg.connector) : '-';
+  return conn + body;
+}
+
+function serialSegPreview(seg) {
+  const conn = seg && seg.connector != null ? String(seg.connector) : '-';
+  const sample = formatSerialSeg(seg || {}, 0);
+  // sample already includes connector
+  const style = normalizeSerialStyle(seg && seg.style);
+  const width = clampSerialWidth(seg && seg.width);
+  return `[序号${style}:${width}位 起${String((seg && seg.start) || '1')} → ${sample}]`;
+}
+
+
+function evalSegments(segments, data) {
+  if (!Array.isArray(segments) || !segments.length) return '';
+  const serialIndex = data && (data.__serial_index != null ? data.__serial_index : data._serial_index);
+  const serialAbs = data && (data.__serial_abs != null ? data.__serial_abs : data._serial_abs);
+  return segments.map((seg) => {
+    if (!seg) return '';
+    if (seg.type === 'text') return seg.value == null ? '' : String(seg.value);
+    if (seg.type === 'field') {
+      const raw = getField(data, seg.field);
+      return applyFormula(raw, seg.formula, data);
+    }
+    if (seg.type === 'serial') {
+      return formatSerialSeg(seg, serialIndex, serialAbs);
+    }
+    return '';
+  }).join('');
+}
+
+function evalTemplateText(text, data) {
+  if (text == null) return '';
+  return String(text).replace(/\{([^}|]+)(?:\|([^}]*))?\}/g, (_, field, formula) => {
+    return applyFormula(getField(data, field.trim()), formula ? formula.trim() : '', data);
+  });
+}
+
+function resolveElementContent(el, data, fallbackCode) {
+  if (el && Array.isArray(el.segments) && el.segments.length) {
+    return evalSegments(el.segments, data);
+  }
+  if (el && el.type === 'code') {
+    return fallbackCode || evalTemplateText(el.text || '', data);
+  }
+  if (el && el.bind && !(el.text || '').includes('{')) {
+    return applyFormula(getField(data, el.bind), el.formula || '', data);
+  }
+  return evalTemplateText(el?.text || '', data);
+}
+
+function resolveCellContent(cell, data, fallbackCode) {
+  if (!cell) return '';
+  if (Array.isArray(cell.segments) && cell.segments.length) {
+    return evalSegments(cell.segments, data);
+  }
+  if (cell.contentType === 'qr' || cell.contentType === 'barcode') {
+    return fallbackCode || evalTemplateText(cell.text || '', data);
+  }
+  return evalTemplateText(cell.text || '', data);
+}
+
+function scanIdField(labelType) {
+  return labelType === 'child' ? 'child_code' : 'package_code';
+}
+
+function segmentsIncludeScanId(segments, labelType) {
+  const idField = scanIdField(labelType);
+  return (segments || []).some((s) => s && s.type === 'field' && String(s.field || '').toLowerCase() === idField);
+}
+
+function ensureScanIdInSegments(segments, labelType) {
+  const list = Array.isArray(segments) ? segments.slice() : [];
+  if (segmentsIncludeScanId(list, labelType)) return list;
+  list.unshift({ type: 'field', field: scanIdField(labelType), formula: '' });
+  return list;
+}
+
+function buildPrintCode(tpl, data, uniqueId, labelType) {
+  const uid = String(uniqueId || '').trim();
+  const idField = scanIdField(labelType || tpl?.label_type);
+  const merged = { ...(data || {}), [idField]: uid, __today__: todayIsoDate() };
+  const mode = tpl?.code_mode || 'unique';
+  if (mode === 'unique') return uid;
+
+  let segs = tpl?.code_segments;
+  if (typeof segs === 'string') {
+    try { segs = JSON.parse(segs); } catch { segs = []; }
+  }
+  if (!Array.isArray(segs) || !segs.length) {
+    const fields = tpl?.code_fields || [];
+    if (fields.length) {
+      segs = fields.map((f) => ({ type: 'field', field: f, formula: '' }));
+    }
+  }
+  // 唯一码非必须：按用户配置的片段原样拼接
+  const printed = evalSegments(segs || [], merged).trim();
+  return printed;
+}
+
+/** 模板中条码/二维码是否包含系统唯一码（订单批次打印可选模板用） */
+function templateIncludesScanId(tpl) {
+  if (!tpl) return false;
+  const labelType = tpl.label_type === 'child' ? 'child' : 'master';
+  if (tpl.code_mode === 'unique') {
+    const els = tpl.elements || [];
+    return els.some((el) => {
+      if (el.type === 'code') return true;
+      if (el.type === 'table') {
+        return (el.cells || []).some((c) => c.contentType === 'qr' || c.contentType === 'barcode');
+      }
+      return false;
+    });
+  }
+  if (segmentsIncludeScanId(tpl.code_segments, labelType)) return true;
+  return (tpl.elements || []).some((el) => {
+    if (el.type === 'code' && segmentsIncludeScanId(el.segments, labelType)) return true;
+    if (el.type === 'table') {
+      return (el.cells || []).some((c) =>
+        (c.contentType === 'qr' || c.contentType === 'barcode') &&
+        segmentsIncludeScanId(c.segments, labelType)
+      );
+    }
+    return false;
+  });
+}
+
+function segmentsPreview(segments) {
+  if (!Array.isArray(segments) || !segments.length) return '';
+  return segments.map((s) => {
+    if (s.type === 'text') return s.value || '';
+    if (s.type === 'field') return '{' + (s.field || '?') + (s.formula ? '|' + s.formula : '') + '}';
+    if (s.type === 'serial') return formatSerialSeg(s, 0);
+    return '';
+  }).join('');
+}
+
+module.exports = {
+  FORMULA_CATALOG,
+  getField,
+  applyFormula,
+  evalSegments,
+  segmentsPreview,
+  evalTemplateText,
+  resolveElementContent,
+  resolveCellContent,
+  scanIdField,
+  segmentsIncludeScanId,
+  ensureScanIdInSegments,
+  templateIncludesScanId,
+  todayIsoDate,
+  formatSerialSeg,
+  parseSerialStart,
+  serialSegPreview,
+  normalizeSerialStyle,
+  buildPrintCode,
+  formatValue,
+  parseDateLoose,
+  evalExpr
+};

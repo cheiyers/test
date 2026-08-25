@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BOM 扫码质量监管系统</title>
+  <link rel="stylesheet" href="/css/app.css" />
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+</head>
+<body>
+  <div id="loginView" class="login-wrap">
+    <div class="login-card">
+      <div class="brand" style="margin-bottom:14px">
+        <div class="brand-mark">QC</div>
+        <div>BOM 扫码质量监管</div>
+      </div>
+      <h1>登录</h1>
+      <p class="hint">局域网共享 · 导入 BOM/订单 · 打印标签 · 扫码齐套校验</p>
+      <div id="loginFlash"></div>
+      <form id="loginForm" class="row" style="flex-direction:column;align-items:stretch">
+        <label class="field"><span>用户名</span><input name="username" autocomplete="username" required /></label>
+        <label class="field"><span>密码</span><input name="password" type="password" autocomplete="current-password" required /></label>
+        <button class="btn" type="submit">进入系统</button>
+      </form>
+      <div class="accounts">
+        默认账号：admin / admin123（管理员）<br />
+        import / import123（导入打印） · scan / scan123（扫码入库）
+      </div>
+    </div>
+  </div>
+
+  <div id="appView" class="app-shell hidden">
+    <header class="topbar no-print">
+      <div class="brand">
+        <div class="brand-mark">QC</div>
+        <div class="brand-text">BOM 扫码质量监管</div>
+      </div>
+      <button class="btn secondary menu-toggle" id="menuToggle" type="button" aria-label="菜单">菜单</button>
+      <nav class="nav" id="mainNav"></nav>
+      <div class="user-box">
+        <span id="userInfo"></span>
+        <button class="btn secondary" id="logoutBtn" type="button">退出</button>
+      </div>
+    </header>
+    <main class="main no-print" id="pageRoot"></main>
+    <div class="print-sheet" id="printSheet"></div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/expr.js"></script>
+  <script src="/js/label-render.js"></script>
+  <script src="/js/template-editor.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>
