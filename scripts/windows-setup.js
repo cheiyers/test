@@ -245,7 +245,7 @@ if (!fs.existsSync(path.join(root, 'node_modules', 'express'))) {
 log('');
 log('========================================');
 log('  SETUP OK');
-log('  Next: double-click start.bat / 开始运行.bat');
+log('  Next: double-click 2-启动系统.bat');
 log('  URL:  http://127.0.0.1:3789');
 log('  Log:  ' + logFile);
 log('========================================');
