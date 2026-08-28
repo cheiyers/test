@@ -31,5 +31,12 @@ label = next(b for b in switch["bom"] if b["pos"] == "0500")
 assert label["remarkFields"]["A"] == "20"
 assert "MAINS SWITCH" in label["remarkFields"]["C"]
 assert label["remarkFields"]["D"].startswith("KMC")
-print("ok", got, "bom remarks", label["remarkFields"])
+descs = {
+    (b.get("description") or "").strip()
+    for it in big["items"]
+    for b in it.get("bom") or []
+    if (b.get("description") or "").strip()
+}
+assert len(descs) == 21, len(descs)
+print("ok", got, "bom remarks", label["remarkFields"], "bom descs", len(descs))
 out.unlink()

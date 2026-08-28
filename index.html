@@ -14,7 +14,7 @@
     <div class="brand">
       <div>
         <h1>通力采购订单批量识别</h1>
-        <p>识别全部订单行与 BOM 子件（含子件下方备注 A/B/C/D）。按相同物料类别归组后由你勾选要看的类；每一列还可单独做替换、提取、分段、格式化等处理，再导出。</p>
+        <p>识别全部订单行与 BOM 子件（含子件下方备注 A/B/C/D）。按相同物料类别归组后由你勾选要看的类；也可勾选某些子件描述，把对应物料、数量和备注钉到同一订单行右侧。每一列还可单独做替换、提取、分段、格式化等处理，再导出。</p>
       </div>
       <span class="tag" id="sourceTag">示例文档（已预识别）</span>
     </div>
@@ -133,6 +133,15 @@
           <div class="field-block">
             <h3>子件字段（含下方备注行）</h3>
             <div class="field-list" id="bomFields"></div>
+          </div>
+          <div class="field-block">
+            <h3>子件描述列（勾选后显示在订单行右侧）</h3>
+            <div class="actions" style="margin:0 0 8px">
+              <button class="ghost" id="bdAll" type="button">全选</button>
+              <button class="ghost" id="bdNone" type="button">全不选</button>
+            </div>
+            <p class="hint" style="margin:0 0 8px">列标题是子件描述；单元格为该子件的物料、数量，以及备注 A/B/C/D（没有该子件的订单行为空）。</p>
+            <div class="bom-desc-list" id="bomDescList"></div>
           </div>
         </div>
       </div>

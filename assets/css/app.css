@@ -212,6 +212,14 @@ table.mini th, table.mini td { border-bottom: 1px solid #eee; padding: 4px 6px; 
 }
 tr.item.bom-line { background: #fbfaf4; }
 tr.item.bom-line td:first-child { border-left: 3px solid var(--gold); }
+.bom-desc-list {
+  max-height: 280px; overflow: auto; border: 1px solid var(--line);
+  border-radius: 10px; padding: 6px 8px; background: #fff;
+}
+.bom-desc-list .cat-row { padding-left: 4px; }
+.bom-desc-list .cat-row label span { display: block; }
+table.results th.bd { background: #3d4a28; }
+td.bd { background: #f7f6ee; }
 .badge {
   display: inline-block; background: #f6e7c3; color: #1b1408;
   border-radius: 999px; padding: 1px 8px; font-size: 11px; margin-left: 6px;

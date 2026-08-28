@@ -420,6 +420,78 @@
     };
   }
 
+  function collectBomDescriptions(docs) {
+    const map = new Map();
+    (docs || []).forEach((doc) => {
+      (doc.items || []).forEach((item) => {
+        const seenOnItem = new Set();
+        (item.bom || []).forEach((b) => {
+          const desc = String(b.description || "").trim();
+          if (!desc) return;
+          if (!map.has(desc)) {
+            map.set(desc, {
+              description: desc,
+              count: 0,
+              itemCount: 0,
+              materials: new Set(),
+            });
+          }
+          const row = map.get(desc);
+          row.count += 1;
+          if (b.material) row.materials.add(b.material);
+          if (!seenOnItem.has(desc)) {
+            row.itemCount += 1;
+            seenOnItem.add(desc);
+          }
+        });
+      });
+    });
+    return [...map.values()]
+      .map((r) => ({
+        description: r.description,
+        count: r.count,
+        itemCount: r.itemCount,
+        materials: [...r.materials],
+      }))
+      .sort((a, b) => b.itemCount - a.itemCount || a.description.localeCompare(b.description));
+  }
+
+  function formatBomPivot(bom) {
+    const qty = (((bom && bom.qty) || "") + " " + ((bom && bom.unit) || "")).trim();
+    const parts = [];
+    if (bom && bom.material) parts.push(bom.material);
+    if (qty) parts.push(qty);
+    const rf = (bom && bom.remarkFields) || {};
+    ["A", "B", "C", "D"].forEach((k) => {
+      const v = rf[k];
+      if (v == null || String(v).trim() === "" || String(v).trim() === "-") return;
+      parts.push(k + "=" + String(v).trim());
+    });
+    return parts.join(" \u00b7 ");
+  }
+
+  function bomDescValue(item, description) {
+    const want = String(description || "")
+      .trim()
+      .toLowerCase();
+    if (!want) return "";
+    const counts = new Map();
+    ((item && item.bom) || []).forEach((b) => {
+      if (
+        String(b.description || "")
+          .trim()
+          .toLowerCase() !== want
+      )
+        return;
+      const s = formatBomPivot(b);
+      if (!s) return;
+      counts.set(s, (counts.get(s) || 0) + 1);
+    });
+    return [...counts.entries()]
+      .map(([s, n]) => (n > 1 ? s + " \u00d7" + n : s))
+      .join(" | ");
+  }
+
   function collectSpecKeys(docs) {
     const set = new Map();
     docs.forEach((doc) => {
@@ -466,16 +538,21 @@
     return bits.filter(Boolean).join(" ").toLowerCase();
   }
 
-  global.KonePoParser = {
+  const api = {
     parseDocument,
     collectSpecKeys,
+    collectBomDescriptions,
     collectCategories,
     categoryId,
     familyOf,
     specValueForKeyword,
+    bomDescValue,
+    formatBomPivot,
     itemSearchBlob,
     matchKeyword,
     normalizeDocs,
     normalizeBom,
   };
-})(window);
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+  global.KonePoParser = api;
+})(typeof window !== "undefined" ? window : globalThis);

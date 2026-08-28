@@ -66,6 +66,7 @@
     knownCategories: new Set(),
     selectedParentFields: new Set(DEFAULT_PARENT),
     selectedBomFields: new Set(DEFAULT_BOM),
+    selectedBomDescs: [],
     viewMode: "nested",
     columnRules: {},
     activeCol: "p:material",
@@ -80,6 +81,9 @@
       const p = JSON.parse(raw);
       if (Array.isArray(p.parentFields)) state.selectedParentFields = new Set(p.parentFields);
       if (Array.isArray(p.bomFields)) state.selectedBomFields = new Set(p.bomFields);
+      if (Array.isArray(p.bomDescs)) {
+        state.selectedBomDescs = p.bomDescs.filter((x) => typeof x === "string" && x);
+      }
       if (Array.isArray(p.keywords)) state.extractKeywords = p.keywords;
       if (p.viewMode) state.viewMode = p.viewMode;
       if (p.columnRules && typeof p.columnRules === "object") state.columnRules = p.columnRules;
@@ -93,6 +97,7 @@
       JSON.stringify({
         parentFields: [...state.selectedParentFields],
         bomFields: [...state.selectedBomFields],
+        bomDescs: state.selectedBomDescs.slice(),
         keywords: state.extractKeywords,
         viewMode: state.viewMode,
         columnRules: state.columnRules,
@@ -316,6 +321,9 @@
       opts.push({ key: "b:" + f.id, label: "\u5b50\u4ef6\u00b7" + f.label, kind: "bom" })
     );
     state.extractKeywords.forEach((k) => opts.push({ key: "k:" + k, label: k, kind: "kw" }));
+    state.selectedBomDescs.forEach((d) =>
+      opts.push({ key: "bd:" + d, label: "\u5b50\u4ef6\u00b7" + d, kind: "bomdesc" })
+    );
     return opts;
   }
 
@@ -348,6 +356,7 @@
       return "";
     }
     if (colKey.startsWith("k:")) return KonePoParser.specValueForKeyword(row.item, colKey.slice(2));
+    if (colKey.startsWith("bd:")) return KonePoParser.bomDescValue(row.item, colKey.slice(3));
     return "";
   }
 
@@ -597,6 +606,42 @@
     document.querySelectorAll("input[name=viewMode]").forEach((el) => {
       el.checked = el.value === state.viewMode;
     });
+
+    renderBomDescs();
+  }
+
+  function setBomDescSelected(desc, on) {
+    const i = state.selectedBomDescs.indexOf(desc);
+    if (on && i < 0) state.selectedBomDescs.push(desc);
+    if (!on && i >= 0) state.selectedBomDescs.splice(i, 1);
+  }
+
+  function renderBomDescs() {
+    const box = $("#bomDescList");
+    if (!box) return;
+    const list = KonePoParser.collectBomDescriptions(state.docs);
+    if (!list.length) {
+      box.innerHTML = '<p class="muted">\u5f53\u524d\u8ba2\u5355\u6ca1\u6709\u8bc6\u522b\u5230 BOM \u5b50\u4ef6\u63cf\u8ff0</p>';
+      return;
+    }
+    box.innerHTML = list
+      .map((c) => {
+        const on = state.selectedBomDescs.includes(c.description);
+        const mat = c.materials.length === 1 ? c.materials[0] : c.materials.length + " \u79cd\u7269\u6599";
+        return `<div class="cat-row">
+          <input type="checkbox" data-bdesc="${escapeHtml(c.description)}" ${on ? "checked" : ""} />
+          <label><span>${escapeHtml(c.description)}</span>
+            <em>${c.itemCount} \u884c \u00b7 ${escapeHtml(mat)}</em></label>
+        </div>`;
+      })
+      .join("");
+    box.querySelectorAll("input[data-bdesc]").forEach((el) => {
+      el.addEventListener("change", () => {
+        setBomDescSelected(el.dataset.bdesc, el.checked);
+        savePrefs();
+        render();
+      });
+    });
   }
 
   function renderKeywords() {
@@ -707,7 +752,7 @@
     const p = selectedParentFieldDefs().length;
     const kw = state.extractKeywords.length;
     const b = state.viewMode === "flat" ? selectedBomFieldDefs().length : 0;
-    return 1 + p + kw + b;
+    return 1 + p + kw + b + state.selectedBomDescs.length;
   }
 
   function renderTable() {
@@ -715,6 +760,7 @@
     const pdefs = selectedParentFieldDefs();
     const bdefs = selectedBomFieldDefs();
     const kw = state.extractKeywords;
+    const bdCols = state.selectedBomDescs;
     const showBomCols = state.viewMode === "flat";
     const thead = $("#resultHead");
     thead.innerHTML =
@@ -722,6 +768,7 @@
       pdefs.map((f) => thHtml(f.label, "p:" + f.id)).join("") +
       (showBomCols ? bdefs.map((f) => thHtml(f.label, "b:" + f.id, "kw")).join("") : "") +
       kw.map((k) => thHtml(k, "k:" + k, "kw")).join("") +
+      bdCols.map((d) => thHtml(d, "bd:" + d, "bd")).join("") +
       `</tr>`;
 
     const body = $("#resultBody");
@@ -751,6 +798,9 @@
           : "";
         const extraCells = kw
           .map((k) => cellHtml("k:" + k, KonePoParser.specValueForKeyword(item, k), "kw"))
+          .join("");
+        const bdCells = bdCols
+          .map((d) => cellHtml("bd:" + d, KonePoParser.bomDescValue(item, d), "bd"))
           .join("");
         const specRows = (item.specs || [])
           .map(
@@ -802,7 +852,7 @@
               ? `<button class="exp" data-key="${key}">${open ? "\u2212" : "+"}</button>`
               : tag
           }</td>
-          ${parentCells}${bomCells}${extraCells}
+          ${parentCells}${bomCells}${extraCells}${bdCells}
         </tr>${detail}`;
       })
       .join("");
@@ -842,6 +892,9 @@
     });
     state.extractKeywords.forEach((k) => {
       row[k] = processValue("k:" + k, KonePoParser.specValueForKeyword(item, k));
+    });
+    state.selectedBomDescs.forEach((d) => {
+      row[d] = processValue("bd:" + d, KonePoParser.bomDescValue(item, d));
     });
     return row;
   }
@@ -1023,6 +1076,17 @@
     });
     $("#catNone").addEventListener("click", () => {
       state.selectedCategories = new Set();
+      render();
+    });
+    $("#bdAll").addEventListener("click", () => {
+      const list = KonePoParser.collectBomDescriptions(state.docs);
+      list.forEach((c) => setBomDescSelected(c.description, true));
+      savePrefs();
+      render();
+    });
+    $("#bdNone").addEventListener("click", () => {
+      state.selectedBomDescs = [];
+      savePrefs();
       render();
     });
     document.querySelectorAll("input[name=viewMode]").forEach((el) => {
