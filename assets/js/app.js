@@ -446,7 +446,7 @@
     $("#summaryCards").innerHTML = `
       <article class="stat"><label>\u91c7\u8d2d\u8ba2\u5355</label><strong>${docs.length}</strong><span>\u4efd PDF</span></article>
       <article class="stat"><label>\u8ba2\u5355\u884c</label><strong>${items}</strong><span>\u5168\u91cf\u8bc6\u522b</span></article>
-      <article class="stat"><label>\u5f53\u524d\u7c7b\u522b</label><strong>${vis.length}</strong><span>\u884c \u00b7 ${bomN} \u5b50\u4ef6</span></article>
+      <article class="stat"><label>\u5df2\u52fe\u9009\u7c7b\u522b</label><strong>${vis.length}</strong><span>\u884c \u00b7 ${bomN} \u5b50\u4ef6</span></article>
       <article class="stat"><label>\u91d1\u989d\u5408\u8ba1</label><strong>${fmtMoney(amount)}</strong><span>RMB</span></article>
     `;
 
@@ -459,10 +459,15 @@
           mats[k] = (mats[k] || 0) + 1;
         });
         const matHtml = Object.entries(mats)
-          .map(
-            ([k, n]) =>
-              `<li><code>${escapeHtml(k.split(" ")[0])}</code> ${escapeHtml(k.slice(k.indexOf(" ") + 1))} \u00d7${n}</li>`
-          )
+          .map(([k, n]) => {
+            const material = k.split(" ")[0];
+            const desc = k.slice(k.indexOf(" ") + 1);
+            const cid = material + "||" + desc;
+            const on = state.selectedCategories.has(cid);
+            return `<li class="${on ? "" : "off"}"><code>${escapeHtml(material)}</code> ${escapeHtml(
+              desc
+            )} \u00d7${n}</li>`;
+          })
           .join("");
         return `<article class="po-card">
           <header>
