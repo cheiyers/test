@@ -278,6 +278,20 @@ tr:hover td { background: #f7fbf9; }
   padding: 10px 12px; border-bottom: 1px solid var(--border); background: #fff;
   cursor: pointer;
 }
+.scheme-list { margin-top: 10px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.scheme-list-item {
+  display: flex; align-items: center; gap: 10px; justify-content: space-between;
+  padding: 10px 12px; border-bottom: 1px solid var(--border); background: #fff;
+}
+.scheme-list-item:last-child { border-bottom: none; }
+.scheme-list-item.active { background: #eef8f3; }
+.scheme-list-item .name { font-weight: 600; }
+.scheme-list-item .meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.hint-box {
+  margin-top: 10px; padding: 10px 12px; border-radius: 8px;
+  background: var(--primary-soft); color: #085041; font-size: 12px; line-height: 1.5;
+}
+.hint-box code { font-family: var(--mono); background: #fff; padding: 1px 4px; border-radius: 4px; }
 .bom-list-item:last-child { border-bottom: none; }
 .bom-list-item:hover { background: #f7fbf9; }
 .bom-list-item.active { background: var(--primary-soft); }
@@ -321,8 +335,9 @@ tr:hover td { background: #f7fbf9; }
       <p>上传订单与 BOM，完成匹配、公式计算、参数映射并导出生产明细</p>
     </div>
     <div class="hero-actions">
-      <button class="btn secondary" id="btnSaveScheme">保存方案</button>
-      <button class="btn secondary" id="btnLoadScheme">加载方案</button>
+      <button class="btn secondary" id="btnSaveScheme">保存方案到列表</button>
+      <button class="btn secondary" id="btnExportSchemeFile">导出方案文件</button>
+      <button class="btn secondary" id="btnLoadScheme">导入方案文件</button>
       <input type="file" id="schemeFile" accept=".json" class="hidden" />
     </div>
   </div>
@@ -357,11 +372,11 @@ tr:hover td { background: #f7fbf9; }
         <div class="meta" id="bomMeta">尚未选择文件</div>
         <div class="row">
           <label class="btn">
-            选择 BOM
+            上传 BOM
             <input type="file" id="bomFile" accept=".xlsx,.xls" class="hidden" multiple />
           </label>
           <label class="btn secondary sm">
-            追加 BOM
+            再上传
             <input type="file" id="bomFileAppend" accept=".xlsx,.xls" class="hidden" multiple />
           </label>
           <button class="btn secondary sm" id="btnDlBomTpl">下载BOM模板</button>
@@ -492,12 +507,13 @@ tr:hover td { background: #f7fbf9; }
   <!-- Step 4 -->
   <section class="panel step-panel hidden" data-step="4">
     <h2>4. 参数映射</h2>
-    <p class="desc">将公式别名映射到订单列、公式或固定值。支持自动映射与本地保存。</p>
+    <p class="desc">将公式别名映射到订单列、公式或固定值。固定值可直接填文字，也可写公式（如当日日期）。可保存为方案并在列表中查看加载。</p>
     <div class="row" style="margin-bottom:12px">
       <button class="btn" id="btnAutoMap">自动映射</button>
       <button class="btn secondary" id="btnSaveMap">保存映射</button>
       <button class="btn secondary" id="btnLoadMap">加载映射</button>
       <button class="btn secondary" id="btnRefreshParamUI">刷新参数表</button>
+      <button class="btn" id="btnSaveMapScheme">保存当前方案到列表</button>
     </div>
     <div class="table-wrap" style="max-height:420px">
       <table>
@@ -509,12 +525,24 @@ tr:hover td { background: #f7fbf9; }
         <tbody id="paramMapBody"></tbody>
       </table>
     </div>
+    <div class="hint-box">
+      <strong>固定值支持公式：</strong>
+      例 <code>=TODAY()</code>、<code>=TEXT(TODAY(),"yyyy-mm-dd")</code>、<code>=TEXT(TODAY(),"yyyy年mm月dd日")</code>、
+      <code>=CONCAT("SO-",TEXT(TODAY(),"yyyymmdd"))</code>；也可用 <code>{订单列名}</code> 引用订单字段。
+    </div>
+    <div class="section-title">已保存的映射方案</div>
+    <div class="muted" style="margin-bottom:6px">保存参数映射 + 输出列模板 + 匹配/预览选项；点击加载即可应用。</div>
+    <div class="scheme-list" id="savedSchemeList"><div class="muted" style="padding:10px">暂无已保存方案</div></div>
   </section>
 
   <!-- Step 5 -->
   <section class="panel step-panel hidden" data-step="5">
     <h2>5. 输出映射</h2>
-    <p class="desc">表头列绑定订单/母件/固定值；表体列绑定子件字段或计算结果。</p>
+    <p class="desc">表头列绑定订单/母件/固定值（固定值同样支持公式）；表体列绑定子件字段或计算结果。可勾选是否输出单价。</p>
+    <div class="row" style="margin-bottom:12px">
+      <label class="checkline"><input type="checkbox" id="optIncludePrice" checked /> 预览/导出包含单价与金额</label>
+      <button class="btn secondary sm" id="btnSaveOutScheme">保存方案到列表</button>
+    </div>
     <div class="section-title">表头列</div>
     <div class="table-wrap" style="margin-bottom:12px">
       <table>
@@ -523,6 +551,9 @@ tr:hover td { background: #f7fbf9; }
       </table>
     </div>
     <button class="btn secondary sm" id="btnAddHeaderCol">+ 表头列</button>
+    <div class="hint-box" style="margin-bottom:12px">
+      表头「固定值」可填文字或公式，例如日期列：<code>=TEXT(TODAY(),"yyyy-mm-dd")</code>
+    </div>
 
     <div class="section-title">表体列</div>
     <div class="table-wrap" style="margin-bottom:12px">
@@ -537,10 +568,11 @@ tr:hover td { background: #f7fbf9; }
   <!-- Step 6 -->
   <section class="panel step-panel hidden" data-step="6">
     <h2>6. 预览</h2>
-    <p class="desc">生成展开结果。可合并相同订单行，过滤用量为 0 的行。</p>
+    <p class="desc">生成展开结果。可合并相同订单行，过滤用量为 0 的行；单价列由选项控制是否放入。</p>
     <div class="row" style="margin-bottom:12px">
       <label class="checkline"><input type="checkbox" id="optMerge" /> 合并相同订单行</label>
       <label class="checkline"><input type="checkbox" id="optSkipZero" checked /> 用量为0不导出</label>
+      <label class="checkline"><input type="checkbox" id="optIncludePricePreview" checked /> 包含单价与金额</label>
       <button class="btn" id="btnGenerate">生成预览</button>
       <button class="btn secondary" id="btnToggleDebug">调试信息</button>
     </div>
@@ -548,9 +580,9 @@ tr:hover td { background: #f7fbf9; }
       <div class="stat"><div class="n" id="statLines">0</div><div class="t">物料行数</div></div>
       <div class="stat"><div class="n" id="statQty">0</div><div class="t">总需求数量</div></div>
       <div class="stat"><div class="n" id="statOrders">0</div><div class="t">订单/母件行数</div></div>
-      <div class="stat"><div class="n" id="statCost">0</div><div class="t">总成本</div></div>
+      <div class="stat" id="statCostWrap"><div class="n" id="statCost">0</div><div class="t">总成本</div></div>
     </div>
-    <div class="cost-bar">
+    <div class="cost-bar" id="costBar">
       <span>可在清单中为各料号填写<strong>单价</strong>，系统自动计算金额与总成本</span>
       <span>总成本：<strong id="costTotalLabel">0</strong></span>
       <button class="btn secondary sm" id="btnSavePrices">保存单价</button>
@@ -680,6 +712,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     manualParams: {}, // alias -> user typed value in manual mode
     priceMap: {}, // materialCode -> unit price
     activeBomId: null, // currently loaded saved BOM id
+    activeSchemeId: null,
     template: { header: [], body: [] },
     resultRows: [],
     resultMeta: { lines: 0, qty: 0, orders: 0, cost: 0 },
@@ -691,12 +724,14 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     '上传/手输', '匹配配置', '公式配置', '参数映射', '输出映射', '预览', '导出'
   ];
   const BOM_LIB_KEY = 'oc_bom_library';
+  const SCHEME_LIB_KEY = 'oc_scheme_library';
   const PRICE_KEY = 'oc_price_map';
 
   const EXCEL_FUNCS = new Set([
     'IF','AND','OR','NOT','ROUND','ROUNDUP','ROUNDDOWN','MAX','MIN','ABS','INT','CEILING','FLOOR',
     'MOD','POWER','SQRT','SUM','AVERAGE','IFERROR','ISBLANK','ISNUMBER','LEN','LEFT','RIGHT','MID',
-    'TRIM','UPPER','LOWER','VALUE','TEXT','CONCATENATE','CONCAT','TRUE','FALSE'
+    'TRIM','UPPER','LOWER','VALUE','TEXT','CONCATENATE','CONCAT','TRUE','FALSE',
+    'TODAY','NOW','DATE','YEAR','MONTH','DAY','HOUR','MINUTE','SECOND'
   ]);
 
   // ===================== Utils =====================
@@ -732,6 +767,133 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     const d = new Date();
     const p = n => String(n).padStart(2,'0');
     return d.getFullYear() + p(d.getMonth()+1) + p(d.getDate());
+  }
+  function startOfToday() {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  }
+  function formatDateYMD(d) {
+    if (!(d instanceof Date) || isNaN(d.getTime())) return '';
+    const p = n => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+  }
+  function toDateValue(v) {
+    if (v instanceof Date && !isNaN(v.getTime())) return v;
+    if (typeof v === 'number' && isFinite(v) && v > 20000 && v < 80000) {
+      // Excel serial date (approx, local)
+      const epoch = Date.UTC(1899, 11, 30);
+      return new Date(epoch + Math.round(v) * 86400000);
+    }
+    const s = str(v);
+    if (!s) return null;
+    if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(s)) {
+      const d = new Date(s.replace(/-/g, '/'));
+      return isNaN(d.getTime()) ? null : d;
+    }
+    return null;
+  }
+  function formatExcelText(value, format) {
+    const fmt = str(format);
+    const d = toDateValue(value);
+    if (d && fmt && /y|m|d|h|s|年|月|日|时|分|秒/i.test(fmt)) {
+      const p = (n, w) => String(n).padStart(w || 2, '0');
+      const map = {
+        yyyy: String(d.getFullYear()),
+        yyy: String(d.getFullYear()),
+        yy: String(d.getFullYear()).slice(-2),
+        mm: p(d.getMonth() + 1),
+        m: String(d.getMonth() + 1),
+        dd: p(d.getDate()),
+        d: String(d.getDate()),
+        HH: p(d.getHours()),
+        H: String(d.getHours()),
+        MM: p(d.getMinutes()),
+        SS: p(d.getSeconds()),
+        ss: p(d.getSeconds())
+      };
+      // Replace longer tokens first; use placeholders to avoid mm/MM clash with minutes
+      let out = fmt;
+      out = out.replace(/yyyy/gi, '\u0001');
+      out = out.replace(/yy/gi, '\u0002');
+      out = out.replace(/HH/g, '\u0003');
+      out = out.replace(/H/g, '\u0004');
+      // minutes before month when using :mm or mm:ss patterns is hard; for date formats treat mm as month
+      out = out.replace(/mm/g, '\u0005');
+      out = out.replace(/m/g, '\u0006');
+      out = out.replace(/dd/gi, '\u0007');
+      out = out.replace(/d/gi, '\u0008');
+      out = out.replace(/SS|ss/g, '\u0009');
+      out = out.replace(/\u0001/g, map.yyyy);
+      out = out.replace(/\u0002/g, map.yy);
+      out = out.replace(/\u0003/g, map.HH);
+      out = out.replace(/\u0004/g, map.H);
+      out = out.replace(/\u0005/g, map.mm);
+      out = out.replace(/\u0006/g, map.m);
+      out = out.replace(/\u0007/g, map.dd);
+      out = out.replace(/\u0008/g, map.d);
+      out = out.replace(/\u0009/g, map.ss);
+      return out;
+    }
+    if (typeof value === 'number' && fmt && /^0(\.0+)?$/.test(fmt)) {
+      const decimals = (fmt.split('.')[1] || '').length;
+      return value.toFixed(decimals);
+    }
+    if (value instanceof Date) return formatDateYMD(value);
+    return value == null ? '' : String(value);
+  }
+  function isFormulaExpr(s) {
+    const t = str(s).trim();
+    if (!t) return false;
+    if (t.startsWith('=')) return true;
+    if (/^(TODAY|NOW|DATE|TEXT|IF|AND|OR|NOT|CONCAT|CONCATENATE|YEAR|MONTH|DAY|HOUR|MINUTE|SECOND|ROUND|ROUNDUP|LEFT|RIGHT|MID|UPPER|LOWER|TRIM|VALUE|IFERROR)\s*\(/i.test(t)) return true;
+    return false;
+  }
+  /** Evaluate fixed text or formula (supports {订单列} placeholders). */
+  function evalFixedOrFormula(value, orderRow, envExtra) {
+    const s = str(value);
+    if (!isFormulaExpr(s)) {
+      if (s !== '' && /^-?[\d,]+(\.\d+)?$/.test(s)) return toNum(s);
+      return s;
+    }
+    let expr = s.trim();
+    const row = orderRow || {};
+    expr = expr.replace(/\{([^}]+)\}/g, (_, col) => {
+      const v = row[col];
+      const n = toNum(v);
+      return (str(v) !== '' && !isNaN(n) && /[\d]/.test(String(v))) ? String(n) : JSON.stringify(str(v));
+    });
+    try {
+      let env = envExtra;
+      if (!env) {
+        try { env = orderRow ? buildEnvForOrder(orderRow) : {}; }
+        catch (e) { env = {}; }
+      }
+      const r = evaluateFormula(expr.startsWith('=') ? expr : '=' + expr, env);
+      if (r instanceof Date) return formatDateYMD(r);
+      return r;
+    } catch (e) {
+      return s;
+    }
+  }
+  function includePriceEnabled() {
+    const a = $('optIncludePrice');
+    if (a) return !!a.checked;
+    const b = $('optIncludePricePreview');
+    if (b) return !!b.checked;
+    return true;
+  }
+  function setIncludePrice(on) {
+    const v = !!on;
+    if ($('optIncludePrice')) $('optIncludePrice').checked = v;
+    if ($('optIncludePricePreview')) $('optIncludePricePreview').checked = v;
+    if ($('costBar')) $('costBar').classList.toggle('hidden', !v);
+    if ($('statCostWrap')) $('statCostWrap').classList.toggle('hidden', !v);
+  }
+  function syncIncludePriceFrom(el) {
+    setIncludePrice(!!el.checked);
+    if (state.resultRows.length) {
+      try { renderPreview(); } catch (e) {}
+    }
   }
 
   // ===================== Excel IO =====================
@@ -1471,9 +1633,18 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
         case 'UPPER': return String(A(0,'')).toUpperCase();
         case 'LOWER': return String(A(0,'')).toLowerCase();
         case 'VALUE': return toNum(A(0));
-        case 'TEXT': return String(A(0));
+        case 'TEXT': return formatExcelText(A(0), A(1, ''));
         case 'CONCATENATE':
-        case 'CONCAT': return args.map(String).join('');
+        case 'CONCAT': return args.map(x => (x instanceof Date ? formatDateYMD(x) : String(x))).join('');
+        case 'TODAY': return startOfToday();
+        case 'NOW': return new Date();
+        case 'DATE': return new Date(Number(A(0)), Number(A(1)) - 1, Number(A(2)));
+        case 'YEAR': { const d = toDateValue(A(0)) || startOfToday(); return d.getFullYear(); }
+        case 'MONTH': { const d = toDateValue(A(0)) || startOfToday(); return d.getMonth() + 1; }
+        case 'DAY': { const d = toDateValue(A(0)) || startOfToday(); return d.getDate(); }
+        case 'HOUR': { const d = toDateValue(A(0)) || new Date(); return d.getHours(); }
+        case 'MINUTE': { const d = toDateValue(A(0)) || new Date(); return d.getMinutes(); }
+        case 'SECOND': { const d = toDateValue(A(0)) || new Date(); return d.getSeconds(); }
         default: return 0;
       }
     }
@@ -1687,20 +1858,14 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       return s;
     }
     if (conf.type === 'fixed') {
-      const s = str(conf.value);
-      if (s !== '' && /^-?[\d,]+(\.\d+)?$/.test(s)) return toNum(s);
-      return s;
+      return evalFixedOrFormula(conf.value, orderRow, envExtra);
     }
     if (conf.type === 'formula') {
-      // support {列名} placeholders
-      let expr = str(conf.value);
-      expr = expr.replace(/\{([^}]+)\}/g, (_, col) => {
-        const v = orderRow[col];
-        const n = toNum(v);
-        return (str(v) !== '' && !isNaN(n) && /[\d]/.test(String(v))) ? String(n) : JSON.stringify(str(v));
-      });
-      try { return evaluateFormula(expr.startsWith('=') ? expr : '=' + expr, envExtra || {}); }
-      catch (e) { return 0; }
+      return evalFixedOrFormula(
+        str(conf.value).startsWith('=') || isFormulaExpr(conf.value) ? conf.value : ('=' + str(conf.value)),
+        orderRow,
+        envExtra
+      );
     }
     return 0;
   }
@@ -2313,12 +2478,14 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     $('statOrders').textContent = state.resultMeta.orders;
     if ($('statCost')) $('statCost').textContent = totalCost;
     if ($('costTotalLabel')) $('costTotalLabel').textContent = totalCost;
-    $('exportHint').textContent = `可导出 ${rows.length} 行 · 总成本 ${totalCost} · ${todayStr()}`;
+    $('exportHint').textContent = `可导出 ${rows.length} 行` +
+      (includePriceEnabled() ? ` · 总成本 ${totalCost}` : '') +
+      ` · ${todayStr()}`;
     toast('预览已生成', 'ok');
   }
 
   function resolveTemplateHeader(col, orderRow, parent) {
-    if (col.sourceType === 'fixed') return col.source;
+    if (col.sourceType === 'fixed') return evalFixedOrFormula(col.source, orderRow);
     if (col.sourceType === 'order') return resolveOrderField(orderRow, col.source);
     if (col.sourceType === 'bom') {
       if (col.source === 'code') return parent.code;
@@ -2343,7 +2510,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       return child.row && child.row[col.source] != null ? child.row[col.source] : (child[col.source] || '');
     }
     if (col.sourceType === 'order') return resolveOrderField(orderRow, col.source);
-    if (col.sourceType === 'fixed') return col.source;
+    if (col.sourceType === 'fixed') return evalFixedOrFormula(col.source, orderRow);
     return '';
   }
 
@@ -2428,9 +2595,11 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
   /** Build display/export rows: merge mode shows header (incl. 单据编号) only once per order no. */
   function buildOutputMatrix() {
     const merge = $('optMerge').checked;
+    const withPrice = includePriceEnabled();
     const headerCols = state.template.header;
     const bodyCols = state.template.body;
-    const cols = headerCols.map(c => c.name).concat(bodyCols.map(c => c.name)).concat(['单价','金额']);
+    const cols = headerCols.map(c => c.name).concat(bodyCols.map(c => c.name));
+    if (withPrice) cols.push('单价', '金额');
     const aoa = [cols];
     let lastDoc = null;
     let totalCost = 0;
@@ -2445,30 +2614,34 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
         return raw == null ? '' : raw;
       });
       const bodyPart = bodyCols.map(c => r.bodyVals[c.name]);
-      const code = getMaterialCodeFromResultRow(r);
-      const price = toNum(state.priceMap[code]);
-      const amount = calcRowCost(r);
-      totalCost += amount;
-      aoa.push(headerPart.concat(bodyPart).concat([price || '', amount]));
+      const row = headerPart.concat(bodyPart);
+      if (withPrice) {
+        const code = getMaterialCodeFromResultRow(r);
+        const price = toNum(state.priceMap[code]);
+        const amount = calcRowCost(r);
+        totalCost += amount;
+        row.push(price || '', amount);
+      }
+      aoa.push(row);
     });
     // summary row
     aoa.push(cols.map((c, i) => {
       if (i === 0) return '合计';
-      if (c === '金额') return Math.round(totalCost * 100) / 100;
+      if (withPrice && c === '金额') return Math.round(totalCost * 100) / 100;
       return '';
     }));
-    return { cols, aoa, merge, totalCost: Math.round(totalCost * 100) / 100 };
+    return { cols, aoa, merge, withPrice, totalCost: Math.round(totalCost * 100) / 100 };
   }
 
   function exportExcel() {
     if (!state.resultRows.length) { toast('请先生成预览', 'warn'); return; }
-    const { aoa, totalCost } = buildOutputMatrix();
+    const { aoa, totalCost, withPrice } = buildOutputMatrix();
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, '转换结果');
     const filename = `订单转换_${todayStr()}.xlsx`;
     XLSX.writeFile(wb, filename);
-    toast('已导出 ' + filename + '（含单价/金额，总成本 ' + totalCost + '）', 'ok');
+    toast('已导出 ' + filename + (withPrice ? ('（含单价/金额，总成本 ' + totalCost + '）') : ''), 'ok');
   }
 
   // ===================== File handlers =====================
@@ -2681,8 +2854,12 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     renderSteps();
     if (state.step === 2) { fillOrderSelects(); fillBomSelects(); }
     if (state.step === 3) { renderVarChips(); renderFormulaList(); }
-    if (state.step === 4) { refreshParamUI(); }
+    if (state.step === 4) { refreshParamUI(); renderSavedSchemeList(); }
     if (state.step === 5) { renderTemplateEditor(); }
+    if (state.step === 6) {
+      setIncludePrice(includePriceEnabled());
+      if (state.resultRows.length) renderPreview();
+    }
   }
 
   function fillSelect(sel, options, current, allowEmpty) {
@@ -3089,7 +3266,10 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
         ).join('');
         valueCtrl = `<select data-alias="${esc(alias)}" data-field="value">${opts}</select>`;
       } else {
-        valueCtrl = `<input type="text" data-alias="${esc(alias)}" data-field="value" value="${esc(conf.value)}" placeholder="${conf.type==='formula'?'如 {数量}*2':'固定值'}" />`;
+        const ph = conf.type === 'formula'
+          ? '如 {数量}*2 或 =ROUND({数量}*1.1,2)'
+          : '固定文字 或 =TEXT(TODAY(),"yyyy-mm-dd")';
+        valueCtrl = `<input type="text" data-alias="${esc(alias)}" data-field="value" value="${esc(conf.value)}" placeholder="${ph}" />`;
       }
       let preview = '';
       try { preview = resolveParamValue(alias, row0, {}); }
@@ -3158,7 +3338,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
           .concat(extras.map(x => `<option value="${esc(x)}" ${col.source===x?'selected':''}>列:${esc(x)}</option>`)).join('');
         sourceCtrl = `<select data-t="header" data-i="${idx}" data-f="source">${opts}</select>`;
       } else {
-        sourceCtrl = `<input type="text" data-t="header" data-i="${idx}" data-f="source" value="${esc(col.source)}" />`;
+        sourceCtrl = `<input type="text" data-t="header" data-i="${idx}" data-f="source" value="${esc(col.source)}" placeholder='文字或 =TEXT(TODAY(),"yyyy-mm-dd")' />`;
       }
       return `<tr>
         <td><input type="text" data-t="header" data-i="${idx}" data-f="name" value="${esc(col.name)}" /></td>
@@ -3170,8 +3350,8 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
 
     const bb = $('bodyTplBody');
     bb.innerHTML = state.template.body.map((col, idx) => {
-      const typeOpts = ['bom','computed'].map(t =>
-        `<option value="${t}" ${col.sourceType===t?'selected':''}>${t==='bom'?'BOM子件':'计算结果'}</option>`
+      const typeOpts = ['bom','computed','fixed'].map(t =>
+        `<option value="${t}" ${col.sourceType===t?'selected':''}>${t==='bom'?'BOM子件':t==='computed'?'计算结果':'固定值/公式'}</option>`
       ).join('');
       let sourceCtrl = '';
       if (col.sourceType === 'bom') {
@@ -3179,10 +3359,12 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
         const opts = bomFields.map(f => `<option value="${f.v}" ${col.source===f.v?'selected':''}>${f.n}</option>`)
           .concat(extras.map(x => `<option value="${esc(x)}" ${col.source===x?'selected':''}>列:${esc(x)}</option>`)).join('');
         sourceCtrl = `<select data-t="body" data-i="${idx}" data-f="source">${opts}</select>`;
-      } else {
+      } else if (col.sourceType === 'computed') {
         sourceCtrl = `<select data-t="body" data-i="${idx}" data-f="source">${
           computedFields.map(f => `<option value="${f.v}" ${col.source===f.v?'selected':''}>${f.n}</option>`).join('')
         }</select>`;
+      } else {
+        sourceCtrl = `<input type="text" data-t="body" data-i="${idx}" data-f="source" value="${esc(col.source)}" placeholder='文字或 =TEXT(TODAY(),"yyyy-mm-dd")' />`;
       }
       return `<tr>
         <td><input type="text" data-t="body" data-i="${idx}" data-f="name" value="${esc(col.name)}" /></td>
@@ -3220,13 +3402,14 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
 
   function renderPreview() {
     const merge = $('optMerge').checked;
+    const withPrice = includePriceEnabled();
+    setIncludePrice(withPrice);
     const { aoa, totalCost } = buildOutputMatrix();
     const heads = aoa[0] || [];
-    const priceIdx = heads.indexOf('单价');
-    const amountIdx = heads.indexOf('金额');
+    const priceIdx = withPrice ? heads.indexOf('单价') : -1;
+    const amountIdx = withPrice ? heads.indexOf('金额') : -1;
     $('previewHead').innerHTML = '<tr>' + heads.map(c => `<th>${esc(c)}</th>`).join('') + '</tr>';
     let lastDoc = null;
-    // aoa has summary row at end; data rows = resultRows length
     const bodyHtml = state.resultRows.map((r, idx) => {
       const row = aoa[idx + 1] || [];
       const sameDoc = merge && lastDoc != null && String(r.docNo) === String(lastDoc);
@@ -3236,7 +3419,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       const tds = row.map((v, i) => {
         const isHeaderCol = i < headerLen;
         const cls = isHeaderCol && !sameDoc ? 'merge-header' : '';
-        if (i === priceIdx) {
+        if (withPrice && i === priceIdx) {
           const price = state.priceMap[code] != null ? state.priceMap[code] : '';
           return `<td><input class="price-input" type="number" min="0" step="any" data-price-code="${esc(code)}" value="${esc(price)}" /></td>`;
         }
@@ -3244,38 +3427,35 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       });
       return '<tr data-row-idx="' + idx + '">' + tds.join('') + '</tr>';
     }).join('');
-    // summary
     const sumRow = aoa[aoa.length - 1] || [];
-    const sumHtml = '<tr class="merge-header">' + sumRow.map((v, i) => {
-      if (i === amountIdx) return `<td><strong>${esc(v)}</strong></td>`;
+    const sumHtml = '<tr class="merge-header">' + sumRow.map((v) => {
       return `<td><strong>${esc(v)}</strong></td>`;
     }).join('') + '</tr>';
     $('previewBody').innerHTML = (bodyHtml + sumHtml) || '<tr><td class="muted">暂无数据</td></tr>';
-    if ($('statCost')) $('statCost').textContent = totalCost;
-    if ($('costTotalLabel')) $('costTotalLabel').textContent = totalCost;
-    // bind price editors
-    $('previewBody').querySelectorAll('[data-price-code]').forEach(inp => {
-      const apply = () => {
-        const code = inp.getAttribute('data-price-code');
-        state.priceMap[code] = inp.value === '' ? '' : toNum(inp.value);
-        // refresh amounts without full regenerate
-        const cost = calcTotalCost(state.resultRows);
-        if ($('statCost')) $('statCost').textContent = cost;
-        if ($('costTotalLabel')) $('costTotalLabel').textContent = cost;
-        state.resultMeta.cost = cost;
-        // update amount cells
-        const { aoa: m2 } = buildOutputMatrix();
-        const aIdx = (m2[0] || []).indexOf('金额');
-        state.resultRows.forEach((_, i) => {
-          const tr = $('previewBody').querySelector(`tr[data-row-idx="${i}"]`);
-          if (tr && aIdx >= 0 && tr.children[aIdx]) tr.children[aIdx].textContent = m2[i + 1][aIdx];
-        });
-        const sumTr = $('previewBody').querySelector('tr.merge-header:last-child') || $('previewBody').lastElementChild;
-        if (sumTr && aIdx >= 0 && sumTr.children[aIdx]) sumTr.children[aIdx].innerHTML = '<strong>' + cost + '</strong>';
-      };
-      inp.addEventListener('change', apply);
-      inp.addEventListener('input', apply);
-    });
+    if ($('statCost')) $('statCost').textContent = withPrice ? totalCost : '-';
+    if ($('costTotalLabel')) $('costTotalLabel').textContent = withPrice ? totalCost : '-';
+    if (withPrice) {
+      $('previewBody').querySelectorAll('[data-price-code]').forEach(inp => {
+        const apply = () => {
+          const code = inp.getAttribute('data-price-code');
+          state.priceMap[code] = inp.value === '' ? '' : toNum(inp.value);
+          const cost = calcTotalCost(state.resultRows);
+          if ($('statCost')) $('statCost').textContent = cost;
+          if ($('costTotalLabel')) $('costTotalLabel').textContent = cost;
+          state.resultMeta.cost = cost;
+          const { aoa: m2 } = buildOutputMatrix();
+          const aIdx = (m2[0] || []).indexOf('金额');
+          state.resultRows.forEach((_, i) => {
+            const tr = $('previewBody').querySelector(`tr[data-row-idx="${i}"]`);
+            if (tr && aIdx >= 0 && tr.children[aIdx]) tr.children[aIdx].textContent = m2[i + 1][aIdx];
+          });
+          const sumTr = $('previewBody').querySelector('tr.merge-header:last-child') || $('previewBody').lastElementChild;
+          if (sumTr && aIdx >= 0 && sumTr.children[aIdx]) sumTr.children[aIdx].innerHTML = '<strong>' + cost + '</strong>';
+        };
+        inp.addEventListener('change', apply);
+        inp.addEventListener('input', apply);
+      });
+    }
     if (!$('debugPanel').classList.contains('hidden')) renderDebug();
   }
 
@@ -3291,19 +3471,30 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
   }
 
   // ===================== Scheme save/load =====================
+  function schemeUid() {
+    return 'sch_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+  }
+  function listSavedSchemes() {
+    const list = Store.get(SCHEME_LIB_KEY, []);
+    return Array.isArray(list) ? list : [];
+  }
   function collectScheme() {
     return {
-      version: 1,
+      version: 2,
       matchCfg: state.matchCfg,
       formulas: state.formulas,
       paramMap: state.paramMap,
       template: state.template,
       aliases: state.aliases,
-      opts: { merge: $('optMerge').checked, skipZero: $('optSkipZero').checked }
+      opts: {
+        merge: $('optMerge') ? $('optMerge').checked : false,
+        skipZero: $('optSkipZero') ? $('optSkipZero').checked !== false : true,
+        includePrice: includePriceEnabled()
+      }
     };
   }
 
-  function applyScheme(scheme) {
+  function applyScheme(scheme, opts) {
     if (!scheme || typeof scheme !== 'object') throw new Error('方案格式无效');
     if (scheme.matchCfg) state.matchCfg = Object.assign(state.matchCfg, scheme.matchCfg);
     if (scheme.formulas) state.formulas = scheme.formulas;
@@ -3311,12 +3502,121 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     if (scheme.template) state.template = scheme.template;
     if (scheme.aliases) state.aliases = scheme.aliases;
     if (scheme.opts) {
-      $('optMerge').checked = !!scheme.opts.merge;
-      $('optSkipZero').checked = scheme.opts.skipZero !== false;
+      if ($('optMerge')) $('optMerge').checked = !!scheme.opts.merge;
+      if ($('optSkipZero')) $('optSkipZero').checked = scheme.opts.skipZero !== false;
+      setIncludePrice(scheme.opts.includePrice !== false);
     }
     Store.set('oc_scheme', scheme);
-    fillOrderSelects(); fillBomSelects();
-    renderFormulaList(); refreshParamUI(); renderTemplateEditor();
+    try { fillOrderSelects(); } catch (e) {}
+    try { fillBomSelects(); } catch (e) {}
+    try { renderFormulaList(); } catch (e) {}
+    try { refreshParamUI(); } catch (e) {}
+    try { renderTemplateEditor(); } catch (e) {}
+    try { renderSavedSchemeList(); } catch (e) {}
+    if (!(opts && opts.silent)) toast('方案已应用', 'ok');
+  }
+
+  function saveSchemeToList(overwriteId) {
+    const scheme = collectScheme();
+    const list = listSavedSchemes();
+    if (overwriteId) {
+      const idx = list.findIndex(x => x.id === overwriteId);
+      if (idx >= 0) {
+        list[idx].data = scheme;
+        list[idx].savedAt = Date.now();
+        Store.set(SCHEME_LIB_KEY, list);
+        Store.set('oc_scheme', scheme);
+        state.activeSchemeId = overwriteId;
+        renderSavedSchemeList();
+        toast('已更新方案：' + list[idx].name, 'ok');
+        return list[idx];
+      }
+    }
+    const name = prompt('请输入方案名称', '映射方案_' + todayStr());
+    if (!name) return null;
+    const item = {
+      id: schemeUid(),
+      name: str(name),
+      savedAt: Date.now(),
+      data: scheme
+    };
+    list.unshift(item);
+    Store.set(SCHEME_LIB_KEY, list);
+    Store.set('oc_scheme', scheme);
+    state.activeSchemeId = item.id;
+    renderSavedSchemeList();
+    toast('方案已保存到列表：' + item.name, 'ok');
+    return item;
+  }
+
+  function loadSavedScheme(id) {
+    const item = listSavedSchemes().find(x => x.id === id);
+    if (!item) { toast('未找到该方案', 'warn'); return; }
+    applyScheme(item.data, { silent: true });
+    state.activeSchemeId = id;
+    renderSavedSchemeList();
+    toast('已加载方案：' + item.name, 'ok');
+  }
+
+  function deleteSavedScheme(id) {
+    const list = listSavedSchemes().filter(x => x.id !== id);
+    Store.set(SCHEME_LIB_KEY, list);
+    if (state.activeSchemeId === id) state.activeSchemeId = null;
+    renderSavedSchemeList();
+    toast('已删除方案', 'ok');
+  }
+
+  function renameSavedScheme(id) {
+    const list = listSavedSchemes();
+    const item = list.find(x => x.id === id);
+    if (!item) return;
+    const name = prompt('重命名方案', item.name);
+    if (!name) return;
+    item.name = str(name);
+    item.savedAt = Date.now();
+    Store.set(SCHEME_LIB_KEY, list);
+    renderSavedSchemeList();
+    toast('已重命名', 'ok');
+  }
+
+  function renderSavedSchemeList() {
+    const wrap = $('savedSchemeList');
+    if (!wrap) return;
+    const list = listSavedSchemes();
+    if (!list.length) {
+      wrap.innerHTML = '<div class="muted" style="padding:10px">暂无已保存方案，可点「保存当前方案到列表」</div>';
+      return;
+    }
+    wrap.innerHTML = list.map(item => {
+      const dt = new Date(item.savedAt || Date.now());
+      const t = dt.getFullYear() + '-' + String(dt.getMonth()+1).padStart(2,'0') + '-' + String(dt.getDate()).padStart(2,'0') +
+        ' ' + String(dt.getHours()).padStart(2,'0') + ':' + String(dt.getMinutes()).padStart(2,'0');
+      const active = state.activeSchemeId === item.id ? 'active' : '';
+      const paramN = item.data && item.data.paramMap ? Object.keys(item.data.paramMap).length : 0;
+      return `<div class="scheme-list-item ${active}" data-scheme-id="${esc(item.id)}">
+        <div>
+          <div class="name">${esc(item.name)}</div>
+          <div class="meta">参数 ${paramN} · ${t}</div>
+        </div>
+        <div class="row">
+          <button class="btn sm" data-sact="load" data-id="${esc(item.id)}">加载</button>
+          <button class="btn secondary sm" data-sact="rename" data-id="${esc(item.id)}">重命名</button>
+          <button class="btn danger sm" data-sact="del" data-id="${esc(item.id)}">删除</button>
+        </div>
+      </div>`;
+    }).join('');
+    wrap.querySelectorAll('[data-sact]').forEach(btn => {
+      btn.onclick = (ev) => {
+        ev.stopPropagation();
+        const id = btn.getAttribute('data-id');
+        const act = btn.getAttribute('data-sact');
+        if (act === 'load') loadSavedScheme(id);
+        else if (act === 'rename') renameSavedScheme(id);
+        else if (act === 'del') {
+          if (confirm('确认删除该方案？')) deleteSavedScheme(id);
+        }
+      };
+    });
   }
 
   function saveSchemeToFile() {
@@ -3324,14 +3624,13 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     Store.set('oc_scheme', scheme);
     const blob = new Blob([JSON.stringify(scheme, null, 2)], { type: 'application/json' });
     downloadBlob(blob, `订单转换方案_${todayStr()}.json`);
-    toast('方案已保存', 'ok');
+    toast('方案文件已导出', 'ok');
   }
 
   function loadSchemeFromStorage() {
     const scheme = Store.get('oc_scheme');
     if (!scheme) { toast('没有已保存的方案', 'warn'); return; }
     applyScheme(scheme);
-    toast('已加载本地方案', 'ok');
   }
 
   // ===================== Bindings =====================
@@ -3489,17 +3788,43 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     };
     $('btnExport').onclick = () => exportExcel();
 
-    $('btnSaveScheme').onclick = () => saveSchemeToFile();
+    $('btnSaveScheme').onclick = () => {
+      if (state.activeSchemeId && confirm('是否覆盖当前已加载的方案？\n取消则另存为新方案')) {
+        saveSchemeToList(state.activeSchemeId);
+      } else {
+        saveSchemeToList(null);
+      }
+    };
+    if ($('btnSaveMapScheme')) $('btnSaveMapScheme').onclick = () => {
+      if (state.activeSchemeId && confirm('是否覆盖当前已加载的方案？\n取消则另存为新方案')) {
+        saveSchemeToList(state.activeSchemeId);
+      } else {
+        saveSchemeToList(null);
+      }
+    };
+    if ($('btnSaveOutScheme')) $('btnSaveOutScheme').onclick = () => {
+      if (state.activeSchemeId && confirm('是否覆盖当前已加载的方案？\n取消则另存为新方案')) {
+        saveSchemeToList(state.activeSchemeId);
+      } else {
+        saveSchemeToList(null);
+      }
+    };
+    if ($('btnExportSchemeFile')) $('btnExportSchemeFile').onclick = () => saveSchemeToFile();
     $('btnLoadScheme').onclick = () => {
-      // prefer file picker, fallback storage
       $('schemeFile').click();
     };
+    if ($('optIncludePrice')) {
+      $('optIncludePrice').onchange = (e) => syncIncludePriceFrom(e.target);
+    }
+    if ($('optIncludePricePreview')) {
+      $('optIncludePricePreview').onchange = (e) => syncIncludePriceFrom(e.target);
+    }
     $('schemeFile').addEventListener('change', async e => {
       const f = e.target.files && e.target.files[0];
       if (!f) { loadSchemeFromStorage(); return; }
       try {
         const text = await f.text();
-        applyScheme(JSON.parse(text));
+        applyScheme(JSON.parse(text), { silent: true });
         toast('方案文件已加载', 'ok');
       } catch (err) {
         toast('方案加载失败', 'err');
@@ -3526,12 +3851,27 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       if (scheme && scheme.template) state.template = scheme.template;
       if (scheme && scheme.matchCfg) state.matchCfg = Object.assign(state.matchCfg, scheme.matchCfg);
       if (scheme && scheme.formulas) state.formulas = scheme.formulas;
+      if (scheme && scheme.paramMap) state.paramMap = Object.assign({}, scheme.paramMap, state.paramMap);
+      if (scheme && scheme.opts) setIncludePrice(scheme.opts.includePrice !== false);
+      // migrate single legacy scheme into list once
+      if (scheme && !listSavedSchemes().length) {
+        const list = [{
+          id: schemeUid(),
+          name: '本地方案',
+          savedAt: Date.now(),
+          data: scheme
+        }];
+        Store.set(SCHEME_LIB_KEY, list);
+        state.activeSchemeId = list[0].id;
+      }
     } catch (e) {}
     bindEvents();
     renderSteps();
     setAppMode('order');
     migrateLegacyBom();
     renderSavedBomList();
+    renderSavedSchemeList();
+    setIncludePrice(includePriceEnabled());
     updateUploadSummary();
   }
 
