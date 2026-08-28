@@ -14,7 +14,7 @@
     <div class="brand">
       <div>
         <h1>通力采购订单批量识别</h1>
-        <p>识别全部订单行与 BOM 子件（含子件下方备注 A/B/C/D）。按相同物料类别归组后由你勾选要看的类；订单行字段、规格字段、子件字段均可自定义，再导出。</p>
+        <p>识别全部订单行与 BOM 子件（含子件下方备注 A/B/C/D）。按相同物料类别归组后由你勾选要看的类；每一列还可单独做替换、提取、分段、格式化等处理，再导出。</p>
       </div>
       <span class="tag" id="sourceTag">示例文档（已预识别）</span>
     </div>
@@ -138,13 +138,41 @@
       </div>
     </section>
     <section class="panel">
+      <div class="panel-head"><h2>列内容处理</h2>
+        <span class="hint">每列单独处理：查找替换、正则提取、分段、日期/数值格式、映射。表格和导出都用处理后的值。点表头也可选中该列。</span>
+      </div>
+      <div class="colproc">
+        <div class="colproc-side">
+          <label class="hint" style="display:block;margin-bottom:6px">选择列</label>
+          <select id="colSelect"></select>
+          <div class="actions" style="margin-top:8px">
+            <button class="ghost" id="colClear" type="button">清空本列规则</button>
+            <button class="ghost" id="colClearAll" type="button">清空全部列规则</button>
+          </div>
+          <p class="hint" style="margin:12px 0 6px">常用模板（应用到当前列）</p>
+          <div class="suggests" id="colPresets"></div>
+        </div>
+        <div class="colproc-main">
+          <div id="colSteps"></div>
+          <div class="actions">
+            <select id="colAddType"></select>
+            <button class="secondary" id="colAddStep" type="button">添加步骤</button>
+          </div>
+          <div class="preview-box">
+            <p class="hint" style="margin:0 0 6px">预览（当前可见行的前几条）</p>
+            <table class="mini" id="colPreview"><thead><tr><th>原始</th><th>处理后</th></tr></thead><tbody></tbody></table>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section class="panel">
       <div class="panel-head"><h2>识别结果 · 请核对订单行</h2></div>
       <div class="stats" id="summaryCards"></div>
       <div class="po-grid" id="poCards"></div>
     </section>
 
     <section class="panel">
-      <div class="panel-head"><h2>识别明细</h2><span class="hint">按你勾选的类别与字段显示；展开可看规格和子件备注</span></div>
+      <div class="panel-head"><h2>识别明细</h2><span class="hint">点列标题可编辑该列处理规则；单元格悬停可看原始值</span></div>
       <div class="table-wrap">
         <table class="results">
           <thead id="resultHead"></thead>
@@ -157,6 +185,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="assets/js/transforms.js"></script>
   <script src="assets/js/parser.js"></script>
   <script src="assets/js/app.js"></script>
 </body>

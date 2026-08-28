@@ -67,6 +67,8 @@
     selectedParentFields: new Set(DEFAULT_PARENT),
     selectedBomFields: new Set(DEFAULT_BOM),
     viewMode: "nested",
+    columnRules: {},
+    activeCol: "p:material",
   };
 
   const $ = (sel) => document.querySelector(sel);
@@ -80,6 +82,8 @@
       if (Array.isArray(p.bomFields)) state.selectedBomFields = new Set(p.bomFields);
       if (Array.isArray(p.keywords)) state.extractKeywords = p.keywords;
       if (p.viewMode) state.viewMode = p.viewMode;
+      if (p.columnRules && typeof p.columnRules === "object") state.columnRules = p.columnRules;
+      if (p.activeCol) state.activeCol = p.activeCol;
     } catch (e) {}
   }
 
@@ -91,6 +95,8 @@
         bomFields: [...state.selectedBomFields],
         keywords: state.extractKeywords,
         viewMode: state.viewMode,
+        columnRules: state.columnRules,
+        activeCol: state.activeCol,
       })
     );
   }
@@ -301,6 +307,204 @@
 
   function selectedBomFieldDefs() {
     return BOM_FIELDS.filter((f) => state.selectedBomFields.has(f.id));
+  }
+
+  function columnOptions() {
+    const opts = [];
+    selectedParentFieldDefs().forEach((f) => opts.push({ key: "p:" + f.id, label: f.label, kind: "parent" }));
+    selectedBomFieldDefs().forEach((f) =>
+      opts.push({ key: "b:" + f.id, label: "\u5b50\u4ef6\u00b7" + f.label, kind: "bom" })
+    );
+    state.extractKeywords.forEach((k) => opts.push({ key: "k:" + k, label: k, kind: "kw" }));
+    return opts;
+  }
+
+  function processValue(colKey, raw) {
+    return ColumnTransform.applyPipeline(raw, (state.columnRules && state.columnRules[colKey]) || []);
+  }
+
+  function cellHtml(colKey, raw, extraClass) {
+    const shown = processValue(colKey, raw);
+    const changed = String(shown) !== String(raw == null ? "" : raw);
+    const cls = [extraClass || "", changed ? "changed" : ""].filter(Boolean).join(" ");
+    const title = changed ? "\u539f\u59cb\uff1a" + String(raw) : "";
+    return `<td class="${cls}" title="${escapeHtml(title)}">${escapeHtml(shown)}</td>`;
+  }
+
+  function thHtml(label, colKey, extraClass) {
+    const n = (state.columnRules[colKey] || []).length;
+    const mark = n ? `<span class="rule-dot">${n}</span>` : "";
+    const on = state.activeCol === colKey ? " active" : "";
+    return `<th class="col-th ${extraClass || ""}${on}" data-col="${escapeHtml(colKey)}">${escapeHtml(
+      label
+    )}${mark}</th>`;
+  }
+
+  function rawFromRow(row, colKey) {
+    if (colKey.startsWith("p:")) return parentValue(row.doc, row.item, colKey.slice(2));
+    if (colKey.startsWith("b:")) {
+      if (row.kind === "bom" && row.bom) return bomValue(row.bom, colKey.slice(2));
+      if (row.item && row.item.bom && row.item.bom[0]) return bomValue(row.item.bom[0], colKey.slice(2));
+      return "";
+    }
+    if (colKey.startsWith("k:")) return KonePoParser.specValueForKeyword(row.item, colKey.slice(2));
+    return "";
+  }
+
+  function sampleRaws(colKey, limit) {
+    limit = limit || 6;
+    const rows = displayRows();
+    const out = [];
+    for (let i = 0; i < rows.length && out.length < limit; i++) {
+      const raw = rawFromRow(rows[i], colKey);
+      if (!out.includes(raw)) out.push(raw);
+    }
+    return out.length ? out : [""];
+  }
+
+  function ensureActiveCol() {
+    const opts = columnOptions();
+    if (!opts.length) return;
+    if (!opts.some((o) => o.key === state.activeCol)) state.activeCol = opts[0].key;
+  }
+
+  function inp(i, field, value, placeholder, wide) {
+    return `<label class="${wide ? "wide" : ""}">${escapeHtml(placeholder || field)}
+      <input data-idx="${i}" data-field="${field}" value="${escapeHtml(value == null ? "" : value)}" /></label>`;
+  }
+
+  function stepFields(step, i) {
+    switch (step.type) {
+      case "replace":
+        return `<div class="step-grid">${inp(i, "find", step.find, "\u67e5\u627e")}${inp(i, "to", step.to, "\u66ff\u6362\u4e3a")}
+          <label><input type="checkbox" data-idx="${i}" data-field="all" ${
+            step.all === false ? "" : "checked"
+          } /> \u5168\u90e8\u66ff\u6362</label>
+          <label><input type="checkbox" data-idx="${i}" data-field="regex" ${
+            step.regex ? "checked" : ""
+          } /> \u6b63\u5219</label></div>`;
+      case "extract":
+        return `<div class="step-grid">${inp(i, "pattern", step.pattern, "\u6b63\u5219")}${inp(
+          i,
+          "group",
+          step.group,
+          "\u6355\u83b7\u7ec4\uff0c0=\u5168\u90e8"
+        )}</div>`;
+      case "split":
+        return `<div class="step-grid">${inp(i, "sep", step.sep, "\u5206\u9694\u7b26")}${inp(
+          i,
+          "index",
+          step.index,
+          "\u7b2c\u51e0\u6bb5\uff081 \u8d77\uff09"
+        )}</div>`;
+      case "prefix":
+      case "suffix":
+      case "default":
+        return `<div class="step-grid">${inp(i, "text", step.text, "\u6587\u672c", true)}</div>`;
+      case "slice":
+        return `<div class="step-grid">${inp(i, "from", step.from, "\u8d77\u59cb 1")}${inp(i, "to", step.to, "\u7ed3\u675f\u53ef\u7a7a")}</div>`;
+      case "number":
+        return `<div class="step-grid">${inp(i, "decimals", step.decimals, "\u5c0f\u6570\u4f4d\u53ef\u7a7a")}</div>`;
+      case "date":
+        return `<div class="step-grid">${inp(i, "format", step.format || "yyyy-mm-dd", "\u683c\u5f0f", true)}</div>`;
+      case "map":
+        return `<div class="step-grid"><label class="wide">\u6bcf\u884c \u539f\u503c -> \u65b0\u503c
+          <textarea data-idx="${i}" data-field="table" rows="4">${escapeHtml(step.table || "")}</textarea></label></div>`;
+      default:
+        return "";
+    }
+  }
+
+  function renderColumnProcessor() {
+    ensureActiveCol();
+    const sel = $("#colSelect");
+    if (!sel) return;
+    const opts = columnOptions();
+    sel.innerHTML = opts
+      .map((o) => {
+        const n = (state.columnRules[o.key] || []).length;
+        const mark = n ? " \u00b7 " + n + "\u6b65" : "";
+        return `<option value="${escapeHtml(o.key)}" ${o.key === state.activeCol ? "selected" : ""}>${escapeHtml(
+          o.label
+        )}${mark}</option>`;
+      })
+      .join("");
+    $("#colAddType").innerHTML = ColumnTransform.STEP_TYPES.map(
+      (t) => `<option value="${t.id}">${escapeHtml(t.label)}</option>`
+    ).join("");
+    const steps = state.columnRules[state.activeCol] || [];
+    $("#colSteps").innerHTML =
+      steps
+        .map((step, i) => {
+          const typeLabel = (ColumnTransform.STEP_TYPES.find((t) => t.id === step.type) || {}).label || step.type;
+          return `<article class="step-card"><header><strong>${i + 1}. ${escapeHtml(
+            typeLabel
+          )}</strong><button class="ghost" type="button" data-del="${i}">\u5220\u9664</button></header>${stepFields(
+            step,
+            i
+          )}</article>`;
+        })
+        .join("") ||
+      '<p class="muted">\u8fd9\u4e00\u5217\u8fd8\u6ca1\u6709\u5904\u7406\u6b65\u9aa4\u3002\u53ef\u6dfb\u52a0\u6b65\u9aa4\u6216\u70b9\u5e38\u7528\u6a21\u677f\u3002</p>';
+    $("#colSteps").querySelectorAll("[data-del]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const list = state.columnRules[state.activeCol] || [];
+        list.splice(Number(btn.dataset.del), 1);
+        if (!list.length) delete state.columnRules[state.activeCol];
+        else state.columnRules[state.activeCol] = list;
+        savePrefs();
+        render();
+      });
+    });
+    $("#colSteps").querySelectorAll("[data-field]").forEach((el) => {
+      el.addEventListener("input", () => {
+        const list = state.columnRules[state.activeCol] || [];
+        const step = list[Number(el.dataset.idx)];
+        if (!step) return;
+        if (el.type === "checkbox") step[el.dataset.field] = el.checked;
+        else step[el.dataset.field] = el.value;
+        savePrefs();
+        renderPreviewOnly();
+        renderTable();
+      });
+    });
+    $("#colPresets").innerHTML = [
+      { id: "split-so", label: "\u53d6 / \u524d\u4e00\u6bb5" },
+      { id: "date-iso", label: "\u65e5\u671f \u2192 YYYY-MM-DD" },
+      { id: "digits", label: "\u53ea\u7559\u6570\u5b57" },
+      { id: "no-comma", label: "\u53bb\u5343\u5206\u4f4d" },
+      { id: "trim", label: "\u53bb\u7a7a\u683c" },
+    ]
+      .map((p) => `<button class="suggest" type="button" data-preset="${p.id}">${p.label}</button>`)
+      .join("");
+    $("#colPresets").querySelectorAll("button").forEach((btn) => {
+      btn.addEventListener("click", () => applyPreset(btn.dataset.preset));
+    });
+    renderPreviewOnly();
+  }
+
+  function applyPreset(id) {
+    const add = [];
+    if (id === "split-so") add.push({ type: "split", sep: "/", index: 1 });
+    if (id === "date-iso") add.push({ type: "date", format: "yyyy-mm-dd" });
+    if (id === "digits") add.push({ type: "extract", pattern: "\\d+", group: 0 });
+    if (id === "no-comma") add.push({ type: "replace", find: ",", to: "", all: true });
+    if (id === "trim") add.push({ type: "trim" });
+    if (!add.length) return;
+    state.columnRules[state.activeCol] = (state.columnRules[state.activeCol] || []).concat(add);
+    savePrefs();
+    render();
+  }
+
+  function renderPreviewOnly() {
+    const body = document.querySelector("#colPreview tbody");
+    if (!body) return;
+    body.innerHTML = sampleRaws(state.activeCol, 6)
+      .map((raw) => {
+        const shown = processValue(state.activeCol, raw);
+        return `<tr><td class="mono">${escapeHtml(raw)}</td><td class="mono">${escapeHtml(shown)}</td></tr>`;
+      })
+      .join("");
   }
 
   function renderCategories() {
@@ -515,9 +719,9 @@
     const thead = $("#resultHead");
     thead.innerHTML =
       `<tr><th></th>` +
-      pdefs.map((f) => `<th>${escapeHtml(f.label)}</th>`).join("") +
-      (showBomCols ? bdefs.map((f) => `<th class="kw">${escapeHtml(f.label)}</th>`).join("") : "") +
-      kw.map((k) => `<th class="kw">${escapeHtml(k)}</th>`).join("") +
+      pdefs.map((f) => thHtml(f.label, "p:" + f.id)).join("") +
+      (showBomCols ? bdefs.map((f) => thHtml(f.label, "b:" + f.id, "kw")).join("") : "") +
+      kw.map((k) => thHtml(k, "k:" + k, "kw")).join("") +
       `</tr>`;
 
     const body = $("#resultBody");
@@ -534,19 +738,19 @@
           .map((f) => {
             const v = parentValue(doc, item, f.id);
             const cls = f.id === "material" || f.id === "po" || f.id === "salesOrderRef" ? "mono" : "";
-            return `<td class="${cls}">${escapeHtml(v)}</td>`;
+            return cellHtml("p:" + f.id, v, cls);
           })
           .join("");
         const bomCells = showBomCols
           ? bdefs
               .map((f) => {
                 const v = kind === "bom" ? bomValue(row.bom, f.id) : "";
-                return `<td class="kw">${escapeHtml(v)}</td>`;
+                return cellHtml("b:" + f.id, v, "kw");
               })
               .join("")
           : "";
         const extraCells = kw
-          .map((k) => `<td class="kw">${escapeHtml(KonePoParser.specValueForKeyword(item, k))}</td>`)
+          .map((k) => cellHtml("k:" + k, KonePoParser.specValueForKeyword(item, k), "kw"))
           .join("");
         const specRows = (item.specs || [])
           .map(
@@ -564,7 +768,7 @@
           .map((b) => {
             return (
               `<tr>` +
-              bdefs.map((f) => `<td>${escapeHtml(bomValue(b, f.id))}</td>`).join("") +
+              bdefs.map((f) => `<td>${escapeHtml(processValue("b:" + f.id, bomValue(b, f.id)))}</td>`).join("") +
               `</tr>`
             );
           })
@@ -611,6 +815,16 @@
         renderTable();
       });
     });
+    thead.querySelectorAll("th.col-th").forEach((th) => {
+      th.addEventListener("click", () => {
+        state.activeCol = th.dataset.col;
+        savePrefs();
+        renderColumnProcessor();
+        renderTable();
+        const panel = document.querySelector(".colproc");
+        if (panel) panel.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+    });
   }
 
   function escapeHtml(s) {
@@ -624,25 +838,25 @@
   function parentExportObject(doc, item) {
     const row = {};
     selectedParentFieldDefs().forEach((f) => {
-      row[f.label] = parentValue(doc, item, f.id);
+      row[f.label] = processValue("p:" + f.id, parentValue(doc, item, f.id));
     });
     state.extractKeywords.forEach((k) => {
-      row[k] = KonePoParser.specValueForKeyword(item, k);
+      row[k] = processValue("k:" + k, KonePoParser.specValueForKeyword(item, k));
     });
     return row;
   }
 
   function bomExportObject(doc, item, bom) {
     const row = {
-      PO: doc.header.poNumber,
-      "\u6bcd\u4ef6Pos": item.pos,
-      "\u6bcd\u4ef6\u7269\u6599": item.material,
-      "\u6bcd\u4ef6\u63cf\u8ff0": item.description,
-      "\u9500\u552e\u8ba2\u5355": item.salesOrderRef,
-      "\u9879\u76ee\u53f7": item.projectRef,
+      PO: processValue("p:po", doc.header.poNumber),
+      "\u6bcd\u4ef6Pos": processValue("p:pos", item.pos),
+      "\u6bcd\u4ef6\u7269\u6599": processValue("p:material", item.material),
+      "\u6bcd\u4ef6\u63cf\u8ff0": processValue("p:description", item.description),
+      "\u9500\u552e\u8ba2\u5355": processValue("p:salesOrderRef", item.salesOrderRef),
+      "\u9879\u76ee\u53f7": processValue("p:projectRef", item.projectRef),
     };
     selectedBomFieldDefs().forEach((f) => {
-      row[f.label] = bomValue(bom, f.id);
+      row[f.label] = processValue("b:" + f.id, bomValue(bom, f.id));
     });
     return row;
   }
@@ -653,7 +867,7 @@
       if (state.viewMode === "flat") {
         o["\u884c\u7c7b\u578b"] = row.kind === "bom" ? "\u5b50\u4ef6" : "\u8ba2\u5355\u884c";
         selectedBomFieldDefs().forEach((f) => {
-          o[f.label] = row.kind === "bom" ? bomValue(row.bom, f.id) : "";
+          o[f.label] = row.kind === "bom" ? processValue("b:" + f.id, bomValue(row.bom, f.id)) : "";
         });
       }
       return o;
@@ -714,11 +928,14 @@
 
   function exportJson() {
     const vis = visibleParents();
-    const payload = vis.map(({ doc, item }) => ({
-      file: doc.file,
-      header: doc.header,
-      item,
-    }));
+    const payload = {
+      processed: exportDisplayedObjects(),
+      raw: vis.map(({ doc, item }) => ({
+        file: doc.file,
+        header: doc.header,
+        item,
+      })),
+    };
     downloadBlob(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }), "kone-po-selected.json");
   }
 
@@ -731,6 +948,7 @@
     renderFieldPickers();
     renderKeywords();
     renderSummary();
+    renderColumnProcessor();
     renderTable();
   }
 
@@ -814,6 +1032,44 @@
         savePrefs();
         render();
       });
+    });
+    $("#colSelect").addEventListener("change", (e) => {
+      state.activeCol = e.target.value;
+      savePrefs();
+      renderColumnProcessor();
+      renderTable();
+    });
+    $("#colAddStep").addEventListener("click", () => {
+      const type = $("#colAddType").value || "trim";
+      const step = { type };
+      if (type === "split") {
+        step.sep = "/";
+        step.index = 1;
+      }
+      if (type === "replace") {
+        step.find = "";
+        step.to = "";
+        step.all = true;
+      }
+      if (type === "extract") {
+        step.pattern = "";
+        step.group = 0;
+      }
+      if (type === "date") step.format = "yyyy-mm-dd";
+      if (type === "slice") step.from = 1;
+      state.columnRules[state.activeCol] = (state.columnRules[state.activeCol] || []).concat([step]);
+      savePrefs();
+      render();
+    });
+    $("#colClear").addEventListener("click", () => {
+      delete state.columnRules[state.activeCol];
+      savePrefs();
+      render();
+    });
+    $("#colClearAll").addEventListener("click", () => {
+      state.columnRules = {};
+      savePrefs();
+      render();
     });
   }
 
