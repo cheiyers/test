@@ -24,5 +24,12 @@ for d in docs:
     assert first["material"].startswith("KM")
     assert first["salesOrderRef"]
     assert first["projectRef"]
-print("ok", got)
+# BOM remarks on the large PO
+big = next(d for d in docs if d["header"]["poNumber"] == "4801169630")
+switch = next(it for it in big["items"] if it["bom"])
+label = next(b for b in switch["bom"] if b["pos"] == "0500")
+assert label["remarkFields"]["A"] == "20"
+assert "MAINS SWITCH" in label["remarkFields"]["C"]
+assert label["remarkFields"]["D"].startswith("KMC")
+print("ok", got, "bom remarks", label["remarkFields"])
 out.unlink()

@@ -14,7 +14,7 @@
     <div class="brand">
       <div>
         <h1>通力采购订单批量识别</h1>
-        <p>针对 KONE Purchase Order PDF：按「每一行订单」识别物料、数量、价格、销售订单号、项目号，以及行内规格 / BOM 子件。可自定义关键字，把你关心的字段抽成独立列并导出。</p>
+        <p>识别全部订单行与 BOM 子件（含子件下方备注 A/B/C/D）。按相同物料类别归组后由你勾选要看的类；订单行字段、规格字段、子件字段均可自定义，再导出。</p>
       </div>
       <span class="tag" id="sourceTag">示例文档（已预识别）</span>
     </div>
@@ -50,7 +50,7 @@
             <b>1. 抬头</b>：PO 号、供应商、买方、送货地址、订单日期、账期、币种、总金额。<br/>
             <b>2. 订单行（主识别对象）</b>：Pos / 物料号 / 到货日 / 数量 / 单价 / 金额 / 中英文描述 / Sales order ref. / Project ref. / 发货说明。<br/>
             <b>3. 行内规格</b>：例如轿厢尺寸、吊顶材料、额定载重、Wire Length，左右分栏。<br/>
-            <b>4. BOM 子件</b>（电气类物料常见）：<code>.1 0010 KM52255244V000 1.000 PC</code> 这种下层零件清单。<br/>
+            <b>4. BOM 子件</b>：<code>.1 0010 KM……</code> 下层零件，以及子件下方的 Remarks line（A/B/C/D 等行信息）。<br/>
             <b>5. 页脚条款</b>与签核栏每页重复，不作为订单行。
           </p>
           <p class="notes">
@@ -79,16 +79,10 @@
           </div>
         </div>
         <div>
-          <p class="hint" style="margin-top:0">自定义提取关键字：匹配规格参数名称，抽成表格新列。过滤关键字只显示包含该词的行。</p>
-          <div class="actions">
-            <input id="keywordInput" type="text" placeholder="例如：轿内净高 或 Wire Length" />
-            <button class="secondary" id="addKeyword" type="button">添加提取关键字</button>
-          </div>
-          <div class="chips" id="keywordChips"></div>
+          <p class="hint" style="margin-top:0">导入后会识别全部类别。可在下方勾选要保留的类别与字段。过滤框只影响当前显示。</p>
           <div class="actions" style="margin-top:10px">
-            <input id="filterInput" type="text" placeholder="过滤：物料 / 项目号 / 描述…" />
+            <input id="filterInput" type="text" placeholder="过滤：物料 / 项目号 / 描述 / 子件…" />
           </div>
-          <div class="suggests" id="suggestedKeys"></div>
           <div class="actions">
             <button class="primary" id="btnXlsx" type="button">导出 Excel</button>
             <button class="secondary" id="btnCsv" type="button">导出 CSV</button>
@@ -98,6 +92,51 @@
       </div>
     </section>
 
+
+    <section class="panel">
+      <div class="panel-head"><h2>选择类别与字段</h2>
+        <span class="hint">先全量识别，再由你决定要哪些类、哪些列</span>
+      </div>
+      <div class="choose-grid">
+        <div>
+          <div class="panel-head" style="margin-bottom:8px">
+            <h3 style="margin:0;font-size:13px;color:#16324f">物料类别</h3>
+            <div class="actions" style="margin:0">
+              <button class="ghost" id="catAll" type="button">全选</button>
+              <button class="ghost" id="catNone" type="button">全不选</button>
+            </div>
+          </div>
+          <div id="categoryList"></div>
+        </div>
+        <div>
+          <div class="field-block">
+            <h3>显示方式</h3>
+            <div class="view-modes">
+              <label><input type="radio" name="viewMode" value="parent" /> 仅订单行</label>
+              <label><input type="radio" name="viewMode" value="nested" checked /> 订单行 + 展开子件</label>
+              <label><input type="radio" name="viewMode" value="flat" /> 子件展开为独立行</label>
+            </div>
+          </div>
+          <div class="field-block">
+            <h3>订单行字段</h3>
+            <div class="field-list" id="parentFields"></div>
+          </div>
+          <div class="field-block">
+            <h3>规格字段（点选加入列，也可自行添加）</h3>
+            <div class="actions" style="margin-top:0">
+              <input id="keywordInput" type="text" placeholder="例如：轿内净高 或 Wire Length" />
+              <button class="secondary" id="addKeyword" type="button">添加</button>
+            </div>
+            <div class="chips" id="keywordChips"></div>
+            <div class="suggests" id="suggestedKeys"></div>
+          </div>
+          <div class="field-block">
+            <h3>子件字段（含下方备注行）</h3>
+            <div class="field-list" id="bomFields"></div>
+          </div>
+        </div>
+      </div>
+    </section>
     <section class="panel">
       <div class="panel-head"><h2>识别结果 · 请核对订单行</h2></div>
       <div class="stats" id="summaryCards"></div>
@@ -105,7 +144,7 @@
     </section>
 
     <section class="panel">
-      <div class="panel-head"><h2>每一行订单</h2><span class="hint">点 + 可展开规格参数和 BOM 子件</span></div>
+      <div class="panel-head"><h2>识别明细</h2><span class="hint">按你勾选的类别与字段显示；展开可看规格和子件备注</span></div>
       <div class="table-wrap">
         <table class="results">
           <thead id="resultHead"></thead>

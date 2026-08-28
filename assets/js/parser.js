@@ -200,6 +200,98 @@
     return spec.key ? spec : null;
   }
 
+  const REMARK_RE = /Remarks line\s+(\d+)\s+([A-Za-z])\s*=\s*(.*)$/;
+
+  function applyRemark(bom, line) {
+    if (!bom.remarks) bom.remarks = [];
+    if (!bom.remarkFields) bom.remarkFields = {};
+    bom.remarks.push(line);
+    const m = String(line).trim().match(REMARK_RE);
+    if (m) bom.remarkFields[m[2].toUpperCase()] = m[3].trim();
+  }
+
+  function normalizeBom(bom) {
+    const b = Object.assign({ remarks: [], remarkFields: {} }, bom);
+    if (!b.remarkFields || !Object.keys(b.remarkFields).length) {
+      b.remarkFields = {};
+      (b.remarks || []).forEach((line) => {
+        const m = String(line).trim().match(REMARK_RE);
+        if (m) b.remarkFields[m[2].toUpperCase()] = m[3].trim();
+      });
+    }
+    return b;
+  }
+
+  function familyOf(item) {
+    const d = item.description || "";
+    if (/LED\s*STRIP/i.test(d)) return { id: "led-strip", name: "LED STRIP \u8f7f\u53a2\u706f\u5e26" };
+    if (/\u4e3b\u5f00\u5173/.test(d) || /MAIN SWITCH/i.test(d))
+      return { id: "main-switch", name: "MR \u4e3b\u5f00\u5173" };
+    if (/\u7ebf\u7f06|\u4e95\u9053\u7167\u660e/.test(d))
+      return { id: "shaft-cable", name: "\u4e95\u9053\u7167\u660e\u7535\u7f06" };
+    return { id: "other", name: "\u5176\u4ed6\u7269\u6599" };
+  }
+
+  function categoryId(item) {
+    return (item.material || "") + "||" + (item.description || "");
+  }
+
+  function collectCategories(docs) {
+    const map = new Map();
+    (docs || []).forEach((doc) => {
+      (doc.items || []).forEach((item) => {
+        const id = categoryId(item);
+        const fam = familyOf(item);
+        const bomCount = (item.bom || []).length;
+        if (!map.has(id)) {
+          map.set(id, {
+            id,
+            familyId: fam.id,
+            familyName: fam.name,
+            material: item.material,
+            description: item.description || "",
+            count: 0,
+            bomCount: 0,
+            amount: 0,
+          });
+        }
+        const row = map.get(id);
+        row.count += 1;
+        row.bomCount += bomCount;
+        row.amount += Number(String(item.amount || "0").replace(/,/g, "")) || 0;
+      });
+    });
+    const list = [...map.values()].sort((a, b) => {
+      if (a.familyName !== b.familyName) return a.familyName.localeCompare(b.familyName, "zh");
+      return b.count - a.count;
+    });
+    const families = [];
+    const byFam = new Map();
+    list.forEach((c) => {
+      if (!byFam.has(c.familyId)) {
+        const fam = { id: c.familyId, name: c.familyName, count: 0, bomCount: 0, categories: [] };
+        byFam.set(c.familyId, fam);
+        families.push(fam);
+      }
+      const fam = byFam.get(c.familyId);
+      fam.categories.push(c);
+      fam.count += c.count;
+      fam.bomCount += c.bomCount;
+    });
+    return { list, families };
+  }
+
+  function normalizeDocs(docs) {
+    (docs || []).forEach((doc) => {
+      (doc.items || []).forEach((item) => {
+        item.bom = (item.bom || []).map(normalizeBom);
+        item.categoryId = categoryId(item);
+        item.family = familyOf(item);
+      });
+    });
+    return docs;
+  }
+
   function parseItems(pageLineGroups) {
     const all = [];
     pageLineGroups.forEach((lines, i) => {
@@ -270,16 +362,18 @@
           unit: "PC",
           description: "",
           remarks: [],
+          remarkFields: {},
         });
         pendingBomDesc = true;
         continue;
       }
       if (/^\.1\s+0000$/.test(tNorm) || tNorm.startsWith("item:")) continue;
+      if (current.bom.length && tNorm.startsWith("Remarks line")) {
+        applyRemark(current.bom[current.bom.length - 1], tNorm);
+        pendingBomDesc = true;
+        continue;
+      }
       if (pendingBomDesc && current.bom.length) {
-        if (tNorm.startsWith("Remarks line")) {
-          current.bom[current.bom.length - 1].remarks.push(tNorm);
-          continue;
-        }
         const last = current.bom[current.bom.length - 1];
         last.description = (last.description + " " + tNorm).trim();
         pendingBomDesc = false;
@@ -292,7 +386,7 @@
       const spec = splitSpec(ln);
       if (spec) {
         if (spec.key.startsWith("Remarks line")) {
-          if (current.bom.length) current.bom[current.bom.length - 1].remarks.push(tNorm);
+          if (current.bom.length) applyRemark(current.bom[current.bom.length - 1], tNorm);
           continue;
         }
         current.specs.push(spec);
@@ -308,6 +402,11 @@
     const pageLines = pages.map((p) => wordsToLines(p.words));
     const header = pageLines.length ? parseHeader(pageLines[0]) : {};
     const items = parseItems(pageLines);
+    items.forEach((item) => {
+      item.bom = (item.bom || []).map(normalizeBom);
+      item.categoryId = categoryId(item);
+      item.family = familyOf(item);
+    });
     const sumAmount = Math.round(
       items.reduce((s, it) => s + Number(String(it.amount).replace(/,/g, "")), 0) * 100
     ) / 100;
@@ -370,8 +469,13 @@
   global.KonePoParser = {
     parseDocument,
     collectSpecKeys,
+    collectCategories,
+    categoryId,
+    familyOf,
     specValueForKeyword,
     itemSearchBlob,
     matchKeyword,
+    normalizeDocs,
+    normalizeBom,
   };
 })(window);

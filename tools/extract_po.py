@@ -17,6 +17,16 @@ LINE_RE = re.compile(
 BOM_RE = re.compile(r"^\.1\s+(\d{4})\s+(KM[A-Z0-9]+)\s+([\d,.]+)\s+PC$")
 DATE_RE = re.compile(r"\d{2}\.\d{2}\.\d{4}")
 CONTACT_RE = re.compile(r"([A-Za-z]+,[A-Za-z]+)")
+REMARK_RE = re.compile(r"Remarks line\s+(\d+)\s+([A-Za-z])\s*=\s*(.*)$")
+
+
+def apply_remark(bom: dict, line: str) -> None:
+    bom.setdefault("remarks", []).append(line)
+    bom.setdefault("remarkFields", {})
+    m = REMARK_RE.search(line.strip())
+    if m:
+        bom["remarkFields"][m.group(2).upper()] = m.group(3).strip()
+
 
 
 def words_to_lines(words, y_tol: float = 3.0):
@@ -274,16 +284,18 @@ def parse_items(doc) -> list[dict]:
                     "unit": "PC",
                     "description": "",
                     "remarks": [],
+                    "remarkFields": {},
                 }
             )
             pending_bom_desc = True
             continue
         if re.match(r"^\.1\s+0000$", t_norm) or t_norm.startswith("item:"):
             continue
+        if current["bom"] and t_norm.startswith("Remarks line"):
+            apply_remark(current["bom"][-1], t_norm)
+            pending_bom_desc = True
+            continue
         if pending_bom_desc and current["bom"]:
-            if t_norm.startswith("Remarks line"):
-                current["bom"][-1]["remarks"].append(t_norm)
-                continue
             current["bom"][-1]["description"] = (
                 current["bom"][-1]["description"] + " " + t_norm
             ).strip()
@@ -296,7 +308,7 @@ def parse_items(doc) -> list[dict]:
         if spec:
             if spec["key"].startswith("Remarks line"):
                 if current["bom"]:
-                    current["bom"][-1]["remarks"].append(t_norm)
+                    apply_remark(current["bom"][-1], t_norm)
                 continue
             current["specs"].append(spec)
         elif not current["description"] and t_norm and not t_norm.startswith("."):
