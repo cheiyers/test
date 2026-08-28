@@ -1,8 +1,8 @@
 (function () {
+  const PDFJS_BASE = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/";
   const pdfjsLib = window["pdfjs-dist/build/pdf"] || window.pdfjsLib;
   if (pdfjsLib) {
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_BASE + "build/pdf.worker.min.js";
   }
 
   const state = {
@@ -49,7 +49,12 @@
 
   async function pdfToWords(file) {
     const buf = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    const pdf = await pdfjsLib.getDocument({
+      data: buf,
+      cMapUrl: PDFJS_BASE + "cmaps/",
+      cMapPacked: true,
+      standardFontDataUrl: PDFJS_BASE + "standard_fonts/",
+    }).promise;
     const pages = [];
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);

@@ -51,7 +51,11 @@
     let footerY = 690;
     for (const ln of lines) {
       if (ln.text.startsWith("Pos.") && ln.text.includes("Material")) headerY = ln.y;
-      if (ln.text.includes("TOTAL AMOUNT") || ln.text.includes(ACCOUNT_MARK)) {
+        if (
+        ln.text.includes("TOTAL AMOUNT") ||
+        ln.text.includes(ACCOUNT_MARK) ||
+        ln.text.includes("\u8d26\u53f7")
+      ) {
         footerY = Math.min(footerY, ln.y - 2);
       }
       if (ln.text.startsWith("1.") && ln.text.includes("Please acknowledge")) {
