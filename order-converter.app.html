@@ -1,0 +1,3857 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>订单转换系统</title>
+<style>
+:root {
+  --bg: #f3f6f9;
+  --bg-soft: #e8eef5;
+  --surface: #ffffff;
+  --surface-2: #f8fafc;
+  --text: #1f2937;
+  --text-muted: #64748b;
+  --border: #d7e0ea;
+  --primary: #0f6e56;
+  --primary-hover: #0b5844;
+  --primary-soft: #d9f3ea;
+  --accent: #c45c26;
+  --accent-soft: #fde8d8;
+  --danger: #b42318;
+  --danger-soft: #fee4e2;
+  --warning: #b54708;
+  --warning-soft: #fef0c7;
+  --success: #067647;
+  --success-soft: #d1fadf;
+  --shadow: 0 10px 30px rgba(15, 40, 60, 0.08);
+  --radius: 12px;
+  --font: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: var(--font);
+  color: var(--text);
+  background:
+    radial-gradient(1200px 500px at 10% -10%, #d7efe6 0%, transparent 55%),
+    radial-gradient(900px 420px at 100% 0%, #f8e2d2 0%, transparent 50%),
+    linear-gradient(180deg, #f7fafc 0%, var(--bg) 40%, #eef3f8 100%);
+  min-height: 100vh;
+}
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+.app { max-width: 1280px; margin: 0 auto; padding: 24px 20px 60px; }
+.hero {
+  display: flex; justify-content: space-between; gap: 16px; align-items: flex-end;
+  margin-bottom: 20px;
+}
+.hero h1 {
+  margin: 0 0 6px;
+  font-size: 28px;
+  letter-spacing: 0.02em;
+  color: #0b3d32;
+}
+.hero p { margin: 0; color: var(--text-muted); }
+.hero-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.steps {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.step-tab {
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.7);
+  border-radius: 999px;
+  padding: 10px 8px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  transition: .2s ease;
+}
+.step-tab.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(15,110,86,.25);
+}
+.step-tab.done { background: var(--primary-soft); color: var(--primary); border-color: #b7e4d4; }
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px;
+  margin-bottom: 16px;
+}
+.panel h2 { margin: 0 0 8px; font-size: 18px; }
+.panel .desc { margin: 0 0 16px; color: var(--text-muted); font-size: 13px; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.upload-box {
+  border: 1.5px dashed #9db6a8;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fbfffd, #f3faf7);
+  padding: 18px;
+  min-height: 150px;
+}
+.upload-box h3 { margin: 0 0 8px; font-size: 15px; }
+.upload-box .meta { color: var(--text-muted); font-size: 12px; margin: 8px 0 12px; min-height: 18px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.btn {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: var(--primary);
+  color: #fff;
+  transition: .15s ease;
+}
+.btn:hover { background: var(--primary-hover); }
+.btn.secondary { background: #fff; color: var(--text); border-color: var(--border); }
+.btn.secondary:hover { background: var(--surface-2); }
+.btn.accent { background: var(--accent); }
+.btn.accent:hover { background: #a94b1c; }
+.btn.danger { background: var(--danger); }
+.btn.ghost { background: transparent; color: var(--primary); border-color: #b7e4d4; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn.sm { padding: 5px 9px; font-size: 12px; }
+.label { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; display: block; }
+input[type="text"], input[type="number"], select, textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fff;
+}
+textarea { min-height: 70px; font-family: var(--mono); font-size: 12px; }
+.table-wrap { overflow: auto; border: 1px solid var(--border); border-radius: 10px; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th, td { border-bottom: 1px solid var(--border); padding: 8px 10px; text-align: left; white-space: nowrap; }
+th { background: var(--surface-2); position: sticky; top: 0; z-index: 1; }
+tr:hover td { background: #f7fbf9; }
+.tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: var(--bg-soft);
+  color: var(--text-muted);
+}
+.tag.ok { background: var(--success-soft); color: var(--success); }
+.tag.warn { background: var(--warning-soft); color: var(--warning); }
+.tag.err { background: var(--danger-soft); color: var(--danger); }
+.tag.info { background: var(--primary-soft); color: var(--primary); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--text);
+}
+.chip:hover { border-color: var(--primary); color: var(--primary); }
+.nav-bar {
+  display: flex; justify-content: space-between; gap: 10px; margin-top: 18px;
+}
+.stats {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px;
+}
+.stat {
+  background: linear-gradient(180deg, #fff, #f6faf8);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+}
+.stat .n { font-size: 24px; font-weight: 700; color: var(--primary); }
+.stat .t { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+.formula-item {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 8px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.formula-item .title {
+  font-weight: 600;
+  margin: 0;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.formula-item .title:hover { background: #eef7f3; }
+.formula-item .chev {
+  width: 18px; color: var(--text-muted); font-size: 12px; flex: 0 0 auto;
+}
+.formula-item .formula-body {
+  display: none;
+  padding: 0 12px 12px;
+  border-top: 1px dashed var(--border);
+}
+.formula-item.open .formula-body { display: block; padding-top: 10px; }
+.formula-item.open .chev::before { content: '▼'; }
+.formula-item:not(.open) .chev::before { content: '▶'; }
+.bom-editor {
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  padding: 14px;
+}
+.bom-editor.hidden { display: none !important; }
+.bom-parent-block {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.bom-parent-hd {
+  background: #eef8f3;
+  padding: 8px 10px;
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  font-weight: 600;
+}
+.bom-parent-hd input { font-weight: 500; }
+.bom-editor .table-wrap { max-height: 260px; }
+.bom-editor input[type="text"], .bom-editor input[type="number"] {
+  width: 100%; min-width: 70px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px;
+}
+.muted { color: var(--text-muted); font-size: 12px; }
+.debug {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+  max-height: 320px;
+  overflow: auto;
+}
+.toast-wrap {
+  position: fixed; right: 16px; top: 16px; z-index: 9999;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.toast {
+  background: #111827; color: #fff; padding: 10px 14px; border-radius: 8px;
+  box-shadow: var(--shadow); font-size: 13px; min-width: 220px;
+  animation: fadeIn .2s ease;
+}
+.toast.ok { background: var(--success); }
+.toast.err { background: var(--danger); }
+.toast.warn { background: var(--warning); }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(-6px);} to { opacity: 1; transform: none; } }
+.hidden { display: none !important; }
+.checkline { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.section-title { font-size: 14px; font-weight: 600; margin: 12px 0 8px; }
+.alert {
+  border-radius: 8px; padding: 10px 12px; font-size: 13px; margin-bottom: 12px;
+}
+.alert.warn { background: var(--warning-soft); color: #7a2e0e; }
+.alert.err { background: var(--danger-soft); color: #7a271a; }
+.alert.info { background: var(--primary-soft); color: #085041; }
+.merge-header td { background: #eef8f3; font-weight: 600; }
+.footer-note { text-align: center; color: var(--text-muted); font-size: 12px; margin-top: 20px; }
+.mode-tabs { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+.mode-tab {
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.mode-tab.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+.bom-list { margin-top: 12px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.bom-list-item {
+  display: flex; align-items: center; gap: 10px; justify-content: space-between;
+  padding: 10px 12px; border-bottom: 1px solid var(--border); background: #fff;
+  cursor: pointer;
+}
+.scheme-list { margin-top: 10px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.scheme-list-item {
+  display: flex; align-items: center; gap: 10px; justify-content: space-between;
+  padding: 10px 12px; border-bottom: 1px solid var(--border); background: #fff;
+}
+.scheme-list-item:last-child { border-bottom: none; }
+.scheme-list-item.active { background: #eef8f3; }
+.scheme-list-item .name { font-weight: 600; }
+.scheme-list-item .meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.hint-box {
+  margin-top: 10px; padding: 10px 12px; border-radius: 8px;
+  background: var(--primary-soft); color: #085041; font-size: 12px; line-height: 1.5;
+}
+.hint-box code { font-family: var(--mono); background: #fff; padding: 1px 4px; border-radius: 4px; }
+.bom-list-item:last-child { border-bottom: none; }
+.bom-list-item:hover { background: #f7fbf9; }
+.bom-list-item.active { background: var(--primary-soft); }
+.bom-list-item .name { font-weight: 600; }
+.bom-list-item .meta { font-size: 12px; color: var(--text-muted); }
+.manual-box {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fff, #f7fafc);
+  padding: 16px;
+  margin-top: 14px;
+}
+.price-input {
+  width: 100px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 6px;
+}
+.cost-bar {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, #e8f7f1, #fff7ef);
+  border: 1px solid var(--border);
+  display: flex; gap: 24px; flex-wrap: wrap; align-items: center;
+}
+.cost-bar strong { color: var(--accent); font-size: 18px; }
+@media (max-width: 900px) {
+  .grid-2, .grid-3, .stats, .steps { grid-template-columns: 1fr; }
+  .hero { flex-direction: column; align-items: flex-start; }
+  .step-tab { border-radius: 10px; }
+}
+</style>
+</head>
+<body>
+<div class="toast-wrap" id="toastWrap"></div>
+<div class="app">
+  <div class="hero">
+    <div>
+      <h1>订单转换系统</h1>
+      <p>上传订单与 BOM，完成匹配、公式计算、参数映射并导出生产明细</p>
+    </div>
+    <div class="hero-actions">
+      <button class="btn secondary" id="btnSaveScheme">保存方案到列表</button>
+      <button class="btn secondary" id="btnExportSchemeFile">导出方案文件</button>
+      <button class="btn secondary" id="btnLoadScheme">导入方案文件</button>
+      <input type="file" id="schemeFile" accept=".json" class="hidden" />
+    </div>
+  </div>
+
+  <div class="steps" id="stepTabs"></div>
+
+  <!-- Step 1 -->
+  <section class="panel step-panel" data-step="1">
+    <h2>1. 上传文件 / 手输料号</h2>
+    <p class="desc">可上传订单，也可不上传订单、直接输入母件料号匹配 BOM。支持下载上传模板；已保存的 BOM 可列表查看并点击加载修改。</p>
+
+    <div class="mode-tabs" id="modeTabs">
+      <button type="button" class="mode-tab active" data-mode="order">订单上传模式</button>
+      <button type="button" class="mode-tab" data-mode="manual">手输料号模式（无订单）</button>
+    </div>
+
+    <div class="grid-2">
+      <div class="upload-box" id="orderUploadBox">
+        <h3>订单文件</h3>
+        <div class="meta" id="orderMeta">尚未选择文件</div>
+        <div class="row">
+          <label class="btn">
+            选择订单
+            <input type="file" id="orderFile" accept=".xlsx,.xls" class="hidden" />
+          </label>
+          <button class="btn secondary sm" id="btnDlOrderTpl">下载订单模板</button>
+          <button class="btn secondary sm" id="btnClearOrder">清除</button>
+        </div>
+      </div>
+      <div class="upload-box">
+        <h3>BOM 文件 / BOM 库</h3>
+        <div class="meta" id="bomMeta">尚未选择文件</div>
+        <div class="row">
+          <label class="btn">
+            上传 BOM
+            <input type="file" id="bomFile" accept=".xlsx,.xls" class="hidden" multiple />
+          </label>
+          <label class="btn secondary sm">
+            再上传
+            <input type="file" id="bomFileAppend" accept=".xlsx,.xls" class="hidden" multiple />
+          </label>
+          <button class="btn secondary sm" id="btnDlBomTpl">下载BOM模板</button>
+          <button class="btn secondary sm" id="btnSaveBom">保存到列表</button>
+          <button class="btn secondary sm" id="btnClearBom">清除当前</button>
+        </div>
+        <div class="muted" style="margin-top:8px">每个上传的 BOM 文件会单独加入下方列表（不会合并到当前）；点击列表项即可查看/修改。匹配时会在全部已保存 BOM 中查找母件。</div>
+        <div class="section-title">已上传 / 已保存的 BOM 列表</div>
+        <div class="bom-list" id="savedBomList"><div class="muted" style="padding:10px">暂无 BOM，请上传文件</div></div>
+      </div>
+    </div>
+
+    <div class="bom-editor hidden" id="bomEditorPanel">
+      <div class="row" style="justify-content:space-between; margin-bottom:8px">
+        <div>
+          <h3 style="margin:0; font-size:15px">当前 BOM 内容（可直接修改）</h3>
+          <div class="muted" id="bomEditorHint">选择或上传 BOM 后在此查看/编辑母件与子件</div>
+        </div>
+        <div class="row">
+          <button class="btn secondary sm" id="btnBomAddParent">+ 母件</button>
+          <button class="btn sm" id="btnBomApplyEdit">应用修改</button>
+          <button class="btn secondary sm" id="btnBomSaveEdit">保存到列表</button>
+        </div>
+      </div>
+      <div id="bomEditorBody"></div>
+    </div>
+
+    <div class="manual-box hidden" id="manualModeBox">
+      <h3 style="margin:0 0 8px; font-size:15px">手输母件料号</h3>
+      <p class="muted" style="margin:0 0 10px">每行一个：母件代码，可选数量（如 <code>HL0230002C,2</code>）。系统按 BOM 库匹配并展开子件。</p>
+      <div class="grid-2">
+        <div>
+          <label class="label">母件料号列表</label>
+          <textarea id="manualCodes" placeholder="母件代码,数量&#10;HL0230002C,1&#10;BOM010,2" style="min-height:120px"></textarea>
+        </div>
+        <div>
+          <label class="label">默认数量（未写数量时使用）</label>
+          <input type="number" id="manualDefaultQty" value="1" min="0" step="any" />
+          <label class="label" style="margin-top:10px">单据编号（可选）</label>
+          <input type="text" id="manualDocNo" placeholder="如 MANUAL-001" />
+          <div class="row" style="margin-top:12px">
+            <button class="btn" id="btnManualMatch">匹配 BOM 并生成参数表</button>
+          </div>
+          <div class="muted" id="manualMatchHint" style="margin-top:8px"></div>
+        </div>
+      </div>
+      <div class="section-title">参数值（手输）</div>
+      <div class="table-wrap" style="max-height:280px">
+        <table>
+          <thead><tr><th>参数别名</th><th>输入值</th><th>说明</th></tr></thead>
+          <tbody id="manualParamBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="uploadSummary" class="alert info hidden" style="margin-top:14px"></div>
+  </section>
+
+  <!-- Step 2 -->
+  <section class="panel step-panel hidden" data-step="2">
+    <h2>2. 匹配配置</h2>
+    <p class="desc">四层匹配：精确 → 模糊前缀 → 规格型号 → 客户物料号。未匹配行将列出具体值。</p>
+    <div class="grid-3">
+      <div>
+        <label class="label">订单匹配列（物料代码）</label>
+        <select id="orderMatchCol"></select>
+      </div>
+      <div>
+        <label class="label">订单规格型号列</label>
+        <select id="orderSpecCol"></select>
+      </div>
+      <div>
+        <label class="label">订单客户物料号列</label>
+        <select id="orderCustCol"></select>
+      </div>
+      <div>
+        <label class="label">订单数量列</label>
+        <select id="orderQtyCol"></select>
+      </div>
+      <div>
+        <label class="label">BOM 母件代码列</label>
+        <select id="bomParentCodeCol"></select>
+      </div>
+      <div>
+        <label class="label">BOM 规格列</label>
+        <select id="bomSpecCol"></select>
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn" id="btnRunMatch">执行匹配</button>
+      <span class="muted" id="matchSummary"></span>
+    </div>
+    <div id="matchAlert" class="alert warn hidden" style="margin-top:12px"></div>
+    <div class="table-wrap" style="margin-top:12px; max-height:320px">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th><th>订单匹配值</th><th>匹配方式</th><th>母件代码</th><th>子件数</th><th>状态</th>
+          </tr>
+        </thead>
+        <tbody id="matchTableBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Step 3 -->
+  <section class="panel step-panel hidden" data-step="3">
+    <h2>3. 公式配置</h2>
+    <p class="desc">从 BOM 备注列提取公式；支持中文描述转换与变量赋值。点击下方变量可插入公式。</p>
+    <div class="section-title">变量提示（点击插入）</div>
+    <div class="chips" id="varChips"></div>
+    <div class="row" style="margin:12px 0 8px; justify-content:space-between">
+      <div class="section-title" style="margin:0">子件公式 <span class="muted" id="formulaCountHint"></span></div>
+      <div class="row">
+        <label class="checkline"><input type="checkbox" id="optFormulaMatchedOnly" /> 仅显示已匹配母件</label>
+        <button class="btn secondary sm" id="btnFormulaExpandAll" type="button">全部展开</button>
+        <button class="btn secondary sm" id="btnFormulaCollapseAll" type="button">全部折叠</button>
+      </div>
+    </div>
+    <div id="formulaList"></div>
+    <div class="row" style="margin-top:8px">
+      <button class="btn secondary" id="btnReloadBomFormulas">从 BOM 备注重新载入</button>
+      <button class="btn secondary" id="btnAutoConvertCn">中文公式自动转换</button>
+      <button class="btn secondary" id="btnExtractAliases">提取参数别名</button>
+    </div>
+  </section>
+
+  <!-- Step 4 -->
+  <section class="panel step-panel hidden" data-step="4">
+    <h2>4. 参数映射</h2>
+    <p class="desc">将公式别名映射到订单列、公式或固定值。固定值可直接填文字，也可写公式（如当日日期）。可保存为方案并在列表中查看加载。</p>
+    <div class="row" style="margin-bottom:12px">
+      <button class="btn" id="btnAutoMap">自动映射</button>
+      <button class="btn secondary" id="btnSaveMap">保存映射</button>
+      <button class="btn secondary" id="btnLoadMap">加载映射</button>
+      <button class="btn secondary" id="btnRefreshParamUI">刷新参数表</button>
+      <button class="btn" id="btnSaveMapScheme">保存当前方案到列表</button>
+    </div>
+    <div class="table-wrap" style="max-height:420px">
+      <table>
+        <thead>
+          <tr>
+            <th>别名</th><th>映射类型</th><th>映射值</th><th>预览（首行）</th>
+          </tr>
+        </thead>
+        <tbody id="paramMapBody"></tbody>
+      </table>
+    </div>
+    <div class="hint-box">
+      <strong>固定值支持公式：</strong>
+      例 <code>=TODAY()</code>、<code>=TEXT(TODAY(),"yyyy-mm-dd")</code>、<code>=TEXT(TODAY(),"yyyy年mm月dd日")</code>、
+      <code>=CONCAT("SO-",TEXT(TODAY(),"yyyymmdd"))</code>；也可用 <code>{订单列名}</code> 引用订单字段。
+    </div>
+    <div class="section-title">已保存的映射方案</div>
+    <div class="muted" style="margin-bottom:6px">保存参数映射 + 输出列模板 + 匹配/预览选项；点击加载即可应用。</div>
+    <div class="scheme-list" id="savedSchemeList"><div class="muted" style="padding:10px">暂无已保存方案</div></div>
+  </section>
+
+  <!-- Step 5 -->
+  <section class="panel step-panel hidden" data-step="5">
+    <h2>5. 输出映射</h2>
+    <p class="desc">表头列绑定订单/母件/固定值（固定值同样支持公式）；表体列绑定子件字段或计算结果。可勾选是否输出单价。</p>
+    <div class="row" style="margin-bottom:12px">
+      <label class="checkline"><input type="checkbox" id="optIncludePrice" checked /> 预览/导出包含单价与金额</label>
+      <button class="btn secondary sm" id="btnSaveOutScheme">保存方案到列表</button>
+    </div>
+    <div class="section-title">表头列</div>
+    <div class="table-wrap" style="margin-bottom:12px">
+      <table>
+        <thead><tr><th>列名</th><th>来源类型</th><th>来源字段</th><th>操作</th></tr></thead>
+        <tbody id="headerTplBody"></tbody>
+      </table>
+    </div>
+    <button class="btn secondary sm" id="btnAddHeaderCol">+ 表头列</button>
+    <div class="hint-box" style="margin-bottom:12px">
+      表头「固定值」可填文字或公式，例如日期列：<code>=TEXT(TODAY(),"yyyy-mm-dd")</code>
+    </div>
+
+    <div class="section-title">表体列</div>
+    <div class="table-wrap" style="margin-bottom:12px">
+      <table>
+        <thead><tr><th>列名</th><th>来源类型</th><th>来源字段</th><th>操作</th></tr></thead>
+        <tbody id="bodyTplBody"></tbody>
+      </table>
+    </div>
+    <button class="btn secondary sm" id="btnAddBodyCol">+ 表体列</button>
+  </section>
+
+  <!-- Step 6 -->
+  <section class="panel step-panel hidden" data-step="6">
+    <h2>6. 预览</h2>
+    <p class="desc">生成展开结果。可合并相同订单行，过滤用量为 0 的行；单价列由选项控制是否放入。</p>
+    <div class="row" style="margin-bottom:12px">
+      <label class="checkline"><input type="checkbox" id="optMerge" /> 合并相同订单行</label>
+      <label class="checkline"><input type="checkbox" id="optSkipZero" checked /> 用量为0不导出</label>
+      <label class="checkline"><input type="checkbox" id="optIncludePricePreview" checked /> 包含单价与金额</label>
+      <button class="btn" id="btnGenerate">生成预览</button>
+      <button class="btn secondary" id="btnToggleDebug">调试信息</button>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="n" id="statLines">0</div><div class="t">物料行数</div></div>
+      <div class="stat"><div class="n" id="statQty">0</div><div class="t">总需求数量</div></div>
+      <div class="stat"><div class="n" id="statOrders">0</div><div class="t">订单/母件行数</div></div>
+      <div class="stat" id="statCostWrap"><div class="n" id="statCost">0</div><div class="t">总成本</div></div>
+    </div>
+    <div class="cost-bar" id="costBar">
+      <span>可在清单中为各料号填写<strong>单价</strong>，系统自动计算金额与总成本</span>
+      <span>总成本：<strong id="costTotalLabel">0</strong></span>
+      <button class="btn secondary sm" id="btnSavePrices">保存单价</button>
+    </div>
+    <div id="debugPanel" class="debug hidden"></div>
+    <div class="table-wrap" style="max-height:480px; margin-top:12px">
+      <table>
+        <thead id="previewHead"></thead>
+        <tbody id="previewBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Step 7 -->
+  <section class="panel step-panel hidden" data-step="7">
+    <h2>7. 导出</h2>
+    <p class="desc">导出为 Excel（.xlsx），文件名包含日期。</p>
+    <div class="row">
+      <button class="btn accent" id="btnExport">导出 Excel</button>
+      <span class="muted" id="exportHint">请先在预览步骤生成结果</span>
+    </div>
+  </section>
+
+  <div class="nav-bar">
+    <button class="btn secondary" id="btnPrev">上一步</button>
+    <button class="btn" id="btnNext">下一步</button>
+  </div>
+  <div class="footer-note">单文件离线可用 · SheetJS 已内嵌 · localStorage 不可用时自动回退内存存储</div>
+</div>
+
+<!-- XLSX_LIB_PLACEHOLDER -->
+
+<script>
+(function () {
+  'use strict';
+
+  // ===================== Storage =====================
+  const memoryStore = {};
+  let storageMode = 'local';
+  function canUseLocalStorage() {
+    try {
+      const k = '__oc_test__';
+      localStorage.setItem(k, '1');
+      localStorage.removeItem(k);
+      return true;
+    } catch (e) { return false; }
+  }
+  if (!canUseLocalStorage()) storageMode = 'memory';
+  const Store = {
+    get(key, fallback = null) {
+      try {
+        if (storageMode === 'local') {
+          const v = localStorage.getItem(key);
+          return v == null ? fallback : JSON.parse(v);
+        }
+        return key in memoryStore ? memoryStore[key] : fallback;
+      } catch (e) { return fallback; }
+    },
+    set(key, val) {
+      try {
+        if (storageMode === 'local') localStorage.setItem(key, JSON.stringify(val));
+        else memoryStore[key] = val;
+        return true;
+      } catch (e) {
+        memoryStore[key] = val;
+        storageMode = 'memory';
+        return false;
+      }
+    },
+    remove(key) {
+      try {
+        if (storageMode === 'local') localStorage.removeItem(key);
+        delete memoryStore[key];
+      } catch (e) { delete memoryStore[key]; }
+    }
+  };
+
+  // ===================== Toast =====================
+  function toast(msg, type = 'ok') {
+    const el = document.createElement('div');
+    el.className = 'toast ' + type;
+    el.textContent = msg;
+    document.getElementById('toastWrap').appendChild(el);
+    setTimeout(() => el.remove(), 2800);
+  }
+
+  // ===================== State =====================
+  const state = {
+    step: 1,
+    mode: 'order', // 'order' | 'manual'
+    order: { name: '', headers: [], rows: [], raw: null },
+    bom: { name: '', headers: [], rows: [], parents: [], childrenByParent: {}, raw: null, headerRow: 0, levelCol: '', remarkCol: '' },
+    matchCfg: {
+      orderMatchCol: '', orderSpecCol: '', orderCustCol: '', orderQtyCol: '',
+      bomParentCodeCol: '', bomSpecCol: ''
+    },
+    matches: [],
+    formulas: {},
+    aliases: [],
+    paramMap: {},
+    manualParams: {}, // alias -> user typed value in manual mode
+    priceMap: {}, // materialCode -> unit price
+    activeBomId: null, // currently loaded saved BOM id
+    activeSchemeId: null,
+    template: { header: [], body: [] },
+    resultRows: [],
+    resultMeta: { lines: 0, qty: 0, orders: 0, cost: 0 },
+    debugLogs: [],
+    activeFormulaInput: null
+  };
+
+  const STEPS = [
+    '上传/手输', '匹配配置', '公式配置', '参数映射', '输出映射', '预览', '导出'
+  ];
+  const BOM_LIB_KEY = 'oc_bom_library';
+  const SCHEME_LIB_KEY = 'oc_scheme_library';
+  const PRICE_KEY = 'oc_price_map';
+
+  const EXCEL_FUNCS = new Set([
+    'IF','AND','OR','NOT','ROUND','ROUNDUP','ROUNDDOWN','MAX','MIN','ABS','INT','CEILING','FLOOR',
+    'MOD','POWER','SQRT','SUM','AVERAGE','IFERROR','ISBLANK','ISNUMBER','LEN','LEFT','RIGHT','MID',
+    'TRIM','UPPER','LOWER','VALUE','TEXT','CONCATENATE','CONCAT','TRUE','FALSE',
+    'TODAY','NOW','DATE','YEAR','MONTH','DAY','HOUR','MINUTE','SECOND'
+  ]);
+
+  // ===================== Utils =====================
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function $(id) { return document.getElementById(id); }
+  function toNum(v) {
+    if (v == null || v === '') return 0;
+    if (typeof v === 'number') return isFinite(v) ? v : 0;
+    const s = String(v).replace(/,/g, '').replace(/[^\d.+\-eE]/g, '');
+    const n = parseFloat(s);
+    return isFinite(n) ? n : 0;
+  }
+  function str(v) { return v == null ? '' : String(v).trim(); }
+  function findCol(headers, candidates) {
+    const hs = headers.map(h => str(h));
+    for (const c of candidates) {
+      const i = hs.findIndex(h => h === c || h.includes(c));
+      if (i >= 0) return hs[i];
+    }
+    return hs[0] || '';
+  }
+  function downloadBlob(blob, filename) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+  function todayStr() {
+    const d = new Date();
+    const p = n => String(n).padStart(2,'0');
+    return d.getFullYear() + p(d.getMonth()+1) + p(d.getDate());
+  }
+  function startOfToday() {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  }
+  function formatDateYMD(d) {
+    if (!(d instanceof Date) || isNaN(d.getTime())) return '';
+    const p = n => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+  }
+  function toDateValue(v) {
+    if (v instanceof Date && !isNaN(v.getTime())) return v;
+    if (typeof v === 'number' && isFinite(v) && v > 20000 && v < 80000) {
+      // Excel serial date (approx, local)
+      const epoch = Date.UTC(1899, 11, 30);
+      return new Date(epoch + Math.round(v) * 86400000);
+    }
+    const s = str(v);
+    if (!s) return null;
+    if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(s)) {
+      const d = new Date(s.replace(/-/g, '/'));
+      return isNaN(d.getTime()) ? null : d;
+    }
+    return null;
+  }
+  function formatExcelText(value, format) {
+    const fmt = str(format);
+    const d = toDateValue(value);
+    if (d && fmt && /y|m|d|h|s|年|月|日|时|分|秒/i.test(fmt)) {
+      const p = (n, w) => String(n).padStart(w || 2, '0');
+      const map = {
+        yyyy: String(d.getFullYear()),
+        yyy: String(d.getFullYear()),
+        yy: String(d.getFullYear()).slice(-2),
+        mm: p(d.getMonth() + 1),
+        m: String(d.getMonth() + 1),
+        dd: p(d.getDate()),
+        d: String(d.getDate()),
+        HH: p(d.getHours()),
+        H: String(d.getHours()),
+        MM: p(d.getMinutes()),
+        SS: p(d.getSeconds()),
+        ss: p(d.getSeconds())
+      };
+      // Replace longer tokens first; use placeholders to avoid mm/MM clash with minutes
+      let out = fmt;
+      out = out.replace(/yyyy/gi, '\u0001');
+      out = out.replace(/yy/gi, '\u0002');
+      out = out.replace(/HH/g, '\u0003');
+      out = out.replace(/H/g, '\u0004');
+      // minutes before month when using :mm or mm:ss patterns is hard; for date formats treat mm as month
+      out = out.replace(/mm/g, '\u0005');
+      out = out.replace(/m/g, '\u0006');
+      out = out.replace(/dd/gi, '\u0007');
+      out = out.replace(/d/gi, '\u0008');
+      out = out.replace(/SS|ss/g, '\u0009');
+      out = out.replace(/\u0001/g, map.yyyy);
+      out = out.replace(/\u0002/g, map.yy);
+      out = out.replace(/\u0003/g, map.HH);
+      out = out.replace(/\u0004/g, map.H);
+      out = out.replace(/\u0005/g, map.mm);
+      out = out.replace(/\u0006/g, map.m);
+      out = out.replace(/\u0007/g, map.dd);
+      out = out.replace(/\u0008/g, map.d);
+      out = out.replace(/\u0009/g, map.ss);
+      return out;
+    }
+    if (typeof value === 'number' && fmt && /^0(\.0+)?$/.test(fmt)) {
+      const decimals = (fmt.split('.')[1] || '').length;
+      return value.toFixed(decimals);
+    }
+    if (value instanceof Date) return formatDateYMD(value);
+    return value == null ? '' : String(value);
+  }
+  function isFormulaExpr(s) {
+    const t = str(s).trim();
+    if (!t) return false;
+    if (t.startsWith('=')) return true;
+    if (/^(TODAY|NOW|DATE|TEXT|IF|AND|OR|NOT|CONCAT|CONCATENATE|YEAR|MONTH|DAY|HOUR|MINUTE|SECOND|ROUND|ROUNDUP|LEFT|RIGHT|MID|UPPER|LOWER|TRIM|VALUE|IFERROR)\s*\(/i.test(t)) return true;
+    return false;
+  }
+  /** Evaluate fixed text or formula (supports {订单列} placeholders). */
+  function evalFixedOrFormula(value, orderRow, envExtra) {
+    const s = str(value);
+    if (!isFormulaExpr(s)) {
+      if (s !== '' && /^-?[\d,]+(\.\d+)?$/.test(s)) return toNum(s);
+      return s;
+    }
+    let expr = s.trim();
+    const row = orderRow || {};
+    expr = expr.replace(/\{([^}]+)\}/g, (_, col) => {
+      const v = row[col];
+      const n = toNum(v);
+      return (str(v) !== '' && !isNaN(n) && /[\d]/.test(String(v))) ? String(n) : JSON.stringify(str(v));
+    });
+    try {
+      let env = envExtra;
+      if (!env) {
+        try { env = orderRow ? buildEnvForOrder(orderRow) : {}; }
+        catch (e) { env = {}; }
+      }
+      const r = evaluateFormula(expr.startsWith('=') ? expr : '=' + expr, env);
+      if (r instanceof Date) return formatDateYMD(r);
+      return r;
+    } catch (e) {
+      return s;
+    }
+  }
+  function includePriceEnabled() {
+    const a = $('optIncludePrice');
+    if (a) return !!a.checked;
+    const b = $('optIncludePricePreview');
+    if (b) return !!b.checked;
+    return true;
+  }
+  function setIncludePrice(on) {
+    const v = !!on;
+    if ($('optIncludePrice')) $('optIncludePrice').checked = v;
+    if ($('optIncludePricePreview')) $('optIncludePricePreview').checked = v;
+    if ($('costBar')) $('costBar').classList.toggle('hidden', !v);
+    if ($('statCostWrap')) $('statCostWrap').classList.toggle('hidden', !v);
+  }
+  function syncIncludePriceFrom(el) {
+    setIncludePrice(!!el.checked);
+    if (state.resultRows.length) {
+      try { renderPreview(); } catch (e) {}
+    }
+  }
+
+  // ===================== Excel IO =====================
+  function readFileAsArrayBuffer(file) {
+    return new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(fr.result);
+      fr.onerror = () => reject(fr.error || new Error('读取失败'));
+      fr.readAsArrayBuffer(file);
+    });
+  }
+
+  function cellDisplayValue(cell) {
+    if (!cell) return '';
+    // Prefer Excel formula text so BOM remark aliases (LHLB/DD/BB...) are preserved
+    if (cell.f) {
+      const f = String(cell.f).trim();
+      return f.startsWith('=') ? f : ('=' + f);
+    }
+    if (cell.w != null && cell.w !== '') return cell.w;
+    if (cell.v == null) return '';
+    return cell.v;
+  }
+
+  function sheetToMatrix(wb, sheetName) {
+    const name = sheetName || wb.SheetNames[0];
+    const sheet = wb.Sheets[name];
+    if (!sheet || !sheet['!ref']) return [];
+    const range = XLSX.utils.decode_range(sheet['!ref']);
+    const matrix = [];
+    for (let r = range.s.r; r <= range.e.r; r++) {
+      const row = [];
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        const addr = XLSX.utils.encode_cell({ r, c });
+        row.push(cellDisplayValue(sheet[addr]));
+      }
+      matrix.push(row);
+    }
+    return matrix;
+  }
+
+  /** Read all sheets that look like BOM tables. */
+  function workbookToBomTables(wb) {
+    const tables = [];
+    (wb.SheetNames || []).forEach(sn => {
+      const matrix = sheetToMatrix(wb, sn);
+      if (!matrix.length) return;
+      const headerRow = detectHeaderRow(matrix);
+      const table = matrixToTable(matrix, headerRow);
+      if (!table.headers.length || !table.rows.length) return;
+      const joined = table.headers.join('|');
+      if (!/物料|代码|级次|母件|子件|备注|规格/i.test(joined)) return;
+      tables.push({ sheetName: sn, matrix, headerRow, headers: table.headers, rows: table.rows });
+    });
+    if (tables.length) return tables;
+    const matrix = sheetToMatrix(wb);
+    const headerRow = detectHeaderRow(matrix);
+    const table = matrixToTable(matrix, headerRow);
+    return [{ sheetName: wb.SheetNames[0], matrix, headerRow, headers: table.headers, rows: table.rows }];
+  }
+
+  function normBomCode(c) {
+    return str(c).replace(/\s+/g, '').toUpperCase();
+  }
+
+  function emptyBomLibrary() {
+    return {
+      name: '',
+      sources: [],
+      headers: [],
+      rows: [],
+      parents: [],
+      childrenByParent: {},
+      parentByCode: {},
+      raw: null,
+      headerRow: 0,
+      levelCol: '',
+      typeCol: '',
+      levelScheme: null,
+      remarkCol: '',
+      codeCol: '',
+      nameCol: '',
+      specCol: '',
+      qtyCol: ''
+    };
+  }
+
+  /** Merge parsed BOM structure into library, indexed by normalized parent code. */
+  function mergeBomIntoLibrary(lib, struct, meta) {
+    if (!lib.headers.length && struct.codeCol) {
+      lib.headers = meta.headers || [];
+      lib.levelCol = struct.levelCol;
+      lib.typeCol = struct.typeCol || '';
+      lib.levelScheme = struct.levelScheme || null;
+      lib.remarkCol = struct.remarkCol;
+      lib.codeCol = struct.codeCol;
+      lib.nameCol = struct.nameCol;
+      lib.specCol = struct.specCol;
+      lib.qtyCol = struct.qtyCol;
+      lib.headerRow = meta.headerRow || 0;
+    }
+    (struct.parents || []).forEach(p => {
+      const code = str(p.code);
+      const key = normBomCode(code);
+      if (!key) return;
+      // replace existing parent with same code (later BOM wins)
+      lib.parents = lib.parents.filter(x => normBomCode(x.code) !== key);
+      const parent = Object.assign({}, p, { code, source: meta.sourceName || '' });
+      lib.parents.push(parent);
+      lib.parentByCode[key] = parent;
+      lib.parentByCode[code] = parent;
+      const children = (struct.childrenByParent[p.code] || struct.childrenByParent[code] || []).map(ch =>
+        Object.assign({}, ch, { parentCode: code })
+      );
+      lib.childrenByParent[code] = children;
+      lib.childrenByParent[key] = children;
+    });
+    if (meta.headers) {
+      meta.headers.forEach(h => { if (!lib.headers.includes(h)) lib.headers.push(h); });
+    }
+    if (meta.rows) lib.rows = lib.rows.concat(meta.rows);
+    if (meta.sourceName && !lib.sources.includes(meta.sourceName)) lib.sources.push(meta.sourceName);
+    lib.name = lib.sources.length > 1
+      ? `BOM库(${lib.sources.length}个文件, ${lib.parents.length}母件)`
+      : (lib.sources[0] || meta.sourceName || 'BOM');
+    return lib;
+  }
+
+  function getParentCode(parent) {
+    if (!parent) return '';
+    const col = state.matchCfg.bomParentCodeCol;
+    if (col && parent.row && parent.row[col] != null && str(parent.row[col]) !== '') return str(parent.row[col]);
+    return str(parent.code);
+  }
+
+  function getChildrenOfParent(parentOrCode) {
+    const code = typeof parentOrCode === 'string' ? parentOrCode : getParentCode(parentOrCode);
+    if (!code) return [];
+    const map = state.bom.childrenByParent || {};
+    return map[code] || map[normBomCode(code)] || [];
+  }
+
+  function findParentByCode(code) {
+    if (!code) return null;
+    const idx = state.bom.parentByCode || {};
+    return idx[str(code)] || idx[normBomCode(code)] ||
+      (state.bom.parents || []).find(p => str(p.code) === str(code) || normBomCode(p.code) === normBomCode(code)) ||
+      null;
+  }
+
+  function detectHeaderRow(matrix) {
+    let best = 0, bestScore = -1;
+    const maxScan = Math.min(matrix.length, 30);
+    for (let i = 0; i < maxScan; i++) {
+      const row = matrix[i] || [];
+      const nonEmpty = row.filter(c => str(c) !== '').length;
+      const textish = row.filter(c => {
+        const s = str(c);
+        return s && /[\u4e00-\u9fa5A-Za-z]/.test(s) && !/^=/.test(s);
+      }).length;
+      const score = nonEmpty * 2 + textish * 3;
+      if (score > bestScore) { bestScore = score; best = i; }
+    }
+    return best;
+  }
+
+  function matrixToTable(matrix, headerRow) {
+    const headers = (matrix[headerRow] || []).map((h, i) => str(h) || ('列' + (i + 1)));
+    const rows = [];
+    for (let r = headerRow + 1; r < matrix.length; r++) {
+      const raw = matrix[r] || [];
+      if (raw.every(c => str(c) === '')) continue;
+      const obj = {};
+      headers.forEach((h, i) => { obj[h] = raw[i] != null ? raw[i] : ''; });
+      rows.push(obj);
+    }
+    return { headers, rows };
+  }
+
+  function looksLikeFormulaText(v) {
+    const s = str(v);
+    if (!s) return false;
+    return /^=/.test(s) ||
+      /N\d\s*=/.test(s) ||
+      /IF\s*\(/i.test(s) ||
+      /ROUNDUP?\s*\(/i.test(s) ||
+      /[≤＜＞≥].*时\s*[：:]/.test(s);
+  }
+
+  function detectLevelCol(headers, rows) {
+    // Prefer numeric 级次/层级 columns over 母件/子件 type columns
+    const preferred = headers.filter(h => /级次|层级|层次|level|LVL/i.test(h));
+    const typeLike = headers.filter(h => /子项类型|物料属性|母件|子件|类型/i.test(h) && !/级次|层级|层次|level/i.test(h));
+    const scoreCol = (h) => {
+      const vals = rows.slice(0, 80).map(r => str(r[h]));
+      const numHit = vals.filter(v => /^(0|1|2|3)(?:\.0+)?$/.test(v)).length;
+      const typeHit = vals.filter(v => /^(母件|子件|parent|child)$/i.test(v)).length;
+      return numHit * 3 + typeHit * 2;
+    };
+    if (preferred.length) {
+      return preferred.slice().sort((a, b) => scoreCol(b) - scoreCol(a))[0];
+    }
+    let best = '', bestScore = -1;
+    headers.forEach(h => {
+      const s = scoreCol(h);
+      if (s > bestScore) { bestScore = s; best = h; }
+    });
+    if (bestScore >= 3) return best;
+    return typeLike[0] || headers[0] || '';
+  }
+
+  function detectTypeCol(headers, rows) {
+    const cands = headers.filter(h => /子项类型|物料属性|项次类型|类型|母件子件/i.test(h));
+    for (const h of cands) {
+      const vals = rows.slice(0, 60).map(r => str(r[h]));
+      if (vals.some(v => /母件|子件|parent|child/i.test(v))) return h;
+    }
+    // any column dominated by 母件/子件 labels
+    for (const h of headers) {
+      const vals = rows.slice(0, 60).map(r => str(r[h]));
+      const hit = vals.filter(v => /^(母件|子件|parent|child)$/i.test(v)).length;
+      if (hit >= 3) return h;
+    }
+    return '';
+  }
+
+  function detectRemarkCol(headers, rows) {
+    const cands = headers.filter(h => /备注|公式|用量公式|remark|formula|说明/i.test(h));
+    if (cands.length) {
+      let best = cands[0], score = -1;
+      for (const h of cands) {
+        const s = rows.slice(0, 120).filter(r => looksLikeFormulaText(r[h])).length;
+        if (s > score) { score = s; best = h; }
+      }
+      return best;
+    }
+    let best = '', score = -1;
+    for (const h of headers) {
+      const s = rows.slice(0, 120).filter(r => looksLikeFormulaText(r[h])).length;
+      if (s > score) { score = s; best = h; }
+    }
+    return best || headers[headers.length - 1] || '';
+  }
+
+  /** Normalize level values like 2 / 2.0 / "2.00" -> integer or NaN */
+  function levelNumber(v) {
+    const s = str(v);
+    if (!s) return NaN;
+    if (/^母件|parent$/i.test(s)) return 1;
+    if (/^子件|child$/i.test(s)) return 2;
+    const n = Number(s);
+    if (!isFinite(n)) return NaN;
+    return Math.round(n);
+  }
+
+  /**
+   * Detect whether BOM uses 0=母件/1=子件 or 1=母件/2=子件 (common ERP).
+   * Returns { parentLevel, childMin }.
+   */
+  function detectLevelScheme(rows, levelCol, typeCol) {
+    const nums = rows.map(r => levelNumber(r[levelCol])).filter(n => isFinite(n));
+    const has0 = nums.includes(0);
+    const has1 = nums.includes(1);
+    const has2 = nums.includes(2);
+    // Explicit type column can confirm
+    if (typeCol) {
+      const typed = rows.filter(r => /母件|parent/i.test(str(r[typeCol])));
+      if (typed.length) {
+        const lv = levelNumber(typed[0][levelCol]);
+        if (isFinite(lv)) {
+          return { parentLevel: lv, childMin: lv + 1, mode: 'type+level' };
+        }
+      }
+    }
+    // 0 present => classic 0 parent / >=1 child
+    if (has0) return { parentLevel: 0, childMin: 1, mode: '0-1' };
+    // 1 and 2 present, no 0 => ERP style 1 parent / >=2 child
+    if (has1 && has2) return { parentLevel: 1, childMin: 2, mode: '1-2' };
+    // only 1/2 text labels in level col
+    if (rows.some(r => /母件/i.test(str(r[levelCol])))) {
+      return { parentLevel: 1, childMin: 2, mode: 'label' };
+    }
+    // fallback: smallest level is parent
+    if (nums.length) {
+      const min = Math.min(...nums);
+      return { parentLevel: min, childMin: min + 1, mode: 'min' };
+    }
+    return { parentLevel: 0, childMin: 1, mode: 'default' };
+  }
+
+  function isParentRow(row, levelCol, typeCol, scheme) {
+    const type = str(typeCol ? row[typeCol] : '');
+    if (/^母件|parent$/i.test(type)) return true;
+    if (/^子件|child$/i.test(type)) return false;
+    const lv = levelNumber(row[levelCol]);
+    if (!isFinite(lv)) return false;
+    return lv === scheme.parentLevel;
+  }
+
+  function isChildRow(row, levelCol, typeCol, scheme) {
+    const type = str(typeCol ? row[typeCol] : '');
+    if (/^子件|child$/i.test(type)) return true;
+    if (/^母件|parent$/i.test(type)) return false;
+    const lv = levelNumber(row[levelCol]);
+    if (!isFinite(lv)) return false;
+    return lv >= scheme.childMin;
+  }
+
+  function parseBomStructure(headers, rows) {
+    const levelCol = detectLevelCol(headers, rows);
+    const typeCol = detectTypeCol(headers, rows);
+    const remarkCol = detectRemarkCol(headers, rows);
+    const codeCol = findCol(headers, ['物料代码', '母件物料代码', '子件物料代码', '物料编码', '料号', '代码']);
+    const nameCol = findCol(headers, ['物料名称', '名称', '品名']);
+    const specCol = findCol(headers, ['规格', '规格型号', '型号']);
+    const qtyCol = findCol(headers, ['标准用量', '用量', '数量', '基本用量']);
+    const scheme = detectLevelScheme(rows, levelCol, typeCol);
+
+    const parents = [];
+    const childrenByParent = {};
+    let currentParent = null;
+
+    rows.forEach((row, idx) => {
+      const code = str(row[codeCol]);
+      const remark = str(row[remarkCol]);
+      const parentLike = isParentRow(row, levelCol, typeCol, scheme);
+      const childLike = isChildRow(row, levelCol, typeCol, scheme);
+
+      if (parentLike) {
+        currentParent = {
+          code,
+          name: str(row[nameCol]),
+          spec: str(row[specCol]),
+          row,
+          rowIndex: idx
+        };
+        parents.push(currentParent);
+        childrenByParent[code] = childrenByParent[code] || [];
+        return;
+      }
+
+      if (!currentParent) {
+        // orphan child before any parent: skip, or bootstrap if clearly child with formula
+        return;
+      }
+
+      if (childLike || (!parentLike && (looksLikeFormulaText(remark) || code))) {
+        // blank-level continuation rows under current parent count as children
+        // but skip if this row is actually another parent code already registered
+        if (!childLike && code && parents.some(p => p.code === code) && !looksLikeFormulaText(remark)) {
+          currentParent = parents.find(p => p.code === code);
+          return;
+        }
+        const child = {
+          code,
+          name: str(row[nameCol]),
+          spec: str(row[specCol]),
+          baseQty: toNum(row[qtyCol]),
+          remark,
+          formula: extractFormulaFromRemark(remark),
+          row,
+          parentCode: currentParent.code
+        };
+        childrenByParent[currentParent.code].push(child);
+      }
+    });
+
+    // Fallback: no parents parsed — group by remark/type heuristics
+    if (!parents.length && rows.length) {
+      rows.forEach((row, idx) => {
+        const code = str(row[codeCol]);
+        if (!code) return;
+        const remark = str(row[remarkCol]);
+        const type = str(typeCol ? row[typeCol] : '');
+        const isParent = /^母件|parent$/i.test(type) ||
+          (!looksLikeFormulaText(remark) && !/^子件|child$/i.test(type) &&
+            rows[idx + 1] && (looksLikeFormulaText(rows[idx + 1][remarkCol]) || /^子件|child$/i.test(str(typeCol ? rows[idx + 1][typeCol] : ''))));
+        if (isParent || (!parents.length && idx === 0 && !looksLikeFormulaText(remark))) {
+          if (!childrenByParent[code]) {
+            const p = { code, name: str(row[nameCol]), spec: str(row[specCol]), row, rowIndex: idx };
+            parents.push(p);
+            childrenByParent[code] = [];
+            currentParent = p;
+          } else {
+            currentParent = parents.find(p => p.code === code);
+          }
+        } else if (parents.length) {
+          const pc = (currentParent || parents[parents.length - 1]).code;
+          childrenByParent[pc].push({
+            code, name: str(row[nameCol]), spec: str(row[specCol]),
+            baseQty: toNum(row[qtyCol]), remark, formula: extractFormulaFromRemark(remark),
+            row, parentCode: pc
+          });
+        }
+      });
+    }
+
+    return {
+      levelCol, typeCol, remarkCol, codeCol, nameCol, specCol, qtyCol,
+      levelScheme: scheme,
+      parents, childrenByParent
+    };
+  }
+
+  // ===================== Formula extraction / Chinese convert =====================
+  function extractFormulaFromRemark(remark) {
+    let r = str(remark);
+    if (!r) return '';
+    // normalize full-width punctuation often seen in ERP exports
+    r = r.replace(/；/g, ';').replace(/，/g, ',').replace(/（/g, '(').replace(/）/g, ')');
+    if (r.startsWith('=')) return r;
+    // variable assignments / Excel-like expressions without leading '='
+    // e.g. N1=ROUNDUP((DD-54)/250,0);N2=IF(N1=0,1,N1)
+    if (/[A-Za-z_]\w*\s*=/.test(r) || /IF\s*\(/i.test(r) || /ROUNDUP?\s*\(/i.test(r)) {
+      return r;
+    }
+    // Chinese descriptive rules
+    if (/[≤＜＞≥<>]=?|时[：:]/.test(r)) {
+      return chineseRuleToFormula(r);
+    }
+    return r;
+  }
+
+  function chineseRuleToFormula(text) {
+    // Examples:
+    // DD-54≤1000时：N1；DD-54＞1600时：N1-1
+    // BB≤1200时：2；BB＞1200时：3
+    const parts = text.split(/[；;]/).map(s => s.trim()).filter(Boolean);
+    const cases = [];
+    for (const p of parts) {
+      // X≤1000时：N1  /  X＞1600时：N1-1
+      let m = p.match(/^(.+?)(≤|＜|<|>=|≥|＞|>|=|==)([-\d.]+)\s*时\s*[：:]\s*(.+)$/);
+      if (m) {
+        const left = m[1].trim();
+        const op = ({ '≤':'<=', '＜':'<', '<':'<', '>=':'>=', '≥':'>=', '＞':'>', '>':'>', '=':'=', '==':'=' })[m[2]];
+        const right = m[3];
+        const val = m[4].trim();
+        cases.push({ cond: `${left}${op}${right}`, val });
+        continue;
+      }
+      m = p.match(/^(.+?)时\s*[：:]\s*(.+)$/);
+      if (m) cases.push({ cond: m[1].trim(), val: m[2].trim() });
+    }
+    if (!cases.length) return text.startsWith('=') ? text : '=' + text;
+    // Nest every condition; default else = 0
+    // e.g. DD-54≤1000时：N1；DD-54＞1600时：N1-1
+    //   => =IF(DD-54<=1000,N1,IF(DD-54>1600,N1-1,0))
+    let formula = '0';
+    for (let i = cases.length - 1; i >= 0; i--) {
+      formula = `IF(${cases[i].cond},${cases[i].val},${formula})`;
+    }
+    return '=' + formula;
+  }
+
+  function convertAllChineseFormulas() {
+    let n = 0;
+    Object.keys(state.formulas).forEach(k => {
+      const f = state.formulas[k];
+      if (f && /[≤＜＞≥]|时[：:]/.test(f) && !/^=?IF\(/i.test(f)) {
+        state.formulas[k] = chineseRuleToFormula(f);
+        n++;
+      } else if (f && /[≤＜＞≥]/.test(f)) {
+        // also normalize operators inside existing formulas
+        const nf = f.replace(/≤/g,'<=').replace(/≥/g,'>=').replace(/＜/g,'<').replace(/＞/g,'>');
+        if (nf !== f) { state.formulas[k] = nf; n++; }
+      }
+    });
+    renderFormulaList();
+    toast(`已转换 ${n} 条中文公式`, 'ok');
+  }
+
+  // ===================== Formula Engine =====================
+  function normalizeFormula(formula) {
+    let f = str(formula);
+    if (!f) return '';
+    f = f.replace(/≤/g,'<=').replace(/≥/g,'>=').replace(/＜/g,'<').replace(/＞/g,'>');
+    f = f.replace(/＝/g,'=').replace(/×/g,'*').replace(/÷/g,'/');
+    return f;
+  }
+
+  function parseAssignments(formula) {
+    // Support multi-line / semicolon separated: N2=N1-1; N3=ROUNDUP(...); N3
+    const f = normalizeFormula(formula).replace(/^\uFEFF/, '');
+    const lines = f.split(/[\n;；]+/).map(s => s.trim()).filter(Boolean);
+    const assigns = [];
+    let resultExpr = '';
+    for (const line of lines) {
+      let L = line.replace(/^=/, '');
+      const m = L.match(/^([A-Za-z_\u4e00-\u9fa5][\w\u4e00-\u9fa5]*)\s*=\s*(.+)$/);
+      if (m && !/^IF$/i.test(m[1]) && !EXCEL_FUNCS.has(m[1].toUpperCase())) {
+        assigns.push({ name: m[1], expr: m[2] });
+        resultExpr = m[1]; // last assigned variable as result if no trailing expr
+      } else {
+        resultExpr = L;
+      }
+    }
+    return { assigns, resultExpr };
+  }
+
+  function extractAliasesFromFormula(formula) {
+    let f = str(formula);
+    if (!f) return [];
+    // Convert Chinese rule text first so aliases like DD/N1 are taken from IF(...) form
+    if (/[≤＜＞≥]|时[：:]/.test(f) && !/^=?IF\(/i.test(f)) {
+      f = chineseRuleToFormula(f);
+    }
+    f = normalizeFormula(f);
+    if (!f) return [];
+    // remove quoted strings
+    const noStr = f.replace(/"[^"]*"/g, '""').replace(/'[^']*'/g, "''");
+    // ignore assignment variable names (LHS); keep RHS aliases
+    const { assigns, resultExpr } = parseAssignments(noStr);
+    const assigned = new Set(assigns.map(a => a.name));
+    const body = assigns.map(a => a.expr).concat([resultExpr]).join(' ');
+    const names = body.match(/[A-Za-z_][\w]*/g) || [];
+    const stop = new Set(['时', '当', '则', '否则', 'TRUE', 'FALSE']);
+    const out = [];
+    names.forEach(n => {
+      const up = n.toUpperCase();
+      if (EXCEL_FUNCS.has(up)) return;
+      if (assigned.has(n)) return;
+      if (stop.has(up) || stop.has(n)) return;
+      if (!out.includes(n)) out.push(n);
+    });
+    return out;
+  }
+
+  /** Collect aliases from all BOM child remark formulas (not only matched rows). */
+  function collectBomFormulasAndAliases() {
+    const formulaMap = {};
+    const aliasSet = new Set();
+    const map = state.bom.childrenByParent || {};
+    const seenParent = new Set();
+    (state.bom.parents || []).forEach(p => {
+      const pc = str(p.code);
+      const nk = normBomCode(pc);
+      if (!pc || seenParent.has(nk)) return;
+      seenParent.add(nk);
+      (map[pc] || map[nk] || []).forEach(ch => {
+        const key = pc + '||' + ch.code;
+        let formula = '';
+        if (state.formulas[key] != null && str(state.formulas[key]) !== '') {
+          formula = state.formulas[key];
+        } else {
+          formula = ch.formula || extractFormulaFromRemark(ch.remark || '') || '';
+          if (formula) state.formulas[key] = formula;
+        }
+        formulaMap[key] = formula;
+        extractAliasesFromFormula(formula).forEach(a => aliasSet.add(a));
+        extractAliasesFromFormula(ch.remark || '').forEach(a => aliasSet.add(a));
+      });
+    });
+    Object.keys(state.formulas).forEach(k => {
+      extractAliasesFromFormula(state.formulas[k]).forEach(a => aliasSet.add(a));
+    });
+    return { formulaMap, aliases: Array.from(aliasSet).sort() };
+  }
+
+  function tokenize(expr) {
+    const s = expr;
+    const tokens = [];
+    let i = 0;
+    while (i < s.length) {
+      const c = s[i];
+      if (/\s/.test(c)) { i++; continue; }
+      if (c === '"' || c === "'") {
+        const q = c; i++; let strv = '';
+        while (i < s.length && s[i] !== q) { strv += s[i++]; }
+        i++; tokens.push({ t: 'str', v: strv }); continue;
+      }
+      if (/[0-9.]/.test(c)) {
+        let n = c; i++;
+        while (i < s.length && /[0-9.]/.test(s[i])) n += s[i++];
+        tokens.push({ t: 'num', v: parseFloat(n) }); continue;
+      }
+      if (/[A-Za-z_\u4e00-\u9fa5]/.test(c)) {
+        let id = c; i++;
+        while (i < s.length && /[\w\u4e00-\u9fa5]/.test(s[i])) id += s[i++];
+        tokens.push({ t: 'id', v: id }); continue;
+      }
+      if (s.startsWith('<>', i)) { tokens.push({ t: 'op', v: '<>' }); i += 2; continue; }
+      if (s.startsWith('<=', i) || s.startsWith('>=', i) || s.startsWith('==', i)) {
+        tokens.push({ t: 'op', v: s.substr(i, 2) }); i += 2; continue;
+      }
+      if ('+-*/(),<>&='.includes(c)) { tokens.push({ t: 'op', v: c }); i++; continue; }
+      i++; // skip unknown
+    }
+    return tokens;
+  }
+
+  function evalExcel(expr, env) {
+    const tokens = tokenize(String(expr));
+    let p = 0;
+    function peek() { return tokens[p]; }
+    function take() { return tokens[p++]; }
+    function parsePrimary() {
+      const tk = take();
+      if (!tk) return 0;
+      if (tk.t === 'num') return tk.v;
+      if (tk.t === 'str') return tk.v;
+      if (tk.t === 'id') {
+        const name = tk.v;
+        const up = name.toUpperCase();
+        if (peek() && peek().t === 'op' && peek().v === '(') {
+          take(); // (
+          const args = [];
+          if (!(peek() && peek().t === 'op' && peek().v === ')')) {
+            args.push(parseTernary());
+            while (peek() && peek().t === 'op' && peek().v === ',') {
+              take(); args.push(parseTernary());
+            }
+          }
+          if (peek() && peek().v === ')') take();
+          return callFunc(up, args);
+        }
+        if (up === 'TRUE') return true;
+        if (up === 'FALSE') return false;
+        if (Object.prototype.hasOwnProperty.call(env, name)) return env[name];
+        // case-insensitive lookup
+        const key = Object.keys(env).find(k => k.toUpperCase() === up);
+        if (key != null) return env[key];
+        return 0;
+      }
+      if (tk.t === 'op' && tk.v === '(') {
+        const v = parseTernary();
+        if (peek() && peek().v === ')') take();
+        return v;
+      }
+      if (tk.t === 'op' && tk.v === '-') return -Number(parsePrimary());
+      if (tk.t === 'op' && tk.v === '+') return Number(parsePrimary());
+      return 0;
+    }
+    function parseMul() {
+      let v = parsePrimary();
+      while (peek() && peek().t === 'op' && '*/'.includes(peek().v)) {
+        const op = take().v;
+        const r = parsePrimary();
+        v = op === '*' ? Number(v) * Number(r) : Number(v) / Number(r);
+      }
+      return v;
+    }
+    function parseAdd() {
+      let v = parseMul();
+      while (peek() && peek().t === 'op' && '+-&'.includes(peek().v) && peek().v !== '') {
+        const op = take().v;
+        if (op === '&') { v = String(v) + String(parseMul()); }
+        else if (op === '+') v = Number(v) + Number(parseMul());
+        else if (op === '-') v = Number(v) - Number(parseMul());
+      }
+      return v;
+    }
+    function parseCompare() {
+      let v = parseAdd();
+      while (peek() && peek().t === 'op' && ['<','>','<=','>=','=','==','<>'].includes(peek().v)) {
+        const op = take().v;
+        const r = parseAdd();
+        const bothNum = (typeof v === 'number' || isFinite(Number(v))) && (typeof r === 'number' || (r !== '' && isFinite(Number(r))));
+        let a = v, b = r;
+        if (bothNum && typeof v !== 'string' && typeof r !== 'string') { a = Number(v); b = Number(r); }
+        else { a = String(v); b = String(r); }
+        if (op === '<' || op === '>') {
+          // numeric compare if both numeric-like
+          if (typeof a !== 'string' || (a !== '' && b !== '' && !isNaN(Number(a)) && !isNaN(Number(b)) && typeof v !== 'string' && typeof r !== 'string')) {
+            a = Number(v); b = Number(r);
+          } else if (!isNaN(Number(v)) && !isNaN(Number(r)) && String(v).trim() !== '' && typeof v !== 'string') {
+            a = Number(v); b = Number(r);
+          } else if (typeof v === 'number' || typeof r === 'number') { a = Number(v); b = Number(r); }
+        }
+        // Prefer numeric when both sides look numeric
+        const na = Number(v), nb = Number(r);
+        const numeric = (typeof v === 'number' || (str(v) !== '' && !isNaN(na) && String(v).trim() === String(na))) &&
+                        (typeof r === 'number' || (str(r) !== '' && !isNaN(nb) && String(r).trim() === String(nb)));
+        if (numeric && op !== '=' && op !== '==' && op !== '<>') { a = Number(v); b = Number(r); }
+        else if (op === '=' || op === '==' || op === '<>') {
+          // text compare for strings
+          if (typeof v === 'string' || typeof r === 'string') { a = String(v); b = String(r); }
+          else { a = v; b = r; }
+        }
+        let ok = false;
+        switch (op) {
+          case '<': ok = a < b; break;
+          case '>': ok = a > b; break;
+          case '<=': ok = a <= b; break;
+          case '>=': ok = a >= b; break;
+          case '=':
+          case '==': ok = a == b; break;
+          case '<>': ok = a != b; break;
+        }
+        v = ok;
+      }
+      return v;
+    }
+    function parseTernary() { // no real ternary; IF is function
+      return parseCompare();
+    }
+    function callFunc(name, args) {
+      const A = (i, d=0) => (args[i] == null ? d : args[i]);
+      switch (name) {
+        case 'IF': return A(0) ? A(1) : A(2);
+        case 'AND': return args.every(Boolean);
+        case 'OR': return args.some(Boolean);
+        case 'NOT': return !A(0);
+        case 'ROUND': {
+          const n = Number(A(0)), d = Number(A(1, 0));
+          const m = Math.pow(10, d);
+          return Math.round((n + Number.EPSILON) * m) / m;
+        }
+        case 'ROUNDUP': {
+          const n = Number(A(0)), d = Number(A(1, 0));
+          const m = Math.pow(10, d);
+          return (n >= 0 ? Math.ceil(n * m - 1e-12) : Math.floor(n * m + 1e-12)) / m;
+        }
+        case 'ROUNDDOWN': {
+          const n = Number(A(0)), d = Number(A(1, 0));
+          const m = Math.pow(10, d);
+          return (n >= 0 ? Math.floor(n * m + 1e-12) : Math.ceil(n * m - 1e-12)) / m;
+        }
+        case 'MAX': return Math.max(...args.map(Number));
+        case 'MIN': return Math.min(...args.map(Number));
+        case 'ABS': return Math.abs(Number(A(0)));
+        case 'INT': return Math.trunc(Number(A(0)));
+        case 'CEILING': return Math.ceil(Number(A(0)));
+        case 'FLOOR': return Math.floor(Number(A(0)));
+        case 'MOD': return Number(A(0)) % Number(A(1));
+        case 'POWER': return Math.pow(Number(A(0)), Number(A(1)));
+        case 'SQRT': return Math.sqrt(Number(A(0)));
+        case 'SUM': return args.reduce((s, x) => s + Number(x), 0);
+        case 'AVERAGE': return args.length ? args.reduce((s,x)=>s+Number(x),0)/args.length : 0;
+        case 'IFERROR': try { const v = A(0); return (v === Infinity || v === -Infinity || (typeof v === 'number' && isNaN(v))) ? A(1) : v; } catch(e){ return A(1); }
+        case 'ISBLANK': return A(0) === '' || A(0) == null;
+        case 'ISNUMBER': return typeof A(0) === 'number' && isFinite(A(0));
+        case 'LEN': return String(A(0,'')).length;
+        case 'LEFT': return String(A(0,'')).slice(0, Number(A(1,1)));
+        case 'RIGHT': { const s = String(A(0,'')); const n = Number(A(1,1)); return s.slice(-n); }
+        case 'MID': { const s = String(A(0,'')); return s.substr(Number(A(1,1))-1, Number(A(2,0))); }
+        case 'TRIM': return String(A(0,'')).trim();
+        case 'UPPER': return String(A(0,'')).toUpperCase();
+        case 'LOWER': return String(A(0,'')).toLowerCase();
+        case 'VALUE': return toNum(A(0));
+        case 'TEXT': return formatExcelText(A(0), A(1, ''));
+        case 'CONCATENATE':
+        case 'CONCAT': return args.map(x => (x instanceof Date ? formatDateYMD(x) : String(x))).join('');
+        case 'TODAY': return startOfToday();
+        case 'NOW': return new Date();
+        case 'DATE': return new Date(Number(A(0)), Number(A(1)) - 1, Number(A(2)));
+        case 'YEAR': { const d = toDateValue(A(0)) || startOfToday(); return d.getFullYear(); }
+        case 'MONTH': { const d = toDateValue(A(0)) || startOfToday(); return d.getMonth() + 1; }
+        case 'DAY': { const d = toDateValue(A(0)) || startOfToday(); return d.getDate(); }
+        case 'HOUR': { const d = toDateValue(A(0)) || new Date(); return d.getHours(); }
+        case 'MINUTE': { const d = toDateValue(A(0)) || new Date(); return d.getMinutes(); }
+        case 'SECOND': { const d = toDateValue(A(0)) || new Date(); return d.getSeconds(); }
+        default: return 0;
+      }
+    }
+    const result = parseTernary();
+    return result;
+  }
+
+  function evaluateFormula(formula, env) {
+    const f = normalizeFormula(formula);
+    if (!f) return 0;
+    const { assigns, resultExpr } = parseAssignments(f);
+    const local = Object.assign({}, env);
+    for (const a of assigns) {
+      local[a.name] = evalExcel(a.expr, local);
+    }
+    if (!resultExpr) return 0;
+    // if resultExpr is bare assigned name
+    return evalExcel(resultExpr, local);
+  }
+
+  // ===================== Matching =====================
+  function getOrderValue(row, col) { return col ? str(row[col]) : ''; }
+
+  function matchOrderRow(orderRow) {
+    const code = getOrderValue(orderRow, state.matchCfg.orderMatchCol);
+    const spec = getOrderValue(orderRow, state.matchCfg.orderSpecCol);
+    const cust = getOrderValue(orderRow, state.matchCfg.orderCustCol);
+    const parents = state.bom.parents || [];
+    const pCodeCol = state.matchCfg.bomParentCodeCol;
+    const pSpecCol = state.matchCfg.bomSpecCol;
+    const codeOf = (p) => str(pCodeCol && p.row && p.row[pCodeCol] != null ? p.row[pCodeCol] : p.code);
+
+    // Fast path: exact code via index (important when BOM library has many parents)
+    if (code) {
+      const indexed = findParentByCode(code);
+      if (indexed) {
+        const exact = parents.filter(p => codeOf(p) === code || normBomCode(codeOf(p)) === normBomCode(code));
+        if (exact.length <= 1) return { ok: true, method: '精确匹配', parent: indexed, value: code };
+        if (exact.length > 1) return { ok: false, method: '精确匹配(多候选)', parent: null, value: code, reason: '多个母件精确匹配' };
+      }
+    }
+
+    // 1 exact scan
+    if (code) {
+      const exact = parents.filter(p => codeOf(p) === code || normBomCode(codeOf(p)) === normBomCode(code));
+      if (exact.length === 1) return { ok: true, method: '精确匹配', parent: exact[0], value: code };
+      if (exact.length > 1) return { ok: false, method: '精确匹配(多候选)', parent: null, value: code, reason: '多个母件精确匹配' };
+    }
+    // 2 fuzzy prefix: only when exactly one candidate; otherwise fall through
+    if (code) {
+      const cands = parents.filter(p => {
+        const pc = codeOf(p);
+        return pc.startsWith(code) && pc !== code;
+      });
+      if (cands.length === 1) return { ok: true, method: '模糊前缀匹配', parent: cands[0], value: code };
+    }
+    // 3 spec model match vs BOM parent spec
+    if (spec) {
+      const cands = parents.filter(p => str(pSpecCol && p.row ? p.row[pSpecCol] : p.spec) === spec);
+      if (cands.length === 1) return { ok: true, method: '规格型号匹配', parent: cands[0], value: spec };
+    }
+    // 4 customer material no vs BOM parent spec
+    if (cust) {
+      const cands = parents.filter(p => str(pSpecCol && p.row ? p.row[pSpecCol] : p.spec) === cust);
+      if (cands.length === 1) return { ok: true, method: '客户物料号匹配', parent: cands[0], value: cust };
+    }
+    const tried = [code, spec, cust].filter(Boolean).join(' / ') || '(空)';
+    return { ok: false, method: '未匹配', parent: null, value: tried, reason: `未匹配到BOM：${tried}` };
+  }
+
+  function runMatch() {
+    readMatchCfgFromUI();
+    const ctx = buildUnifiedMatchContext();
+    const prevBom = state.bom;
+    const prevFormulas = state.formulas;
+    const parentPool = ctx.bom.parents.length;
+    state.bom = ctx.bom;
+    state.formulas = Object.assign({}, ctx.formulas);
+    const keepFormulas = {};
+    try {
+      try { syncFormulasFromBom(false); } catch (e) { console.warn(e); }
+      state.matches = state.order.rows.map((row, idx) => {
+        const m = matchOrderRow(row);
+        const parentCode = m.parent ? getParentCode(m.parent) : '';
+        const children = m.parent ? getChildrenOfParent(m.parent).map(ch => Object.assign({}, ch)) : [];
+        children.forEach(ch => {
+          const key = parentCode + '||' + str(ch.code);
+          const f = state.formulas[key] != null ? state.formulas[key] : (ch.formula || '');
+          if (f) {
+            keepFormulas[key] = f;
+            ch.formula = f;
+          }
+        });
+        return {
+          orderIdx: idx,
+          orderValue: m.value,
+          method: m.method,
+          parentCode,
+          parent: m.parent,
+          children,
+          ok: !!(m.ok && m.parent),
+          reason: m.ok && !children.length ? `已匹配母件 ${parentCode}，但未找到子件` : (m.reason || '')
+        };
+      });
+      state.matches.forEach(m => {
+        if (m.parent && !m.children.length) {
+          m.ok = true;
+          m.reason = m.reason || '';
+        } else if (m.parent) {
+          m.ok = true;
+        }
+      });
+    } finally {
+      state.bom = prevBom;
+      state.formulas = Object.assign({}, prevFormulas, keepFormulas);
+    }
+    renderMatchTable();
+    const ok = state.matches.filter(m => m.ok).length;
+    const bad = state.matches.length - ok;
+    $('matchSummary').textContent = `成功 ${ok} / 失败 ${bad} / 共 ${state.matches.length}（全部BOM库母件 ${parentPool}）`;
+    if (bad) {
+      const details = state.matches.filter(m => !m.ok).map(m => `第${m.orderIdx+1}行: ${m.reason || m.orderValue}`).join('；');
+      $('matchAlert').classList.remove('hidden');
+      $('matchAlert').textContent = '未匹配订单行：' + details;
+      toast(`有 ${bad} 行未匹配到BOM`, 'warn');
+    } else {
+      $('matchAlert').classList.add('hidden');
+      toast(`全部订单行匹配成功（库内 ${parentPool} 个母件）`, 'ok');
+    }
+    try { extractAliases(); } catch (e) {}
+    try { renderFormulaList(); } catch (e) {}
+    try { refreshParamUI(); } catch (e) {}
+  }
+
+  // ===================== Param mapping =====================
+  /** Only aliases from successfully matched BOM children. No match → no params shown. */
+  function extractAliases() {
+    const aliasSet = new Set();
+    const matched = (state.matches || []).filter(m => m.ok && m.parent);
+    if (!matched.length) {
+      state.aliases = [];
+      return state.aliases;
+    }
+    matched.forEach(m => {
+      const pc = m.parentCode || getParentCode(m.parent);
+      (m.children || []).forEach(ch => {
+        const key = pc + '||' + str(ch.code);
+        const formula = state.formulas[key] != null
+          ? state.formulas[key]
+          : (ch.formula || extractFormulaFromRemark(ch.remark || '') || '');
+        extractAliasesFromFormula(formula).forEach(a => aliasSet.add(a));
+        extractAliasesFromFormula(ch.remark || '').forEach(a => aliasSet.add(a));
+      });
+    });
+    state.aliases = Array.from(aliasSet).sort();
+    state.aliases.forEach(a => {
+      if (!state.paramMap[a]) state.paramMap[a] = { type: 'order', value: '' };
+    });
+    return state.aliases;
+  }
+
+  function autoMapParams(silent) {
+    extractAliases();
+    const headers = state.order.headers || [];
+    let mapped = 0;
+    state.aliases.forEach(alias => {
+      const conf = state.paramMap[alias];
+      // keep user-chosen mapping unless empty
+      if (conf && conf.type === 'order' && conf.value) return;
+      if (conf && conf.type !== 'order' && str(conf.value)) return;
+      const up = alias.toUpperCase();
+      // exact / includes
+      let hit = headers.find(h => str(h).toUpperCase() === up) ||
+               headers.find(h => str(h).toUpperCase().includes(up)) ||
+               headers.find(h => up.includes(str(h).toUpperCase()) && str(h).length >= 2);
+      // keyword map
+      if (!hit) {
+        const rules = [
+          [/LENGTH|LEN|长度|^DD$/i, ['长度', '轿厢深度', 'DD', 'DEPTH', '长']],
+          [/^BB$|宽度|WIDTH/i, ['宽度', '轿厢宽度', 'BB', '宽']],
+          [/高度|HH|HEIGHT/i, ['高度', '轿厢高度', 'HH', '高']],
+          [/数量|QTY|NUM/i, ['数量', '订单数量', '台数', 'QTY']],
+          [/LHLB|类别|型号/i, ['类别', '型号', 'LHLB', '规格型号']]
+        ];
+        for (const [re, keys] of rules) {
+          if (re.test(alias)) {
+            hit = headers.find(h => keys.some(k => str(h).toUpperCase().includes(String(k).toUpperCase())));
+            if (hit) break;
+          }
+        }
+      }
+      if (hit) {
+        state.paramMap[alias] = { type: 'order', value: hit };
+        mapped++;
+      }
+    });
+    refreshParamUI();
+    if (!silent) toast(`已自动映射 ${mapped} 个参数`, 'ok');
+    return mapped;
+  }
+
+  function resolveParamValue(alias, orderRow, envExtra) {
+    const conf = state.paramMap[alias] || { type: 'fixed', value: '' };
+    if (conf.type === 'order') {
+      const v = orderRow[conf.value];
+      // numeric-looking with commas
+      if (v != null && /^-?[\d,]+(\.\d+)?$/.test(String(v).trim())) return toNum(v);
+      // if alias used in numeric context later, keep raw string for text compares
+      const s = str(v);
+      if (s !== '' && !isNaN(toNum(s)) && /[\d]/.test(s) && !/[A-Za-z\u4e00-\u9fa5]/.test(s)) return toNum(s);
+      return s;
+    }
+    if (conf.type === 'fixed') {
+      return evalFixedOrFormula(conf.value, orderRow, envExtra);
+    }
+    if (conf.type === 'formula') {
+      return evalFixedOrFormula(
+        str(conf.value).startsWith('=') || isFormulaExpr(conf.value) ? conf.value : ('=' + str(conf.value)),
+        orderRow,
+        envExtra
+      );
+    }
+    return 0;
+  }
+
+  function buildEnvForOrder(orderRow) {
+    const env = {};
+    state.aliases.forEach(a => {
+      env[a] = resolveParamValue(a, orderRow, env);
+    });
+    // also expose order columns as vars (safe names)
+    state.order.headers.forEach(h => {
+      const key = String(h).replace(/\s+/g, '');
+      if (!Object.prototype.hasOwnProperty.call(env, key)) {
+        const v = orderRow[h];
+        env[key] = (/^-?[\d,]+(\.\d+)?$/.test(str(v))) ? toNum(v) : str(v);
+      }
+    });
+    return env;
+  }
+
+
+  // ===================== Saved BOM Library =====================
+  function uid() {
+    return 'bom_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+  }
+  function listSavedBoms() {
+    const list = Store.get(BOM_LIB_KEY, []);
+    return Array.isArray(list) ? list : [];
+  }
+  function uniqueBomListName(base) {
+    const list = listSavedBoms();
+    let name = str(base) || 'BOM';
+    if (!list.some(x => x.name === name)) return name;
+    let i = 2;
+    while (list.some(x => x.name === name + ' (' + i + ')')) i++;
+    return name + ' (' + i + ')';
+  }
+  /** Persist a parsed BOM library as its own list entry (no merge with others). */
+  function autoAddBomToList(lib, formulas, preferredName) {
+    const list = listSavedBoms();
+    const name = uniqueBomListName(preferredName || lib.name || 'BOM');
+    lib.name = name;
+    const payload = {
+      type: 'bom-library',
+      sources: (lib.sources || []).slice(),
+      parents: lib.parents,
+      childrenByParent: lib.childrenByParent,
+      parentByCode: lib.parentByCode,
+      headers: lib.headers,
+      formulas: formulas || {},
+      meta: {
+        levelCol: lib.levelCol, typeCol: lib.typeCol, remarkCol: lib.remarkCol,
+        codeCol: lib.codeCol, nameCol: lib.nameCol, specCol: lib.specCol,
+        qtyCol: lib.qtyCol, levelScheme: lib.levelScheme
+      }
+    };
+    const item = {
+      id: uid(),
+      name,
+      savedAt: Date.now(),
+      parentCount: (lib.parents || []).length,
+      data: payload
+    };
+    list.unshift(item);
+    Store.set(BOM_LIB_KEY, list);
+    return item;
+  }
+  /** Merge all saved BOMs (+ current editor) for matching across the whole library. */
+  function buildUnifiedMatchContext() {
+    const lib = emptyBomLibrary();
+    const formulas = {};
+    function ingest(data, sourceName) {
+      if (!data) return;
+      if (data.type === 'bom-library') {
+        if (!lib.codeCol && data.meta) {
+          lib.levelCol = data.meta.levelCol || '';
+          lib.typeCol = data.meta.typeCol || '';
+          lib.levelScheme = data.meta.levelScheme || null;
+          lib.remarkCol = data.meta.remarkCol || '';
+          lib.codeCol = data.meta.codeCol || '';
+          lib.nameCol = data.meta.nameCol || '';
+          lib.specCol = data.meta.specCol || '';
+          lib.qtyCol = data.meta.qtyCol || '';
+        }
+        (data.headers || []).forEach(h => { if (h && !lib.headers.includes(h)) lib.headers.push(h); });
+        (data.parents || []).forEach(p => {
+          const code = str(p.code);
+          const key = normBomCode(code);
+          if (!key) return;
+          lib.parents = lib.parents.filter(x => normBomCode(x.code) !== key);
+          const parent = Object.assign({}, p, { code, source: sourceName || p.source || '' });
+          lib.parents.push(parent);
+          lib.parentByCode[key] = parent;
+          lib.parentByCode[code] = parent;
+          const kidsSrc = (data.childrenByParent && (data.childrenByParent[code] || data.childrenByParent[key])) || [];
+          const children = kidsSrc.map(ch => {
+            const c = Object.assign({}, ch, { parentCode: code });
+            const fk = code + '||' + str(c.code);
+            if (data.formulas && data.formulas[fk] != null) {
+              c.formula = data.formulas[fk];
+              if (!c.remark) c.remark = data.formulas[fk];
+            }
+            return c;
+          });
+          lib.childrenByParent[code] = children;
+          lib.childrenByParent[key] = children;
+        });
+        Object.assign(formulas, data.formulas || {});
+        if (sourceName && !lib.sources.includes(sourceName)) lib.sources.push(sourceName);
+        return;
+      }
+      // legacy matrix: parse structure
+      try {
+        const headerRow = detectHeaderRow(data);
+        const table = matrixToTable(data, headerRow);
+        const struct = parseBomStructure(table.headers, table.rows);
+        mergeBomIntoLibrary(lib, struct, {
+          sourceName: sourceName || 'BOM',
+          headers: table.headers,
+          rows: table.rows,
+          headerRow
+        });
+      } catch (e) { console.warn(e); }
+    }
+    // older → newer, then current editor overrides
+    listSavedBoms().slice().reverse().forEach(item => ingest(item.data, item.name));
+    if (state.bom && state.bom.parents && state.bom.parents.length) {
+      const cur = buildBomPayload();
+      cur.formulas = Object.assign({}, state.formulas || {});
+      ingest(cur, state.bom.name || '当前BOM');
+    }
+    lib.name = '全部BOM(' + lib.parents.length + '母件)';
+    return { bom: lib, formulas };
+  }
+  function migrateLegacyBom() {
+    const list = listSavedBoms();
+    if (list.length) return;
+    const legacy = Store.get('oc_bom');
+    if (legacy && legacy.matrix) {
+      const item = {
+        id: uid(),
+        name: legacy.name || '历史BOM',
+        savedAt: legacy.savedAt || Date.now(),
+        data: legacy.matrix
+      };
+      Store.set(BOM_LIB_KEY, [item]);
+      Store.remove('oc_bom');
+    }
+  }
+  function buildBomPayload() {
+    return state.bom.raw && state.bom.raw.type === 'bom-library'
+      ? state.bom.raw
+      : {
+          type: 'bom-library',
+          sources: state.bom.sources || [state.bom.name],
+          parents: state.bom.parents,
+          childrenByParent: state.bom.childrenByParent,
+          parentByCode: state.bom.parentByCode,
+          headers: state.bom.headers,
+          formulas: state.formulas,
+          meta: {
+            levelCol: state.bom.levelCol, typeCol: state.bom.typeCol, remarkCol: state.bom.remarkCol,
+            codeCol: state.bom.codeCol, nameCol: state.bom.nameCol, specCol: state.bom.specCol,
+            qtyCol: state.bom.qtyCol, levelScheme: state.bom.levelScheme
+          }
+        };
+  }
+  function saveBomToLibrary(overwriteId) {
+    if (!state.bom.parents.length) { toast('请先上传或加载 BOM', 'warn'); return; }
+    const list = listSavedBoms();
+    const payload = buildBomPayload();
+    payload.formulas = state.formulas;
+    if (overwriteId) {
+      const idx = list.findIndex(x => x.id === overwriteId);
+      if (idx >= 0) {
+        list[idx].data = payload;
+        list[idx].name = state.bom.name || list[idx].name;
+        list[idx].savedAt = Date.now();
+        list[idx].parentCount = state.bom.parents.length;
+        Store.set(BOM_LIB_KEY, list);
+        state.activeBomId = overwriteId;
+        renderSavedBomList();
+        toast('已更新保存的 BOM：' + list[idx].name, 'ok');
+        return;
+      }
+    }
+    const name = prompt('请输入 BOM 名称', state.bom.name || ('BOM_' + todayStr()));
+    if (!name) return;
+    const item = {
+      id: uid(),
+      name: str(name),
+      savedAt: Date.now(),
+      parentCount: state.bom.parents.length,
+      data: payload
+    };
+    list.unshift(item);
+    Store.set(BOM_LIB_KEY, list);
+    state.activeBomId = item.id;
+    state.bom.name = item.name;
+    renderSavedBomList();
+    toast('BOM 已保存到列表：' + item.name, 'ok');
+  }
+  function deleteSavedBom(id) {
+    let list = listSavedBoms().filter(x => x.id !== id);
+    Store.set(BOM_LIB_KEY, list);
+    if (state.activeBomId === id) state.activeBomId = null;
+    renderSavedBomList();
+    toast('已删除', 'ok');
+  }
+  function renameSavedBom(id) {
+    const list = listSavedBoms();
+    const item = list.find(x => x.id === id);
+    if (!item) return;
+    const name = prompt('重命名 BOM', item.name);
+    if (!name) return;
+    item.name = str(name);
+    item.savedAt = Date.now();
+    Store.set(BOM_LIB_KEY, list);
+    if (state.activeBomId === id) state.bom.name = item.name;
+    renderSavedBomList();
+    toast('已重命名', 'ok');
+  }
+  async function loadSavedBomItem(id, opts) {
+    const silent = !!(opts && opts.silent);
+    const item = listSavedBoms().find(x => x.id === id);
+    if (!item) { toast('未找到该 BOM', 'warn'); return; }
+    // keep formulas needed by existing matches (other BOMs)
+    const preserve = {};
+    (state.matches || []).forEach(m => {
+      const pc = m.parentCode || (m.parent ? getParentCode(m.parent) : '');
+      (m.children || []).forEach(ch => {
+        const key = pc + '||' + str(ch.code);
+        if (state.formulas[key] != null) preserve[key] = state.formulas[key];
+        else if (ch.formula) preserve[key] = ch.formula;
+      });
+    });
+    await handleBomFile(null, { name: item.name, matrix: item.data, silent: true });
+    state.formulas = Object.assign({}, (item.data && item.data.formulas) || state.formulas || {}, preserve);
+    try { renderFormulaList(); } catch (e) {}
+    state.activeBomId = id;
+    renderSavedBomList();
+    renderBomEditor();
+    try { refreshParamUI(); } catch (e) {}
+    if (!silent) toast('已加载 BOM：' + item.name + '（下方可直接查看/修改）', 'ok');
+  }
+  function renderSavedBomList() {
+    migrateLegacyBom();
+    const wrap = $('savedBomList');
+    if (!wrap) return;
+    const list = listSavedBoms();
+    if (!list.length) {
+      wrap.innerHTML = '<div class="muted" style="padding:10px">暂无 BOM，上传文件后将自动出现在此列表</div>';
+      return;
+    }
+    wrap.innerHTML = list.map(item => {
+      const dt = new Date(item.savedAt || Date.now());
+      const t = dt.getFullYear() + '-' + String(dt.getMonth()+1).padStart(2,'0') + '-' + String(dt.getDate()).padStart(2,'0') +
+        ' ' + String(dt.getHours()).padStart(2,'0') + ':' + String(dt.getMinutes()).padStart(2,'0');
+      const active = state.activeBomId === item.id ? 'active' : '';
+      return `<div class="bom-list-item ${active}" data-bom-id="${esc(item.id)}">
+        <div>
+          <div class="name">${esc(item.name)}</div>
+          <div class="meta">母件 ${item.parentCount != null ? item.parentCount : '-'} · ${t}</div>
+        </div>
+        <div class="row">
+          <button class="btn sm" data-act="load" data-id="${esc(item.id)}">查看/修改</button>
+          <button class="btn secondary sm" data-act="rename" data-id="${esc(item.id)}">重命名</button>
+          <button class="btn danger sm" data-act="del" data-id="${esc(item.id)}">删除</button>
+        </div>
+      </div>`;
+    }).join('');
+    wrap.querySelectorAll('[data-act]').forEach(btn => {
+      btn.onclick = (ev) => {
+        ev.stopPropagation();
+        const id = btn.getAttribute('data-id');
+        const act = btn.getAttribute('data-act');
+        if (act === 'load') loadSavedBomItem(id);
+        else if (act === 'rename') renameSavedBom(id);
+        else if (act === 'del') {
+          if (confirm('确认删除该 BOM？')) deleteSavedBom(id);
+        }
+      };
+    });
+    wrap.querySelectorAll('.bom-list-item').forEach(el => {
+      el.onclick = () => loadSavedBomItem(el.getAttribute('data-bom-id'));
+    });
+  }
+
+  // ===================== Upload Templates =====================
+  function downloadOrderTemplate() {
+    const aoa = [
+      ['单据编号','日期','物料代码','规格型号','客户物料号','数量','轿厢宽度BB','轿厢深度DD','类别LHLB'],
+      ['SO001','2026-08-01','HL0230002C','A型','CUST-A',1,1200,1900,'LF18']
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '订单模板');
+    XLSX.writeFile(wb, '订单上传模板.xlsx');
+    toast('已下载订单模板', 'ok');
+  }
+  function downloadBomTemplate() {
+    const aoa = [
+      ['级次','子项类型','物料代码','物料名称','规格','单位','标准用量','备注'],
+      [1,'母件','HL0230002C','示例母件','A型','套',1,''],
+      [2,'子件','1123101017','立边','双饰面','张',1,'N1=ROUNDUP((DD-54)/250,0);N2=IF(N1=0,1,N1)'],
+      [2,'子件','P001','侧板','','张',2,'=IF(LHLB="LF18",2,1)']
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'BOM模板');
+    XLSX.writeFile(wb, 'BOM上传模板.xlsx');
+    toast('已下载 BOM 模板', 'ok');
+  }
+
+  // ===================== Manual Mode =====================
+  function setAppMode(mode) {
+    state.mode = mode === 'manual' ? 'manual' : 'order';
+    document.querySelectorAll('#modeTabs .mode-tab').forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-mode') === state.mode);
+    });
+    const orderBox = $('orderUploadBox');
+    const manualBox = $('manualModeBox');
+    if (orderBox) orderBox.classList.toggle('hidden', state.mode === 'manual');
+    if (manualBox) manualBox.classList.toggle('hidden', state.mode !== 'manual');
+  }
+
+  function parseManualCodeLines() {
+    const raw = ($('manualCodes') && $('manualCodes').value) || '';
+    const defQty = toNum(($('manualDefaultQty') && $('manualDefaultQty').value) || 1) || 1;
+    const lines = raw.split(/[\n\r]+/).map(s => s.trim()).filter(Boolean);
+    const rows = [];
+    lines.forEach(line => {
+      const parts = line.split(/[,，\t ]+/).map(s => s.trim()).filter(Boolean);
+      if (!parts.length) return;
+      const code = parts[0];
+      const qty = parts.length > 1 ? toNum(parts[1]) : defQty;
+      rows.push({ code, qty: qty > 0 ? qty : defQty });
+    });
+    return rows;
+  }
+
+  function applyManualParamsToParamMap() {
+    Object.keys(state.manualParams || {}).forEach(alias => {
+      state.paramMap[alias] = { type: 'fixed', value: String(state.manualParams[alias] == null ? '' : state.manualParams[alias]) };
+    });
+  }
+
+  function renderManualParamTable() {
+    const tb = $('manualParamBody');
+    if (!tb) return;
+    try { extractAliases(); } catch (e) {}
+    const aliases = state.aliases.slice();
+    if (!aliases.length) {
+      tb.innerHTML = '<tr><td colspan="3" class="muted">匹配后将显示公式参数，供手输</td></tr>';
+      return;
+    }
+    tb.innerHTML = aliases.map(a => {
+      const v = state.manualParams[a] != null ? state.manualParams[a] : (state.paramMap[a] && state.paramMap[a].type === 'fixed' ? state.paramMap[a].value : '');
+      return `<tr>
+        <td><strong>${esc(a)}</strong></td>
+        <td><input type="text" data-manual-param="${esc(a)}" value="${esc(v)}" placeholder="输入参数值" /></td>
+        <td class="muted">公式别名，将用于用量计算</td>
+      </tr>`;
+    }).join('');
+    tb.querySelectorAll('[data-manual-param]').forEach(inp => {
+      const sync = () => {
+        const alias = inp.getAttribute('data-manual-param');
+        state.manualParams[alias] = inp.value;
+        state.paramMap[alias] = { type: 'fixed', value: inp.value };
+      };
+      inp.addEventListener('input', sync);
+      inp.addEventListener('change', sync);
+    });
+  }
+
+  function runManualMatch() {
+    const unified = buildUnifiedMatchContext();
+    if (!unified.bom.parents.length) { toast('请先上传 BOM 到列表', 'warn'); return; }
+    const items = parseManualCodeLines();
+    if (!items.length) { toast('请输入至少一个母件料号', 'warn'); return; }
+    const docNo = str(($('manualDocNo') && $('manualDocNo').value) || '') || ('MANUAL-' + todayStr());
+    const headers = ['单据编号','日期','物料代码','规格型号','客户物料号','数量'];
+    const rows = items.map((it) => {
+      const row = {
+        '单据编号': docNo,
+        '日期': todayStr().replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'),
+        '物料代码': it.code,
+        '规格型号': '',
+        '客户物料号': '',
+        '数量': it.qty
+      };
+      return row;
+    });
+    state.order = { name: '手输料号', headers, rows, raw: null, headerRow: 0 };
+    state.mode = 'manual';
+    autoGuessOrderCols();
+    state.matchCfg.orderMatchCol = '物料代码';
+    state.matchCfg.orderQtyCol = '数量';
+    state.matchCfg.orderSpecCol = '规格型号';
+    state.matchCfg.orderCustCol = '客户物料号';
+    try { fillOrderSelects(); } catch (e) {}
+    runMatch();
+    // after match, extract aliases (matched only) and show manual param inputs
+    try { extractAliases(); } catch (e) {}
+    // seed manual params from existing fixed mappings
+    state.aliases.forEach(a => {
+      if (state.manualParams[a] == null && state.paramMap[a] && state.paramMap[a].type === 'fixed') {
+        state.manualParams[a] = state.paramMap[a].value;
+      }
+    });
+    renderManualParamTable();
+    applyManualParamsToParamMap();
+    const ok = state.matches.filter(m => m.ok).length;
+    const hint = $('manualMatchHint');
+    if (hint) hint.textContent = `已匹配 ${ok}/${items.length} 个母件。请在下方填写参数值，然后到「预览」生成清单。`;
+    $('orderMeta').textContent = `手输料号 · ${rows.length} 行`;
+    updateUploadSummary();
+    toast(`手输匹配完成：成功 ${ok} / 共 ${items.length}`, ok === items.length ? 'ok' : 'warn');
+  }
+
+  function getMaterialCodeFromResultRow(r) {
+    return str(r.materialCode || (r.bodyVals && (r.bodyVals['物料代码'] || r.bodyVals['料号'])) || '');
+  }
+  function getQtyFromResultRow(r) {
+    if (r.stdQty != null) return toNum(r.stdQty);
+    const q = r.bodyVals && (r.bodyVals['标准用量'] != null ? r.bodyVals['标准用量'] : r.bodyVals['用量']);
+    return toNum(q);
+  }
+  function calcRowCost(r) {
+    const code = getMaterialCodeFromResultRow(r);
+    const price = toNum(state.priceMap[code]);
+    const qty = getQtyFromResultRow(r);
+    return Math.round(price * qty * 10000) / 10000;
+  }
+  function calcTotalCost(rows) {
+    return Math.round((rows || state.resultRows).reduce((s, r) => s + calcRowCost(r), 0) * 100) / 100;
+  }
+  function savePriceMap() {
+    Store.set(PRICE_KEY, state.priceMap || {});
+    toast('单价已保存', 'ok');
+  }
+
+
+  // ===================== Template =====================
+  function defaultTemplate() {
+    return {
+      header: [
+        { name: '单据编号', sourceType: 'order', source: '单据编号' },
+        { name: '日期', sourceType: 'order', source: '日期' },
+        { name: '产品代码', sourceType: 'bom', source: 'code' },
+        { name: '产品名称', sourceType: 'bom', source: 'name' },
+        { name: '规格型号', sourceType: 'order', source: '规格型号' },
+        { name: '数量', sourceType: 'order', source: '数量' }
+      ],
+      body: [
+        { name: '物料代码', sourceType: 'bom', source: 'code' },
+        { name: '物料名称', sourceType: 'bom', source: 'name' },
+        { name: '规格', sourceType: 'bom', source: 'spec' },
+        { name: '标准用量', sourceType: 'computed', source: 'qty' },
+        { name: '公式', sourceType: 'computed', source: 'formula' }
+      ]
+    };
+  }
+
+  function ensureTemplate() {
+    if (!state.template || !state.template.header || !state.template.body) state.template = defaultTemplate();
+    if (!state.template.header.length && !state.template.body.length) state.template = defaultTemplate();
+  }
+
+  // ===================== Generate =====================
+  function qtyMappedIntoFormula() {
+    // if any alias maps to 数量 column, formula already includes order qty
+    const qtyCol = state.matchCfg.orderQtyCol || findCol(state.order.headers, ['数量', '订单数量', '台数']);
+    return Object.values(state.paramMap).some(p => p.type === 'order' && p.value === qtyCol);
+  }
+
+  function generateResult() {
+    ensureTemplate();
+    syncTemplateOrderSources();
+    readMatchCfgFromUI();
+    if (state.mode === 'manual') applyManualParamsToParamMap();
+    const merge = $('optMerge').checked;
+    const skipZero = $('optSkipZero').checked;
+    const qtyCol = state.matchCfg.orderQtyCol;
+    const includeQtyInFormula = qtyMappedIntoFormula();
+    const debug = [];
+    const flat = [];
+
+    state.matches.forEach(m => {
+      if (!m.ok || !m.parent) return;
+      const orderRow = state.order.rows[m.orderIdx];
+      const orderQty = toNum(orderRow[qtyCol]);
+      const env = buildEnvForOrder(orderRow);
+      m.children.forEach(ch => {
+        const key = m.parentCode + '||' + ch.code;
+        const formula = state.formulas[key] != null ? state.formulas[key] : (ch.formula || String(ch.baseQty || 0));
+        let computed = 0;
+        let err = '';
+        try {
+          if (!str(formula)) computed = ch.baseQty || 0;
+          else if (/^[-+]?\d+(\.\d+)?$/.test(str(formula))) computed = toNum(formula);
+          else computed = Number(evaluateFormula(formula, env));
+          if (!isFinite(computed)) computed = 0;
+        } catch (e) { err = String(e.message || e); computed = 0; }
+
+        let stdQty = includeQtyInFormula ? computed : computed * orderQty;
+        // round soft
+        if (typeof stdQty === 'number') stdQty = Math.round(stdQty * 1000000) / 1000000;
+
+        debug.push({
+          orderIdx: m.orderIdx + 1,
+          parent: m.parentCode,
+          child: ch.code,
+          formula,
+          env: Object.assign({}, env),
+          computed,
+          orderQty,
+          stdQty,
+          includeQtyInFormula,
+          err
+        });
+
+        if (skipZero && (!stdQty || Number(stdQty) === 0)) return;
+
+        const headerVals = {};
+        state.template.header.forEach(col => {
+          headerVals[col.name] = resolveTemplateHeader(col, orderRow, m.parent);
+        });
+        // Ensure document-no header cells are filled even if template source was stale
+        state.template.header.forEach(col => {
+          if (!isDocNoTemplateCol(col)) return;
+          if (str(headerVals[col.name]) !== '') return;
+          headerVals[col.name] = getRowDocNo(orderRow, headerVals) || resolveOrderField(orderRow, col.source);
+        });
+        const bodyVals = {};
+        state.template.body.forEach(col => {
+          bodyVals[col.name] = resolveTemplateBody(col, ch, stdQty, formula, orderRow, m.parent);
+        });
+
+        const docNo = getRowDocNo(orderRow, headerVals);
+        flat.push({
+          orderIdx: m.orderIdx,
+          docNo,
+          materialCode: bodyVals['物料代码'] || ch.code,
+          orderQty,
+          headerVals,
+          bodyVals,
+          stdQty
+        });
+      });
+    });
+
+    let rows = flat;
+    if (merge) {
+      const map = new Map();
+      flat.forEach(r => {
+        const key = String(r.docNo) + '||' + String(r.materialCode);
+        if (!map.has(key)) {
+          map.set(key, Object.assign({}, r, {
+            headerVals: Object.assign({}, r.headerVals),
+            bodyVals: Object.assign({}, r.bodyVals),
+            _orderQtySum: Number(r.orderQty) || 0,
+            _mergedOrderIdx: new Set([r.orderIdx])
+          }));
+        } else {
+          const g = map.get(key);
+          g.stdQty = Number(g.stdQty) + Number(r.stdQty);
+          g.bodyVals['标准用量'] = g.stdQty;
+          // if template body has 标准用量 under different name
+          state.template.body.forEach(col => {
+            if (col.sourceType === 'computed' && col.source === 'qty') g.bodyVals[col.name] = g.stdQty;
+          });
+          g._orderQtySum += Number(r.orderQty) || 0;
+          g._mergedOrderIdx.add(r.orderIdx);
+          // header 数量汇总
+          state.template.header.forEach(col => {
+            if (col.sourceType === 'order' && /数量/.test(col.source + col.name)) {
+              g.headerVals[col.name] = g._orderQtySum;
+            }
+          });
+          // keep a non-empty doc no on the group
+          if (!str(g.docNo) && str(r.docNo)) g.docNo = r.docNo;
+          state.template.header.forEach(col => {
+            if (!isDocNoTemplateCol(col)) return;
+            if (str(g.headerVals[col.name]) === '' && str(r.headerVals[col.name]) !== '') {
+              g.headerVals[col.name] = r.headerVals[col.name];
+            }
+          });
+        }
+      });
+      rows = Array.from(map.values());
+      // keep same document numbers contiguous so preview header dedupe works
+      rows.sort((a, b) => {
+        const d = String(a.docNo).localeCompare(String(b.docNo), 'zh');
+        if (d) return d;
+        return String(a.materialCode).localeCompare(String(b.materialCode), 'zh');
+      });
+    }
+
+    state.resultRows = rows;
+    state.debugLogs = debug;
+    if (state.mode === 'manual') applyManualParamsToParamMap();
+    const totalQty = rows.reduce((s, r) => s + (Number(r.stdQty) || 0), 0);
+    const orderSet = new Set(rows.map(r => r.orderIdx));
+    const totalCost = calcTotalCost(rows);
+    state.resultMeta = { lines: rows.length, qty: Math.round(totalQty * 1000) / 1000, orders: orderSet.size, cost: totalCost };
+    renderPreview();
+    $('statLines').textContent = state.resultMeta.lines;
+    $('statQty').textContent = state.resultMeta.qty;
+    $('statOrders').textContent = state.resultMeta.orders;
+    if ($('statCost')) $('statCost').textContent = totalCost;
+    if ($('costTotalLabel')) $('costTotalLabel').textContent = totalCost;
+    $('exportHint').textContent = `可导出 ${rows.length} 行` +
+      (includePriceEnabled() ? ` · 总成本 ${totalCost}` : '') +
+      ` · ${todayStr()}`;
+    toast('预览已生成', 'ok');
+  }
+
+  function resolveTemplateHeader(col, orderRow, parent) {
+    if (col.sourceType === 'fixed') return evalFixedOrFormula(col.source, orderRow);
+    if (col.sourceType === 'order') return resolveOrderField(orderRow, col.source);
+    if (col.sourceType === 'bom') {
+      if (col.source === 'code') return parent.code;
+      if (col.source === 'name') return parent.name;
+      if (col.source === 'spec') return parent.spec;
+      return parent.row && parent.row[col.source] != null ? parent.row[col.source] : (parent[col.source] || '');
+    }
+    return '';
+  }
+
+  function resolveTemplateBody(col, child, stdQty, formula, orderRow, parent) {
+    if (col.sourceType === 'computed') {
+      if (col.source === 'qty') return stdQty;
+      if (col.source === 'formula') return formula;
+      return '';
+    }
+    if (col.sourceType === 'bom') {
+      if (col.source === 'code') return child.code;
+      if (col.source === 'name') return child.name;
+      if (col.source === 'spec') return child.spec;
+      if (col.source === 'baseQty') return child.baseQty;
+      return child.row && child.row[col.source] != null ? child.row[col.source] : (child[col.source] || '');
+    }
+    if (col.sourceType === 'order') return resolveOrderField(orderRow, col.source);
+    if (col.sourceType === 'fixed') return evalFixedOrFormula(col.source, orderRow);
+    return '';
+  }
+
+  /** Prefer exact column, else fuzzy match common aliases / contains. */
+  function resolveOrderField(orderRow, preferred) {
+    if (!orderRow) return '';
+    const pref = str(preferred);
+    if (pref && orderRow[pref] != null && str(orderRow[pref]) !== '') return orderRow[pref];
+    if (pref && Object.prototype.hasOwnProperty.call(orderRow, pref)) return orderRow[pref] == null ? '' : orderRow[pref];
+    // fuzzy: exact header name among order headers
+    const headers = state.order.headers || [];
+    if (pref) {
+      const exact = headers.find(h => str(h) === pref);
+      if (exact && orderRow[exact] != null) return orderRow[exact];
+      const loose = headers.find(h => str(h).includes(pref) || pref.includes(str(h)));
+      if (loose && orderRow[loose] != null && str(orderRow[loose]) !== '') return orderRow[loose];
+    }
+    return '';
+  }
+
+  function findDocNoColumn() {
+    return findCol(state.order.headers || [], [
+      '单据编号', '订单号', '销售订单号', '订单编号', '单号', '单据号', 'OrderNo', 'order_no', 'SO'
+    ]);
+  }
+
+  function isDocNoTemplateCol(col) {
+    const n = str(col.name);
+    const s = str(col.source);
+    return /单据编号|订单号|销售订单号|订单编号|单号|单据号/i.test(n + s);
+  }
+
+  function getRowDocNo(orderRow, headerVals) {
+    // 1) from template header columns that represent document no
+    for (const col of (state.template.header || [])) {
+      if (!isDocNoTemplateCol(col)) continue;
+      const v = headerVals[col.name];
+      if (v != null && str(v) !== '') return str(v);
+    }
+    // 2) direct order column
+    const docCol = findDocNoColumn();
+    const fromOrder = getOrderValue(orderRow, docCol);
+    if (fromOrder) return fromOrder;
+    // 3) any header value named like doc no
+    for (const k of Object.keys(headerVals || {})) {
+      if (/单据编号|订单号|单号/i.test(k) && str(headerVals[k]) !== '') return str(headerVals[k]);
+    }
+    return '';
+  }
+
+  /** Keep template order-column sources aligned with actual uploaded headers. */
+  function syncTemplateOrderSources() {
+    ensureTemplate();
+    const headers = state.order.headers || [];
+    if (!headers.length) return;
+    const docCol = findDocNoColumn();
+    state.template.header.forEach(col => {
+      if (col.sourceType !== 'order') return;
+      if (col.source && headers.includes(col.source)) return;
+      if (isDocNoTemplateCol(col) && docCol) {
+        col.source = docCol;
+        return;
+      }
+      // try match by column name
+      const hit = headers.find(h => str(h) === str(col.name)) ||
+        headers.find(h => str(h).includes(str(col.name)) || str(col.name).includes(str(h)));
+      if (hit) col.source = hit;
+      else if (/日期|date/i.test(col.name + col.source)) {
+        const d = findCol(headers, ['日期', '订单日期', '单据日期', '交货日期']);
+        if (d) col.source = d;
+      } else if (/数量|qty/i.test(col.name + col.source)) {
+        const q = findCol(headers, ['数量', '订单数量', '台数', 'QTY']);
+        if (q) col.source = q;
+      } else if (/规格/i.test(col.name + col.source)) {
+        const s = findCol(headers, ['规格型号', '规格', '型号']);
+        if (s) col.source = s;
+      }
+    });
+  }
+
+  // ===================== Export =====================
+  /** Build display/export rows: merge mode shows header (incl. 单据编号) only once per order no. */
+  function buildOutputMatrix() {
+    const merge = $('optMerge').checked;
+    const withPrice = includePriceEnabled();
+    const headerCols = state.template.header;
+    const bodyCols = state.template.body;
+    const cols = headerCols.map(c => c.name).concat(bodyCols.map(c => c.name));
+    if (withPrice) cols.push('单价', '金额');
+    const aoa = [cols];
+    let lastDoc = null;
+    let totalCost = 0;
+    state.resultRows.forEach(r => {
+      const sameDoc = merge && lastDoc != null && String(r.docNo) === String(lastDoc);
+      lastDoc = r.docNo;
+      const headerPart = headerCols.map(c => {
+        if (sameDoc) return '';
+        const raw = r.headerVals[c.name];
+        if (raw != null && str(raw) !== '') return raw;
+        if (isDocNoTemplateCol(c)) return r.docNo || '';
+        return raw == null ? '' : raw;
+      });
+      const bodyPart = bodyCols.map(c => r.bodyVals[c.name]);
+      const row = headerPart.concat(bodyPart);
+      if (withPrice) {
+        const code = getMaterialCodeFromResultRow(r);
+        const price = toNum(state.priceMap[code]);
+        const amount = calcRowCost(r);
+        totalCost += amount;
+        row.push(price || '', amount);
+      }
+      aoa.push(row);
+    });
+    // summary row
+    aoa.push(cols.map((c, i) => {
+      if (i === 0) return '合计';
+      if (withPrice && c === '金额') return Math.round(totalCost * 100) / 100;
+      return '';
+    }));
+    return { cols, aoa, merge, withPrice, totalCost: Math.round(totalCost * 100) / 100 };
+  }
+
+  function exportExcel() {
+    if (!state.resultRows.length) { toast('请先生成预览', 'warn'); return; }
+    const { aoa, totalCost, withPrice } = buildOutputMatrix();
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '转换结果');
+    const filename = `订单转换_${todayStr()}.xlsx`;
+    XLSX.writeFile(wb, filename);
+    toast('已导出 ' + filename + (withPrice ? ('（含单价/金额，总成本 ' + totalCost + '）') : ''), 'ok');
+  }
+
+  // ===================== File handlers =====================
+  async function handleOrderFile(file) {
+    if (!file) return;
+    try {
+      const buf = await readFileAsArrayBuffer(file);
+      const wb = XLSX.read(buf, { type: 'array', cellFormula: true, cellText: true });
+      const matrix = sheetToMatrix(wb);
+      const headerRow = detectHeaderRow(matrix);
+      const table = matrixToTable(matrix, headerRow);
+      state.order = { name: file.name, headers: table.headers, rows: table.rows, raw: matrix, headerRow };
+      $('orderMeta').textContent = `${file.name} · ${table.rows.length} 行 · ${table.headers.length} 列`;
+      autoGuessOrderCols();
+      updateUploadSummary();
+      // refresh dependent UIs immediately (each step isolated)
+      try { fillOrderSelects(); } catch (e) { console.warn(e); }
+      try {
+        extractAliases();
+        syncTemplateOrderSources();
+        if (state.aliases.length && state.order.headers.length) autoMapParams(true);
+        else refreshParamUI();
+      } catch (e) { console.warn(e); }
+      try { renderVarChips(); } catch (e) { console.warn(e); }
+      try { renderTemplateEditor(); } catch (e) { console.warn(e); }
+      toast('订单已加载', 'ok');
+    } catch (e) {
+      console.error(e);
+      toast('订单解析失败: ' + (e.message || e), 'err');
+    }
+  }
+
+  async function handleBomFiles(fileList, opts) {
+    const files = Array.from(fileList || []).filter(Boolean);
+    if (!files.length) return;
+    const addedIds = [];
+    try {
+      for (const file of files) {
+        const lib = emptyBomLibrary();
+        const buf = await readFileAsArrayBuffer(file);
+        const wb = XLSX.read(buf, { type: 'array', cellFormula: true, cellText: true });
+        const tables = workbookToBomTables(wb);
+        tables.forEach(t => {
+          const struct = parseBomStructure(t.headers, t.rows);
+          mergeBomIntoLibrary(lib, struct, {
+            sourceName: tables.length > 1 ? (file.name + '#' + t.sheetName) : file.name,
+            headers: t.headers,
+            rows: t.rows,
+            headerRow: t.headerRow
+          });
+        });
+        if (!lib.parents.length) {
+          toast('文件未解析到母件：' + file.name, 'warn');
+          continue;
+        }
+        lib.raw = {
+          type: 'bom-library',
+          sources: lib.sources.slice(),
+          parents: lib.parents,
+          childrenByParent: lib.childrenByParent,
+          parentByCode: lib.parentByCode,
+          headers: lib.headers,
+          meta: {
+            levelCol: lib.levelCol, typeCol: lib.typeCol, remarkCol: lib.remarkCol,
+            codeCol: lib.codeCol, nameCol: lib.nameCol, specCol: lib.specCol, qtyCol: lib.qtyCol,
+            levelScheme: lib.levelScheme
+          }
+        };
+        // collect formulas for this file only
+        const formulas = {};
+        const seen = new Set();
+        lib.parents.forEach(p => {
+          const pc = str(p.code);
+          const nk = normBomCode(pc);
+          if (!pc || seen.has(nk)) return;
+          seen.add(nk);
+          (lib.childrenByParent[pc] || lib.childrenByParent[nk] || []).forEach(ch => {
+            const key = pc + '||' + str(ch.code);
+            const f = str(ch.formula) || extractFormulaFromRemark(ch.remark || '') || '';
+            formulas[key] = f;
+            ch.formula = f;
+          });
+        });
+        const baseName = String(file.name || 'BOM').replace(/\.(xlsx|xls)$/i, '');
+        const item = autoAddBomToList(lib, formulas, baseName);
+        addedIds.push(item.id);
+      }
+      renderSavedBomList();
+      if (!addedIds.length) {
+        toast('未能添加任何 BOM', 'warn');
+        return;
+      }
+      // load the last uploaded into editor for viewing
+      await loadSavedBomItem(addedIds[addedIds.length - 1], { silent: true });
+      toast(addedIds.length > 1
+        ? `已添加 ${addedIds.length} 个 BOM 到列表，可点击查看`
+        : 'BOM 已加入列表，可点击查看/修改', 'ok');
+    } catch (e) {
+      console.error(e);
+      toast('BOM 解析失败: ' + (e.message || e), 'err');
+    }
+  }
+
+  async function handleBomFile(file, fromStorage) {
+    if (fromStorage) {
+      try {
+        const matrix = fromStorage.matrix;
+        if (matrix && matrix.type === 'bom-library') {
+          state.bom = Object.assign(emptyBomLibrary(), {
+            name: fromStorage.name || '已保存BOM库',
+            sources: matrix.sources || [],
+            headers: matrix.headers || [],
+            parents: matrix.parents || [],
+            childrenByParent: matrix.childrenByParent || {},
+            parentByCode: matrix.parentByCode || {},
+            raw: matrix,
+            levelCol: (matrix.meta || {}).levelCol || '',
+            typeCol: (matrix.meta || {}).typeCol || '',
+            levelScheme: (matrix.meta || {}).levelScheme || null,
+            remarkCol: (matrix.meta || {}).remarkCol || '',
+            codeCol: (matrix.meta || {}).codeCol || '',
+            nameCol: (matrix.meta || {}).nameCol || '',
+            specCol: (matrix.meta || {}).specCol || '',
+            qtyCol: (matrix.meta || {}).qtyCol || ''
+          });
+          if (!Object.keys(state.bom.parentByCode).length) {
+            state.bom.parents.forEach(p => {
+              state.bom.parentByCode[str(p.code)] = p;
+              state.bom.parentByCode[normBomCode(p.code)] = p;
+            });
+          }
+        } else {
+          const headerRow = detectHeaderRow(matrix);
+          const table = matrixToTable(matrix, headerRow);
+          const struct = parseBomStructure(table.headers, table.rows);
+          const lib = emptyBomLibrary();
+          mergeBomIntoLibrary(lib, struct, {
+            sourceName: fromStorage.name || '已保存BOM',
+            headers: table.headers,
+            rows: table.rows,
+            headerRow
+          });
+          state.bom = lib;
+          state.bom.raw = matrix;
+        }
+        const uniqueChildCount = state.bom.parents.reduce((n, p) => n + getChildrenOfParent(p).length, 0);
+        $('bomMeta').textContent = state.bom.name + ' · 母件 ' + state.bom.parents.length + ' · 子件 ' + uniqueChildCount;
+        autoGuessBomCols();
+        updateUploadSummary();
+        fillBomSelects();
+        state.formulas = {};
+        if (matrix && matrix.formulas) state.formulas = Object.assign({}, matrix.formulas);
+        syncFormulasFromBom(false);
+        renderFormulaList();
+        renderBomEditor();
+        // params only after match — do not dump all BOM aliases here
+        try { refreshParamUI(); } catch (e) {}
+        if (!fromStorage.silent) toast('已加载 BOM：' + (state.bom.name || ''), 'ok');
+      } catch (e) {
+        console.error(e);
+        toast('BOM 加载失败: ' + (e.message || e), 'err');
+      }
+      return;
+    }
+    if (file) await handleBomFiles([file], { append: false });
+  }
+
+  function autoGuessOrderCols() {
+    const h = state.order.headers;
+    state.matchCfg.orderMatchCol = findCol(h, ['物料代码', '产品代码', '存货编码', '料号', '代码']);
+    state.matchCfg.orderSpecCol = findCol(h, ['规格型号', '规格', '型号']);
+    state.matchCfg.orderCustCol = findCol(h, ['客户物料号', '客户料号', '客户型号']);
+    state.matchCfg.orderQtyCol = findCol(h, ['数量', '订单数量', '台数', 'QTY']);
+  }
+  function autoGuessBomCols() {
+    state.matchCfg.bomParentCodeCol = state.bom.codeCol || findCol(state.bom.headers, ['物料代码', '母件物料代码', '料号']);
+    state.matchCfg.bomSpecCol = state.bom.specCol || findCol(state.bom.headers, ['规格', '规格型号']);
+  }
+
+  function updateUploadSummary() {
+    const el = $('uploadSummary');
+    const savedN = listSavedBoms().length;
+    const unifiedN = (() => { try { return buildUnifiedMatchContext().bom.parents.length; } catch (e) { return state.bom.parents.length; } })();
+    if (!state.order.rows.length && !savedN && !state.bom.parents.length) { el.classList.add('hidden'); return; }
+    el.classList.remove('hidden');
+    el.textContent = `订单 ${state.order.rows.length} 行；BOM 列表 ${savedN} 个` +
+      `（可匹配母件 ${unifiedN}）` +
+      (state.activeBomId ? `；当前查看：${state.bom.name || ''}` : '') +
+      `；存储模式 ${storageMode === 'local' ? 'localStorage' : '内存回退'}`;
+  }
+
+  // ===================== UI render =====================
+  function renderSteps() {
+    const wrap = $('stepTabs');
+    wrap.innerHTML = STEPS.map((name, i) => {
+      const n = i + 1;
+      const cls = n === state.step ? 'active' : (n < state.step ? 'done' : '');
+      return `<button class="step-tab ${cls}" data-go="${n}">${n}. ${name}</button>`;
+    }).join('');
+    wrap.querySelectorAll('[data-go]').forEach(btn => btn.onclick = () => goStep(Number(btn.dataset.go)));
+    document.querySelectorAll('.step-panel').forEach(p => {
+      p.classList.toggle('hidden', Number(p.dataset.step) !== state.step);
+    });
+    $('btnPrev').disabled = state.step <= 1;
+    $('btnNext').textContent = state.step >= 7 ? '完成' : '下一步';
+  }
+
+  function goStep(n) {
+    state.step = Math.max(1, Math.min(7, n));
+    renderSteps();
+    if (state.step === 2) { fillOrderSelects(); fillBomSelects(); }
+    if (state.step === 3) { renderVarChips(); renderFormulaList(); }
+    if (state.step === 4) { refreshParamUI(); renderSavedSchemeList(); }
+    if (state.step === 5) { renderTemplateEditor(); }
+    if (state.step === 6) {
+      setIncludePrice(includePriceEnabled());
+      if (state.resultRows.length) renderPreview();
+    }
+  }
+
+  function fillSelect(sel, options, current, allowEmpty) {
+    const opts = allowEmpty ? [''].concat(options) : options.slice();
+    sel.innerHTML = opts.map(o => `<option value="${esc(o)}">${esc(o || '(无)')}</option>`).join('');
+    if (current && opts.includes(current)) sel.value = current;
+    else if (!allowEmpty && opts.length) sel.value = opts[0];
+  }
+
+  function fillOrderSelects() {
+    const h = state.order.headers;
+    fillSelect($('orderMatchCol'), h, state.matchCfg.orderMatchCol);
+    fillSelect($('orderSpecCol'), h, state.matchCfg.orderSpecCol, true);
+    fillSelect($('orderCustCol'), h, state.matchCfg.orderCustCol, true);
+    fillSelect($('orderQtyCol'), h, state.matchCfg.orderQtyCol);
+  }
+  function fillBomSelects() {
+    const h = state.bom.headers;
+    fillSelect($('bomParentCodeCol'), h, state.matchCfg.bomParentCodeCol);
+    fillSelect($('bomSpecCol'), h, state.matchCfg.bomSpecCol, true);
+  }
+  function readMatchCfgFromUI() {
+    state.matchCfg.orderMatchCol = $('orderMatchCol').value;
+    state.matchCfg.orderSpecCol = $('orderSpecCol').value;
+    state.matchCfg.orderCustCol = $('orderCustCol').value;
+    state.matchCfg.orderQtyCol = $('orderQtyCol').value;
+    state.matchCfg.bomParentCodeCol = $('bomParentCodeCol').value;
+    state.matchCfg.bomSpecCol = $('bomSpecCol').value;
+  }
+
+  function renderMatchTable() {
+    const tb = $('matchTableBody');
+    tb.innerHTML = state.matches.map(m => `<tr>
+      <td>${m.orderIdx + 1}</td>
+      <td>${esc(m.orderValue)}</td>
+      <td>${esc(m.method)}</td>
+      <td>${esc(m.parentCode)}</td>
+      <td>${m.children.length}</td>
+      <td>${m.ok ? '<span class="tag ok">成功</span>' : '<span class="tag err">失败</span>'}</td>
+    </tr>`).join('');
+  }
+
+  function renderVarChips() {
+    const wrap = $('varChips');
+    const row0 = state.order.rows[0] || {};
+    wrap.innerHTML = state.order.headers.map(h => {
+      const sample = str(row0[h]);
+      return `<button class="chip" data-var="${esc(h)}" title="${esc(sample)}">${esc(h)}${sample ? ' = ' + esc(sample.slice(0,18)) : ''}</button>`;
+    }).join('') || '<span class="muted">请先上传订单</span>';
+    wrap.querySelectorAll('.chip').forEach(btn => {
+      btn.onclick = () => {
+        const v = btn.getAttribute('data-var');
+        const input = state.activeFormulaInput;
+        if (input) {
+          const start = input.selectionStart || input.value.length;
+          const end = input.selectionEnd || input.value.length;
+          const name = String(v).replace(/\s+/g,'');
+          input.value = input.value.slice(0, start) + name + input.value.slice(end);
+          input.focus();
+          input.dispatchEvent(new Event('input'));
+        } else toast('请先点击某个公式输入框', 'warn');
+      };
+    });
+  }
+
+  /** Build/refresh state.formulas from every BOM child remark. */
+  function syncFormulasFromBom(overwrite) {
+    const map = state.bom.childrenByParent || {};
+    let n = 0;
+    const seenParent = new Set();
+    (state.bom.parents || []).forEach(p => {
+      const pc = str(p.code);
+      const nk = normBomCode(pc);
+      if (!pc || seenParent.has(nk)) return;
+      seenParent.add(nk);
+      const list = map[pc] || map[nk] || [];
+      list.forEach(ch => {
+        const key = pc + '||' + ch.code;
+        const fromRemark = str(ch.formula) || extractFormulaFromRemark(ch.remark || '') || '';
+        if (overwrite || state.formulas[key] == null || str(state.formulas[key]) === '') {
+          state.formulas[key] = fromRemark;
+          if (fromRemark) n++;
+        } else if (fromRemark && !str(state.formulas[key])) {
+          state.formulas[key] = fromRemark;
+          n++;
+        }
+        if (!str(ch.formula) && fromRemark) ch.formula = fromRemark;
+      });
+    });
+    return n;
+  }
+
+  function getMatchedParentCodes() {
+    return new Set(state.matches.filter(m => m.ok && m.parentCode).map(m => m.parentCode));
+  }
+
+  function renderFormulaList() {
+    const wrap = $('formulaList');
+    const hint = $('formulaCountHint');
+    try { syncFormulasFromBom(false); } catch (e) { console.warn(e); }
+
+    const matchedOnly = $('optFormulaMatchedOnly') && $('optFormulaMatchedOnly').checked;
+    const matchedParents = getMatchedParentCodes();
+    const matchedNorm = new Set(Array.from(matchedParents).map(normBomCode));
+    const items = [];
+    const map = state.bom.childrenByParent || {};
+    const parentList = state.bom.parents || [];
+
+    if (!parentList.length) {
+      wrap.innerHTML = '<div class="muted">请先上传 BOM 文件；子件备注列中的公式将显示在这里。</div>';
+      if (hint) hint.textContent = '';
+      return;
+    }
+
+    const seen = new Set();
+    parentList.forEach(p => {
+      const pc = str(p.code);
+      const nk = normBomCode(pc);
+      if (!pc || seen.has(nk)) return;
+      seen.add(nk);
+      if (matchedOnly && matchedNorm.size && !matchedNorm.has(nk) && !matchedParents.has(pc)) return;
+      (map[pc] || map[nk] || []).forEach(ch => {
+        const key = pc + '||' + ch.code;
+        if (state.formulas[key] == null) {
+          state.formulas[key] = str(ch.formula) || extractFormulaFromRemark(ch.remark || '') || '';
+        }
+        items.push({
+          key,
+          parent: pc,
+          child: ch,
+          formula: state.formulas[key],
+          remark: ch.remark || '',
+          matched: matchedNorm.has(nk) || matchedParents.has(pc)
+        });
+      });
+    });
+
+    if (matchedOnly && !matchedParents.size && items.length === 0) {
+      wrap.innerHTML = '<div class="muted">尚未匹配订单。取消勾选「仅显示已匹配母件」，或先到「匹配配置」执行匹配。</div>';
+      if (hint) hint.textContent = '';
+      return;
+    }
+
+    if (!items.length) {
+      wrap.innerHTML = '<div class="muted">BOM 中未解析到子件。请检查级次列/备注列是否识别正确。</div>';
+      if (hint) hint.textContent = '';
+      return;
+    }
+
+    const withFormula = items.filter(it => str(it.formula) || str(it.remark)).length;
+    if (hint) {
+      hint.textContent = `（共 ${items.length} 条子件，其中 ${withFormula} 条含备注/公式` +
+        (matchedOnly ? '；已按匹配母件过滤' : `；BOM库 ${parentList.length} 个母件`) + '）';
+    }
+
+    wrap.innerHTML = items.map((it, idx) => {
+      const remarkText = str(it.remark) || '(空)';
+      const hasRemarkFormula = /^=/.test(str(it.remark)) || /IF\(|ROUND|≤|＞|N\d\s*=|时[：:]/.test(str(it.remark));
+      const preview = str(it.formula).replace(/\s+/g, ' ').slice(0, 48);
+      return `<div class="formula-item" data-fidx="${idx}">
+      <div class="title" data-toggle-formula="1">
+        <span class="chev"></span>
+        <span style="flex:1">${esc(it.parent)} → ${esc(it.child.code)}
+          <span class="muted child-name">${esc(it.child.name || '')}</span>
+          ${it.matched ? '<span class="tag ok">已匹配</span>' : '<span class="tag">未匹配订单</span>'}
+          ${hasRemarkFormula ? '<span class="tag info">含公式</span>' : ''}
+        </span>
+        <span class="muted" style="max-width:42%; overflow:hidden; text-overflow:ellipsis">${esc(preview || '(无公式)')}</span>
+      </div>
+      <div class="formula-body">
+        <div class="remark-line muted" style="margin-bottom:6px; white-space:pre-wrap; font-family:var(--mono); background:#fff; border:1px dashed var(--border); border-radius:8px; padding:8px">原备注（${esc(state.bom.remarkCol || '备注')}）：${esc(remarkText)}</div>
+        <label class="label">编辑公式</label>
+        <textarea data-fkey="${esc(it.key)}" placeholder="从 BOM 备注提取，可手动修改">${esc(it.formula)}</textarea>
+      </div>
+    </div>`;
+    }).join('');
+
+    wrap.querySelectorAll('[data-toggle-formula]').forEach(hd => {
+      hd.addEventListener('click', () => {
+        const item = hd.closest('.formula-item');
+        if (item) item.classList.toggle('open');
+      });
+    });
+    wrap.querySelectorAll('textarea').forEach(ta => {
+      ta.addEventListener('focus', () => { state.activeFormulaInput = ta; });
+      ta.addEventListener('click', (e) => e.stopPropagation());
+      ta.addEventListener('input', () => {
+        state.formulas[ta.dataset.fkey] = ta.value;
+        // sync back into child.remark/formula for BOM editor consistency
+        const key = ta.dataset.fkey || '';
+        const parts = key.split('||');
+        if (parts.length === 2) {
+          const kids = getChildrenOfParent(parts[0]) || [];
+          const ch = kids.find(c => str(c.code) === parts[1]);
+          if (ch) { ch.formula = ta.value; ch.remark = ta.value; }
+        }
+      });
+    });
+  }
+
+  function setAllFormulasOpen(open) {
+    document.querySelectorAll('#formulaList .formula-item').forEach(el => {
+      el.classList.toggle('open', !!open);
+    });
+  }
+
+  // ===================== Inline BOM Editor =====================
+  function renderBomEditor() {
+    const panel = $('bomEditorPanel');
+    const body = $('bomEditorBody');
+    const hint = $('bomEditorHint');
+    if (!panel || !body) return;
+    if (!state.bom.parents.length) {
+      panel.classList.add('hidden');
+      body.innerHTML = '';
+      return;
+    }
+    panel.classList.remove('hidden');
+    if (hint) {
+      hint.textContent = (state.bom.name || '当前BOM') +
+        ' · 母件 ' + state.bom.parents.length +
+        (state.activeBomId ? ' · 已从列表加载，可直接改后保存' : ' · 可直接编辑后保存到列表');
+    }
+    const map = state.bom.childrenByParent || {};
+    const seen = new Set();
+    const blocks = [];
+    state.bom.parents.forEach((p, pi) => {
+      const pc = str(p.code);
+      const nk = normBomCode(pc);
+      if (!pc || seen.has(nk)) return;
+      seen.add(nk);
+      const kids = map[pc] || map[nk] || [];
+      const rows = kids.map((ch, ci) => {
+        const fkey = pc + '||' + ch.code;
+        const formula = state.formulas[fkey] != null ? state.formulas[fkey] : (ch.formula || ch.remark || '');
+        return `<tr data-p="${esc(pc)}" data-ci="${ci}" data-old-code="${esc(ch.code)}">
+          <td><input type="text" data-f="code" value="${esc(ch.code)}" /></td>
+          <td><input type="text" data-f="name" value="${esc(ch.name || '')}" /></td>
+          <td><input type="text" data-f="spec" value="${esc(ch.spec || '')}" /></td>
+          <td><input type="number" data-f="baseQty" step="any" value="${esc(ch.baseQty != null ? ch.baseQty : '')}" /></td>
+          <td><input type="text" data-f="remark" value="${esc(formula)}" title="${esc(formula)}" /></td>
+          <td><button class="btn danger sm" data-del-child="${esc(pc)}|${ci}">删</button></td>
+        </tr>`;
+      }).join('');
+      blocks.push(`<div class="bom-parent-block" data-parent-idx="${pi}" data-parent-code="${esc(pc)}">
+        <div class="bom-parent-hd">
+          <span>母件</span>
+          <input type="text" data-pf="code" value="${esc(p.code)}" style="width:160px" />
+          <input type="text" data-pf="name" value="${esc(p.name || '')}" style="width:160px" placeholder="名称" />
+          <input type="text" data-pf="spec" value="${esc(p.spec || '')}" style="width:120px" placeholder="规格" />
+          <button class="btn secondary sm" data-add-child="${esc(pc)}">+ 子件</button>
+          <button class="btn danger sm" data-del-parent="${esc(pc)}">删除母件</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>子件代码</th><th>名称</th><th>规格</th><th>用量</th><th>备注/公式</th><th></th></tr></thead>
+            <tbody>${rows || '<tr><td colspan="6" class="muted">无子件</td></tr>'}</tbody>
+          </table>
+        </div>
+      </div>`);
+    });
+    body.innerHTML = blocks.join('') || '<div class="muted">暂无母件</div>';
+
+    body.querySelectorAll('[data-add-child]').forEach(btn => {
+      btn.onclick = () => {
+        applyBomEditorFromDom(false);
+        const pc = btn.getAttribute('data-add-child');
+        const list = state.bom.childrenByParent[pc] || state.bom.childrenByParent[normBomCode(pc)] || [];
+        list.push({ code: 'NEW', name: '', spec: '', baseQty: 1, remark: '', formula: '', parentCode: pc, row: {} });
+        state.bom.childrenByParent[pc] = list;
+        state.bom.childrenByParent[normBomCode(pc)] = list;
+        renderBomEditor();
+      };
+    });
+    body.querySelectorAll('[data-del-child]').forEach(btn => {
+      btn.onclick = () => {
+        applyBomEditorFromDom(false);
+        const [pc, ci] = btn.getAttribute('data-del-child').split('|');
+        const list = state.bom.childrenByParent[pc] || [];
+        list.splice(Number(ci), 1);
+        state.bom.childrenByParent[pc] = list;
+        state.bom.childrenByParent[normBomCode(pc)] = list;
+        renderBomEditor();
+      };
+    });
+    body.querySelectorAll('[data-del-parent]').forEach(btn => {
+      btn.onclick = () => {
+        if (!confirm('确认删除该母件及其子件？')) return;
+        applyBomEditorFromDom(false);
+        const pc = btn.getAttribute('data-del-parent');
+        const nk = normBomCode(pc);
+        state.bom.parents = state.bom.parents.filter(p => normBomCode(p.code) !== nk);
+        delete state.bom.childrenByParent[pc];
+        delete state.bom.childrenByParent[nk];
+        delete state.bom.parentByCode[pc];
+        delete state.bom.parentByCode[nk];
+        renderBomEditor();
+        updateBomMetaLine();
+      };
+    });
+  }
+
+  function applyBomEditorFromDom(showToast) {
+    const body = $('bomEditorBody');
+    if (!body || !state.bom.parents.length) return false;
+    const newParents = [];
+    const newChildren = {};
+    const newIndex = {};
+    body.querySelectorAll('.bom-parent-block').forEach(block => {
+      const oldCode = block.getAttribute('data-parent-code');
+      const codeInp = block.querySelector('[data-pf="code"]');
+      const nameInp = block.querySelector('[data-pf="name"]');
+      const specInp = block.querySelector('[data-pf="spec"]');
+      const code = str(codeInp && codeInp.value);
+      if (!code) return;
+      const parent = {
+        code,
+        name: str(nameInp && nameInp.value),
+        spec: str(specInp && specInp.value),
+        row: {},
+        rowIndex: newParents.length
+      };
+      parent.row[state.bom.codeCol || '物料代码'] = code;
+      parent.row[state.bom.nameCol || '物料名称'] = parent.name;
+      parent.row[state.bom.specCol || '规格'] = parent.spec;
+      newParents.push(parent);
+      newIndex[code] = parent;
+      newIndex[normBomCode(code)] = parent;
+      const kids = [];
+      block.querySelectorAll('tbody tr[data-ci]').forEach(tr => {
+        const get = (f) => {
+          const el = tr.querySelector('[data-f="' + f + '"]');
+          return el ? el.value : '';
+        };
+        const ccode = str(get('code'));
+        if (!ccode) return;
+        const remark = str(get('remark'));
+        const child = {
+          code: ccode,
+          name: str(get('name')),
+          spec: str(get('spec')),
+          baseQty: toNum(get('baseQty')),
+          remark,
+          formula: extractFormulaFromRemark(remark) || remark,
+          parentCode: code,
+          row: {}
+        };
+        kids.push(child);
+        state.formulas[code + '||' + ccode] = child.formula;
+        const oldChild = str(tr.getAttribute('data-old-code'));
+        if (oldCode && oldChild && (oldCode !== code || oldChild !== ccode)) {
+          delete state.formulas[oldCode + '||' + oldChild];
+        }
+      });
+      newChildren[code] = kids;
+      newChildren[normBomCode(code)] = kids;
+    });
+    state.bom.parents = newParents;
+    state.bom.childrenByParent = newChildren;
+    state.bom.parentByCode = newIndex;
+    state.bom.raw = buildBomPayload();
+    updateBomMetaLine();
+    try { extractAliases(); } catch (e) {}
+    try { renderFormulaList(); } catch (e) {}
+    try { refreshParamUI(); } catch (e) {}
+    if (showToast !== false) toast('BOM 修改已应用', 'ok');
+    return true;
+  }
+
+  function updateBomMetaLine() {
+    const childCount = state.bom.parents.reduce((n, p) => n + getChildrenOfParent(p).length, 0);
+    if ($('bomMeta')) {
+      $('bomMeta').textContent = (state.bom.name || '当前BOM') +
+        ' · 母件 ' + state.bom.parents.length + ' · 子件 ' + childCount;
+    }
+    updateUploadSummary();
+  }
+
+
+
+  function refreshParamUI() {
+    try { extractAliases(); } catch (e) { console.warn(e); }
+    const tb = $('paramMapBody');
+    const headers = state.order.headers || [];
+    const row0 = state.order.rows[0] || {};
+    if (!state.aliases.length) {
+      const hasMatch = (state.matches || []).some(m => m.ok && m.parent);
+      tb.innerHTML = hasMatch
+        ? '<tr><td colspan="4" class="muted">已匹配，但公式中未识别到参数别名。</td></tr>'
+        : '<tr><td colspan="4" class="muted">暂无参数。请先完成「匹配」；仅显示已匹配 BOM 公式中的参数。</td></tr>';
+      return;
+    }
+    tb.innerHTML = state.aliases.map(alias => {
+      const conf = state.paramMap[alias] || { type: 'order', value: '' };
+      const typeOpts = ['order','formula','fixed'].map(t =>
+        `<option value="${t}" ${conf.type===t?'selected':''}>${
+          t==='order'?'订单列':t==='formula'?'公式':'固定值'
+        }</option>`
+      ).join('');
+      let valueCtrl = '';
+      if (conf.type === 'order') {
+        const opts = ['<option value="">(选择订单列)</option>'].concat(
+          headers.map(h => `<option value="${esc(h)}" ${conf.value===h?'selected':''}>${esc(h)}</option>`)
+        ).join('');
+        valueCtrl = `<select data-alias="${esc(alias)}" data-field="value">${opts}</select>`;
+      } else {
+        const ph = conf.type === 'formula'
+          ? '如 {数量}*2 或 =ROUND({数量}*1.1,2)'
+          : '固定文字 或 =TEXT(TODAY(),"yyyy-mm-dd")';
+        valueCtrl = `<input type="text" data-alias="${esc(alias)}" data-field="value" value="${esc(conf.value)}" placeholder="${ph}" />`;
+      }
+      let preview = '';
+      try { preview = resolveParamValue(alias, row0, {}); }
+      catch (e) { preview = 'ERR'; }
+      return `<tr>
+        <td><strong>${esc(alias)}</strong></td>
+        <td><select data-alias="${esc(alias)}" data-field="type">${typeOpts}</select></td>
+        <td>${valueCtrl}</td>
+        <td class="muted" data-preview="${esc(alias)}">${esc(preview)}</td>
+      </tr>`;
+    }).join('');
+
+    tb.querySelectorAll('[data-alias]').forEach(el => {
+      const handler = () => {
+        const alias = el.getAttribute('data-alias');
+        const field = el.getAttribute('data-field');
+        if (!state.paramMap[alias]) state.paramMap[alias] = { type: 'order', value: '' };
+        if (field === 'type') {
+          state.paramMap[alias].type = el.value;
+          if (el.value === 'order' && !headers.includes(state.paramMap[alias].value)) state.paramMap[alias].value = '';
+          refreshParamUI();
+          return;
+        }
+        state.paramMap[alias][field] = el.value;
+        // update preview only
+        try {
+          const pv = resolveParamValue(alias, row0, {});
+          const cell = tb.querySelector(`[data-preview="${CSS.escape(alias)}"]`);
+          if (cell) cell.textContent = pv;
+        } catch (e) {}
+      };
+      el.addEventListener('change', handler);
+      el.addEventListener('input', handler);
+    });
+  }
+
+  function renderTemplateEditor() {
+    ensureTemplate();
+    syncTemplateOrderSources();
+    // sync default sources with actual order headers when possible
+    const h = state.order.headers;
+    const bomFields = [
+      { v: 'code', n: '母件/子件代码' },
+      { v: 'name', n: '母件/子件名称' },
+      { v: 'spec', n: '规格' },
+      { v: 'baseQty', n: 'BOM标准用量' }
+    ];
+    const computedFields = [
+      { v: 'qty', n: '计算标准用量' },
+      { v: 'formula', n: '公式文本' }
+    ];
+
+    const hb = $('headerTplBody');
+    hb.innerHTML = state.template.header.map((col, idx) => {
+      const typeOpts = ['order','bom','fixed'].map(t =>
+        `<option value="${t}" ${col.sourceType===t?'selected':''}>${t==='order'?'订单':t==='bom'?'BOM母件':'固定值'}</option>`
+      ).join('');
+      let sourceCtrl = '';
+      if (col.sourceType === 'order') {
+        sourceCtrl = `<select data-t="header" data-i="${idx}" data-f="source">${
+          h.map(x => `<option value="${esc(x)}" ${col.source===x?'selected':''}>${esc(x)}</option>`).join('') || '<option value="">(无)</option>'
+        }</select>`;
+      } else if (col.sourceType === 'bom') {
+        const extras = state.bom.headers || [];
+        const opts = bomFields.map(f => `<option value="${f.v}" ${col.source===f.v?'selected':''}>${f.n}</option>`)
+          .concat(extras.map(x => `<option value="${esc(x)}" ${col.source===x?'selected':''}>列:${esc(x)}</option>`)).join('');
+        sourceCtrl = `<select data-t="header" data-i="${idx}" data-f="source">${opts}</select>`;
+      } else {
+        sourceCtrl = `<input type="text" data-t="header" data-i="${idx}" data-f="source" value="${esc(col.source)}" placeholder='文字或 =TEXT(TODAY(),"yyyy-mm-dd")' />`;
+      }
+      return `<tr>
+        <td><input type="text" data-t="header" data-i="${idx}" data-f="name" value="${esc(col.name)}" /></td>
+        <td><select data-t="header" data-i="${idx}" data-f="sourceType">${typeOpts}</select></td>
+        <td>${sourceCtrl}</td>
+        <td><button class="btn danger sm" data-del-h="${idx}">删</button></td>
+      </tr>`;
+    }).join('');
+
+    const bb = $('bodyTplBody');
+    bb.innerHTML = state.template.body.map((col, idx) => {
+      const typeOpts = ['bom','computed','fixed'].map(t =>
+        `<option value="${t}" ${col.sourceType===t?'selected':''}>${t==='bom'?'BOM子件':t==='computed'?'计算结果':'固定值/公式'}</option>`
+      ).join('');
+      let sourceCtrl = '';
+      if (col.sourceType === 'bom') {
+        const extras = state.bom.headers || [];
+        const opts = bomFields.map(f => `<option value="${f.v}" ${col.source===f.v?'selected':''}>${f.n}</option>`)
+          .concat(extras.map(x => `<option value="${esc(x)}" ${col.source===x?'selected':''}>列:${esc(x)}</option>`)).join('');
+        sourceCtrl = `<select data-t="body" data-i="${idx}" data-f="source">${opts}</select>`;
+      } else if (col.sourceType === 'computed') {
+        sourceCtrl = `<select data-t="body" data-i="${idx}" data-f="source">${
+          computedFields.map(f => `<option value="${f.v}" ${col.source===f.v?'selected':''}>${f.n}</option>`).join('')
+        }</select>`;
+      } else {
+        sourceCtrl = `<input type="text" data-t="body" data-i="${idx}" data-f="source" value="${esc(col.source)}" placeholder='文字或 =TEXT(TODAY(),"yyyy-mm-dd")' />`;
+      }
+      return `<tr>
+        <td><input type="text" data-t="body" data-i="${idx}" data-f="name" value="${esc(col.name)}" /></td>
+        <td><select data-t="body" data-i="${idx}" data-f="sourceType">${typeOpts}</select></td>
+        <td>${sourceCtrl}</td>
+        <td><button class="btn danger sm" data-del-b="${idx}">删</button></td>
+      </tr>`;
+    }).join('');
+
+    function bind(root) {
+      root.querySelectorAll('[data-t]').forEach(el => {
+        const fn = () => {
+          const t = el.getAttribute('data-t');
+          const i = Number(el.getAttribute('data-i'));
+          const f = el.getAttribute('data-f');
+          const arr = t === 'header' ? state.template.header : state.template.body;
+          if (!arr[i]) return;
+          arr[i][f] = el.value;
+          if (f === 'sourceType') renderTemplateEditor();
+        };
+        el.addEventListener('change', fn);
+        el.addEventListener('input', fn);
+      });
+      root.querySelectorAll('[data-del-h]').forEach(btn => btn.onclick = () => {
+        state.template.header.splice(Number(btn.getAttribute('data-del-h')), 1);
+        renderTemplateEditor();
+      });
+      root.querySelectorAll('[data-del-b]').forEach(btn => btn.onclick = () => {
+        state.template.body.splice(Number(btn.getAttribute('data-del-b')), 1);
+        renderTemplateEditor();
+      });
+    }
+    bind(hb); bind(bb);
+  }
+
+  function renderPreview() {
+    const merge = $('optMerge').checked;
+    const withPrice = includePriceEnabled();
+    setIncludePrice(withPrice);
+    const { aoa, totalCost } = buildOutputMatrix();
+    const heads = aoa[0] || [];
+    const priceIdx = withPrice ? heads.indexOf('单价') : -1;
+    const amountIdx = withPrice ? heads.indexOf('金额') : -1;
+    $('previewHead').innerHTML = '<tr>' + heads.map(c => `<th>${esc(c)}</th>`).join('') + '</tr>';
+    let lastDoc = null;
+    const bodyHtml = state.resultRows.map((r, idx) => {
+      const row = aoa[idx + 1] || [];
+      const sameDoc = merge && lastDoc != null && String(r.docNo) === String(lastDoc);
+      lastDoc = r.docNo;
+      const headerLen = state.template.header.length;
+      const code = getMaterialCodeFromResultRow(r);
+      const tds = row.map((v, i) => {
+        const isHeaderCol = i < headerLen;
+        const cls = isHeaderCol && !sameDoc ? 'merge-header' : '';
+        if (withPrice && i === priceIdx) {
+          const price = state.priceMap[code] != null ? state.priceMap[code] : '';
+          return `<td><input class="price-input" type="number" min="0" step="any" data-price-code="${esc(code)}" value="${esc(price)}" /></td>`;
+        }
+        return `<td class="${cls}">${esc(v)}</td>`;
+      });
+      return '<tr data-row-idx="' + idx + '">' + tds.join('') + '</tr>';
+    }).join('');
+    const sumRow = aoa[aoa.length - 1] || [];
+    const sumHtml = '<tr class="merge-header">' + sumRow.map((v) => {
+      return `<td><strong>${esc(v)}</strong></td>`;
+    }).join('') + '</tr>';
+    $('previewBody').innerHTML = (bodyHtml + sumHtml) || '<tr><td class="muted">暂无数据</td></tr>';
+    if ($('statCost')) $('statCost').textContent = withPrice ? totalCost : '-';
+    if ($('costTotalLabel')) $('costTotalLabel').textContent = withPrice ? totalCost : '-';
+    if (withPrice) {
+      $('previewBody').querySelectorAll('[data-price-code]').forEach(inp => {
+        const apply = () => {
+          const code = inp.getAttribute('data-price-code');
+          state.priceMap[code] = inp.value === '' ? '' : toNum(inp.value);
+          const cost = calcTotalCost(state.resultRows);
+          if ($('statCost')) $('statCost').textContent = cost;
+          if ($('costTotalLabel')) $('costTotalLabel').textContent = cost;
+          state.resultMeta.cost = cost;
+          const { aoa: m2 } = buildOutputMatrix();
+          const aIdx = (m2[0] || []).indexOf('金额');
+          state.resultRows.forEach((_, i) => {
+            const tr = $('previewBody').querySelector(`tr[data-row-idx="${i}"]`);
+            if (tr && aIdx >= 0 && tr.children[aIdx]) tr.children[aIdx].textContent = m2[i + 1][aIdx];
+          });
+          const sumTr = $('previewBody').querySelector('tr.merge-header:last-child') || $('previewBody').lastElementChild;
+          if (sumTr && aIdx >= 0 && sumTr.children[aIdx]) sumTr.children[aIdx].innerHTML = '<strong>' + cost + '</strong>';
+        };
+        inp.addEventListener('change', apply);
+        inp.addEventListener('input', apply);
+      });
+    }
+    if (!$('debugPanel').classList.contains('hidden')) renderDebug();
+  }
+
+  function renderDebug() {
+    const lines = state.debugLogs.map(d => {
+      const envStr = Object.keys(d.env).slice(0, 30).map(k => `${k}=${JSON.stringify(d.env[k])}`).join(', ');
+      return `#${d.orderIdx} ${d.parent} -> ${d.child}
+  公式: ${d.formula}
+  参数: ${envStr}
+  计算值: ${d.computed}  订单数量: ${d.orderQty}  标准用量: ${d.stdQty}  (公式含数量=${d.includeQtyInFormula})${d.err ? '\n  错误: '+d.err : ''}`;
+    });
+    $('debugPanel').textContent = lines.join('\n\n') || '暂无调试信息';
+  }
+
+  // ===================== Scheme save/load =====================
+  function schemeUid() {
+    return 'sch_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+  }
+  function listSavedSchemes() {
+    const list = Store.get(SCHEME_LIB_KEY, []);
+    return Array.isArray(list) ? list : [];
+  }
+  function collectScheme() {
+    return {
+      version: 2,
+      matchCfg: state.matchCfg,
+      formulas: state.formulas,
+      paramMap: state.paramMap,
+      template: state.template,
+      aliases: state.aliases,
+      opts: {
+        merge: $('optMerge') ? $('optMerge').checked : false,
+        skipZero: $('optSkipZero') ? $('optSkipZero').checked !== false : true,
+        includePrice: includePriceEnabled()
+      }
+    };
+  }
+
+  function applyScheme(scheme, opts) {
+    if (!scheme || typeof scheme !== 'object') throw new Error('方案格式无效');
+    if (scheme.matchCfg) state.matchCfg = Object.assign(state.matchCfg, scheme.matchCfg);
+    if (scheme.formulas) state.formulas = scheme.formulas;
+    if (scheme.paramMap) state.paramMap = scheme.paramMap;
+    if (scheme.template) state.template = scheme.template;
+    if (scheme.aliases) state.aliases = scheme.aliases;
+    if (scheme.opts) {
+      if ($('optMerge')) $('optMerge').checked = !!scheme.opts.merge;
+      if ($('optSkipZero')) $('optSkipZero').checked = scheme.opts.skipZero !== false;
+      setIncludePrice(scheme.opts.includePrice !== false);
+    }
+    Store.set('oc_scheme', scheme);
+    try { fillOrderSelects(); } catch (e) {}
+    try { fillBomSelects(); } catch (e) {}
+    try { renderFormulaList(); } catch (e) {}
+    try { refreshParamUI(); } catch (e) {}
+    try { renderTemplateEditor(); } catch (e) {}
+    try { renderSavedSchemeList(); } catch (e) {}
+    if (!(opts && opts.silent)) toast('方案已应用', 'ok');
+  }
+
+  function saveSchemeToList(overwriteId) {
+    const scheme = collectScheme();
+    const list = listSavedSchemes();
+    if (overwriteId) {
+      const idx = list.findIndex(x => x.id === overwriteId);
+      if (idx >= 0) {
+        list[idx].data = scheme;
+        list[idx].savedAt = Date.now();
+        Store.set(SCHEME_LIB_KEY, list);
+        Store.set('oc_scheme', scheme);
+        state.activeSchemeId = overwriteId;
+        renderSavedSchemeList();
+        toast('已更新方案：' + list[idx].name, 'ok');
+        return list[idx];
+      }
+    }
+    const name = prompt('请输入方案名称', '映射方案_' + todayStr());
+    if (!name) return null;
+    const item = {
+      id: schemeUid(),
+      name: str(name),
+      savedAt: Date.now(),
+      data: scheme
+    };
+    list.unshift(item);
+    Store.set(SCHEME_LIB_KEY, list);
+    Store.set('oc_scheme', scheme);
+    state.activeSchemeId = item.id;
+    renderSavedSchemeList();
+    toast('方案已保存到列表：' + item.name, 'ok');
+    return item;
+  }
+
+  function loadSavedScheme(id) {
+    const item = listSavedSchemes().find(x => x.id === id);
+    if (!item) { toast('未找到该方案', 'warn'); return; }
+    applyScheme(item.data, { silent: true });
+    state.activeSchemeId = id;
+    renderSavedSchemeList();
+    toast('已加载方案：' + item.name, 'ok');
+  }
+
+  function deleteSavedScheme(id) {
+    const list = listSavedSchemes().filter(x => x.id !== id);
+    Store.set(SCHEME_LIB_KEY, list);
+    if (state.activeSchemeId === id) state.activeSchemeId = null;
+    renderSavedSchemeList();
+    toast('已删除方案', 'ok');
+  }
+
+  function renameSavedScheme(id) {
+    const list = listSavedSchemes();
+    const item = list.find(x => x.id === id);
+    if (!item) return;
+    const name = prompt('重命名方案', item.name);
+    if (!name) return;
+    item.name = str(name);
+    item.savedAt = Date.now();
+    Store.set(SCHEME_LIB_KEY, list);
+    renderSavedSchemeList();
+    toast('已重命名', 'ok');
+  }
+
+  function renderSavedSchemeList() {
+    const wrap = $('savedSchemeList');
+    if (!wrap) return;
+    const list = listSavedSchemes();
+    if (!list.length) {
+      wrap.innerHTML = '<div class="muted" style="padding:10px">暂无已保存方案，可点「保存当前方案到列表」</div>';
+      return;
+    }
+    wrap.innerHTML = list.map(item => {
+      const dt = new Date(item.savedAt || Date.now());
+      const t = dt.getFullYear() + '-' + String(dt.getMonth()+1).padStart(2,'0') + '-' + String(dt.getDate()).padStart(2,'0') +
+        ' ' + String(dt.getHours()).padStart(2,'0') + ':' + String(dt.getMinutes()).padStart(2,'0');
+      const active = state.activeSchemeId === item.id ? 'active' : '';
+      const paramN = item.data && item.data.paramMap ? Object.keys(item.data.paramMap).length : 0;
+      return `<div class="scheme-list-item ${active}" data-scheme-id="${esc(item.id)}">
+        <div>
+          <div class="name">${esc(item.name)}</div>
+          <div class="meta">参数 ${paramN} · ${t}</div>
+        </div>
+        <div class="row">
+          <button class="btn sm" data-sact="load" data-id="${esc(item.id)}">加载</button>
+          <button class="btn secondary sm" data-sact="rename" data-id="${esc(item.id)}">重命名</button>
+          <button class="btn danger sm" data-sact="del" data-id="${esc(item.id)}">删除</button>
+        </div>
+      </div>`;
+    }).join('');
+    wrap.querySelectorAll('[data-sact]').forEach(btn => {
+      btn.onclick = (ev) => {
+        ev.stopPropagation();
+        const id = btn.getAttribute('data-id');
+        const act = btn.getAttribute('data-sact');
+        if (act === 'load') loadSavedScheme(id);
+        else if (act === 'rename') renameSavedScheme(id);
+        else if (act === 'del') {
+          if (confirm('确认删除该方案？')) deleteSavedScheme(id);
+        }
+      };
+    });
+  }
+
+  function saveSchemeToFile() {
+    const scheme = collectScheme();
+    Store.set('oc_scheme', scheme);
+    const blob = new Blob([JSON.stringify(scheme, null, 2)], { type: 'application/json' });
+    downloadBlob(blob, `订单转换方案_${todayStr()}.json`);
+    toast('方案文件已导出', 'ok');
+  }
+
+  function loadSchemeFromStorage() {
+    const scheme = Store.get('oc_scheme');
+    if (!scheme) { toast('没有已保存的方案', 'warn'); return; }
+    applyScheme(scheme);
+  }
+
+  // ===================== Bindings =====================
+  function bindEvents() {
+    $('btnPrev').onclick = () => goStep(state.step - 1);
+    $('btnNext').onclick = () => {
+      if (state.step === 1) {
+        if (!state.bom.parents.length) { toast('请先上传或加载 BOM', 'warn'); return; }
+        if (state.mode === 'order' && !state.order.rows.length) {
+          toast('请上传订单，或切换到手输料号模式', 'warn'); return;
+        }
+        if (state.mode === 'manual' && !state.order.rows.length) {
+          toast('请先输入母件料号并点击「匹配 BOM」', 'warn'); return;
+        }
+      }
+      if (state.step === 2 && !state.matches.length) {
+        try { runMatch(); } catch (e) { toast('匹配失败', 'err'); return; }
+      }
+      if (state.step === 4 && state.mode === 'manual') applyManualParamsToParamMap();
+      if (state.step >= 7) { toast('流程完成，可导出Excel', 'ok'); return; }
+      goStep(state.step + 1);
+    };
+
+    document.querySelectorAll('#modeTabs .mode-tab').forEach(btn => {
+      btn.onclick = () => setAppMode(btn.getAttribute('data-mode'));
+    });
+    if ($('btnDlOrderTpl')) $('btnDlOrderTpl').onclick = () => downloadOrderTemplate();
+    if ($('btnDlBomTpl')) $('btnDlBomTpl').onclick = () => downloadBomTemplate();
+    if ($('btnManualMatch')) $('btnManualMatch').onclick = () => runManualMatch();
+    if ($('btnSavePrices')) $('btnSavePrices').onclick = () => savePriceMap();
+
+    $('orderFile').addEventListener('change', e => {
+      const f = e.target.files && e.target.files[0];
+      if (f) handleOrderFile(f);
+    });
+    $('bomFile').addEventListener('change', e => {
+      const files = e.target.files;
+      if (files && files.length) handleBomFiles(files, { append: false });
+      e.target.value = '';
+    });
+    if ($('bomFileAppend')) {
+      $('bomFileAppend').addEventListener('change', e => {
+        const files = e.target.files;
+        if (files && files.length) handleBomFiles(files, { append: true });
+        e.target.value = '';
+      });
+    }
+    $('btnClearOrder').onclick = () => {
+      state.order = { name: '', headers: [], rows: [], raw: null };
+      $('orderMeta').textContent = '尚未选择文件';
+      $('orderFile').value = '';
+      updateUploadSummary();
+    };
+    $('btnClearBom').onclick = () => {
+      state.bom = emptyBomLibrary();
+      state.formulas = {};
+      state.activeBomId = null;
+      $('bomMeta').textContent = '尚未选择文件';
+      $('bomFile').value = '';
+      if ($('bomFileAppend')) $('bomFileAppend').value = '';
+      updateUploadSummary();
+      renderSavedBomList();
+      renderBomEditor();
+    };
+    $('btnSaveBom').onclick = () => {
+      if (!state.bom.parents.length) { toast('请先上传BOM', 'warn'); return; }
+      applyBomEditorFromDom(false);
+      if (state.activeBomId && confirm('是否覆盖当前已加载的已保存 BOM？\n取消则另存为新项')) {
+        saveBomToLibrary(state.activeBomId);
+      } else {
+        saveBomToLibrary(null);
+      }
+    };
+    if ($('btnBomApplyEdit')) $('btnBomApplyEdit').onclick = () => applyBomEditorFromDom(true);
+    if ($('btnBomSaveEdit')) $('btnBomSaveEdit').onclick = () => {
+      applyBomEditorFromDom(false);
+      if (state.activeBomId && confirm('是否覆盖当前已加载的已保存 BOM？\n取消则另存为新项')) {
+        saveBomToLibrary(state.activeBomId);
+      } else {
+        saveBomToLibrary(null);
+      }
+    };
+    if ($('btnBomAddParent')) $('btnBomAddParent').onclick = () => {
+      applyBomEditorFromDom(false);
+      const code = 'PARENT' + (state.bom.parents.length + 1);
+      const p = { code, name: '新母件', spec: '', row: {}, rowIndex: state.bom.parents.length };
+      p.row[state.bom.codeCol || '物料代码'] = code;
+      state.bom.parents.push(p);
+      state.bom.childrenByParent[code] = [];
+      state.bom.childrenByParent[normBomCode(code)] = state.bom.childrenByParent[code];
+      state.bom.parentByCode[code] = p;
+      state.bom.parentByCode[normBomCode(code)] = p;
+      renderBomEditor();
+      updateBomMetaLine();
+    };
+    if ($('btnFormulaExpandAll')) $('btnFormulaExpandAll').onclick = () => setAllFormulasOpen(true);
+    if ($('btnFormulaCollapseAll')) $('btnFormulaCollapseAll').onclick = () => setAllFormulasOpen(false);
+
+    $('btnRunMatch').onclick = () => runMatch();
+    $('btnAutoConvertCn').onclick = () => convertAllChineseFormulas();
+    $('btnExtractAliases').onclick = () => {
+      if (!(state.matches || []).some(m => m.ok && m.parent)) {
+        toast('请先完成匹配；未匹配时不显示参数', 'warn');
+        refreshParamUI();
+        return;
+      }
+      extractAliases();
+      refreshParamUI();
+      toast('已提取别名 ' + state.aliases.length + ' 个', 'ok');
+      goStep(4);
+    };
+    $('btnReloadBomFormulas').onclick = () => {
+      const n = syncFormulasFromBom(true);
+      renderFormulaList();
+      try { extractAliases(); refreshParamUI(); } catch (e) {}
+      toast(`已从 BOM 备注重新载入 ${n} 条公式`, 'ok');
+    };
+    if ($('optFormulaMatchedOnly')) {
+      $('optFormulaMatchedOnly').onchange = () => renderFormulaList();
+    }
+
+    $('btnAutoMap').onclick = () => autoMapParams();
+    $('btnSaveMap').onclick = () => {
+      Store.set('oc_param_map', state.paramMap);
+      toast('参数映射已保存', 'ok');
+    };
+    $('btnLoadMap').onclick = () => {
+      const m = Store.get('oc_param_map');
+      if (!m) { toast('没有已保存的映射', 'warn'); return; }
+      state.paramMap = m;
+      refreshParamUI();
+      toast('参数映射已加载', 'ok');
+    };
+    $('btnRefreshParamUI').onclick = () => {
+      try { fillOrderSelects(); } catch (e) {}
+      try { refreshParamUI(); } catch (e) {}
+      toast('参数表已刷新', 'ok');
+    };
+
+    $('btnAddHeaderCol').onclick = () => {
+      state.template.header.push({ name: '新列', sourceType: 'order', source: state.order.headers[0] || '' });
+      renderTemplateEditor();
+    };
+    $('btnAddBodyCol').onclick = () => {
+      state.template.body.push({ name: '新列', sourceType: 'bom', source: 'code' });
+      renderTemplateEditor();
+    };
+
+    $('btnGenerate').onclick = () => generateResult();
+    $('optMerge').onchange = () => { if (state.resultRows.length) generateResult(); };
+    $('optSkipZero').onchange = () => { if (state.resultRows.length) generateResult(); };
+    $('btnToggleDebug').onclick = () => {
+      $('debugPanel').classList.toggle('hidden');
+      renderDebug();
+    };
+    $('btnExport').onclick = () => exportExcel();
+
+    $('btnSaveScheme').onclick = () => {
+      if (state.activeSchemeId && confirm('是否覆盖当前已加载的方案？\n取消则另存为新方案')) {
+        saveSchemeToList(state.activeSchemeId);
+      } else {
+        saveSchemeToList(null);
+      }
+    };
+    if ($('btnSaveMapScheme')) $('btnSaveMapScheme').onclick = () => {
+      if (state.activeSchemeId && confirm('是否覆盖当前已加载的方案？\n取消则另存为新方案')) {
+        saveSchemeToList(state.activeSchemeId);
+      } else {
+        saveSchemeToList(null);
+      }
+    };
+    if ($('btnSaveOutScheme')) $('btnSaveOutScheme').onclick = () => {
+      if (state.activeSchemeId && confirm('是否覆盖当前已加载的方案？\n取消则另存为新方案')) {
+        saveSchemeToList(state.activeSchemeId);
+      } else {
+        saveSchemeToList(null);
+      }
+    };
+    if ($('btnExportSchemeFile')) $('btnExportSchemeFile').onclick = () => saveSchemeToFile();
+    $('btnLoadScheme').onclick = () => {
+      $('schemeFile').click();
+    };
+    if ($('optIncludePrice')) {
+      $('optIncludePrice').onchange = (e) => syncIncludePriceFrom(e.target);
+    }
+    if ($('optIncludePricePreview')) {
+      $('optIncludePricePreview').onchange = (e) => syncIncludePriceFrom(e.target);
+    }
+    $('schemeFile').addEventListener('change', async e => {
+      const f = e.target.files && e.target.files[0];
+      if (!f) { loadSchemeFromStorage(); return; }
+      try {
+        const text = await f.text();
+        applyScheme(JSON.parse(text), { silent: true });
+        toast('方案文件已加载', 'ok');
+      } catch (err) {
+        toast('方案加载失败', 'err');
+      }
+      e.target.value = '';
+    });
+  }
+
+  function init() {
+    if (typeof XLSX === 'undefined') {
+      toast('XLSX 库未加载，请检查文件完整性', 'err');
+    }
+    state.template = defaultTemplate();
+    try {
+      const pm = Store.get('oc_param_map');
+      if (pm) state.paramMap = pm;
+    } catch (e) {}
+    try {
+      const prices = Store.get(PRICE_KEY, {});
+      if (prices && typeof prices === 'object') state.priceMap = prices;
+    } catch (e) {}
+    try {
+      const scheme = Store.get('oc_scheme');
+      if (scheme && scheme.template) state.template = scheme.template;
+      if (scheme && scheme.matchCfg) state.matchCfg = Object.assign(state.matchCfg, scheme.matchCfg);
+      if (scheme && scheme.formulas) state.formulas = scheme.formulas;
+      if (scheme && scheme.paramMap) state.paramMap = Object.assign({}, scheme.paramMap, state.paramMap);
+      if (scheme && scheme.opts) setIncludePrice(scheme.opts.includePrice !== false);
+      // migrate single legacy scheme into list once
+      if (scheme && !listSavedSchemes().length) {
+        const list = [{
+          id: schemeUid(),
+          name: '本地方案',
+          savedAt: Date.now(),
+          data: scheme
+        }];
+        Store.set(SCHEME_LIB_KEY, list);
+        state.activeSchemeId = list[0].id;
+      }
+    } catch (e) {}
+    bindEvents();
+    renderSteps();
+    setAppMode('order');
+    migrateLegacyBom();
+    renderSavedBomList();
+    renderSavedSchemeList();
+    setIncludePrice(includePriceEnabled());
+    updateUploadSummary();
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
+</script>
+</body>
+</html>
