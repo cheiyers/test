@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>通力采购订单批量识别</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/css/app.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <div>
+        <h1>通力采购订单批量识别</h1>
+        <p>识别全部订单行与 BOM 子件（含子件下方备注 A/B/C/D）。按相同物料类别归组后由你勾选要看的类；也可勾选某些子件描述，把对应物料、数量和备注钉到同一订单行右侧。每一列还可单独做替换、提取、分段、格式化等处理，再导出。</p>
+      </div>
+      <span class="tag" id="sourceTag">示例文档（已预识别）</span>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="panel">
+      <div class="panel-head">
+        <h2>文档结构（基于三份样张）</h2>
+        <button class="ghost" id="toggleStructure" type="button">收起</button>
+      </div>
+      <div class="anatomy structure-body" id="structureBody">
+        <div class="po-sketch" aria-hidden="true">
+          <div class="top">
+            <div class="box navy">KONE Elevators Co. Ltd. · Purchase order · No. 4801xxxxxxx</div>
+            <div class="box">页码 · 版本 · 日期 / 打印日</div>
+            <div class="box">Seller/Vendor 供应商<br/>苏州海联成套电器设备有限公司</div>
+            <div class="box">Buyer 通力电梯 · Invoicing · 联系人 / 供应商号</div>
+            <div class="box">Delivery address 送货仓</div>
+            <div class="box gold">Terms of payment · CURRENCY · TOTAL AMOUNT</div>
+          </div>
+          <div class="rowline">
+            <div class="cell">Pos.</div><div class="cell">Material</div><div class="cell">Arr.date</div>
+            <div class="cell">Qty</div><div class="cell">Price</div><div class="cell">Amount</div>
+          </div>
+          <div class="box">10 KM…… &nbsp; 物料描述 / 1 PC<br/>Sales order ref. · Project ref.<br/>规格参数（轿内净高 / Wire Length …）<br/>可选 BOM：.1 0010 KM…… 1.000 PC</div>
+        </div>
+        <div>
+          <p class="notes">
+            这三份文件都是<strong>通力电梯有限公司采购订单</strong>，版式固定，真正要识别的「订单」是表格里的 <b>Pos 行</b>，不是整份 PDF 算一张单。
+          </p>
+          <p class="notes">
+            <b>1. 抬头</b>：PO 号、供应商、买方、送货地址、订单日期、账期、币种、总金额。<br/>
+            <b>2. 订单行（主识别对象）</b>：Pos / 物料号 / 到货日 / 数量 / 单价 / 金额 / 中英文描述 / Sales order ref. / Project ref. / 发货说明。<br/>
+            <b>3. 行内规格</b>：例如轿厢尺寸、吊顶材料、额定载重、Wire Length，左右分栏。<br/>
+            <b>4. BOM 子件</b>：<code>.1 0010 KM……</code> 下层零件，以及子件下方的 Remarks line（A/B/C/D 等行信息）。<br/>
+            <b>5. 页脚条款</b>与签核栏每页重复，不作为订单行。
+          </p>
+          <p class="notes">
+            样张差异：4801006558 / 4801007230 是轿厢 <b>LED STRIP</b> 小单（各 4 行，合计 RMB 401.08）；4801169630 是主开关 + 井道照明电缆大单（254 行 / 117 页，合计 RMB 51,928.13）。下面表格就是按这个理解抽出来的结果，请先核对是否就是你要的内容。
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>批量导入</h2></div>
+      <div class="toolbar">
+        <div>
+          <div class="dropzone" id="dropzone">
+            <strong>拖入多个 KONE PO PDF，或点击选择</strong>
+            <span>浏览器本地识别，文件不会上传到服务器</span>
+          </div>
+          <input id="fileInput" type="file" accept="application/pdf" multiple hidden />
+          <div class="actions">
+            <button class="primary" id="loadDemo" type="button">查看三份样张识别结果</button>
+            <button class="warn" id="parseSamples" type="button">用浏览器重新解析样张 PDF</button>
+          </div>
+          <div id="progressWrap" hidden>
+            <div class="progress"><div id="progressBar"></div></div>
+            <div id="progressLabel"></div>
+          </div>
+        </div>
+        <div>
+          <p class="hint" style="margin-top:0">导入后会识别全部类别。可在下方勾选要保留的类别与字段。过滤框只影响当前显示。</p>
+          <div class="actions" style="margin-top:10px">
+            <input id="filterInput" type="text" placeholder="过滤：物料 / 项目号 / 描述 / 子件…" />
+          </div>
+          <div class="actions">
+            <button class="primary" id="btnXlsx" type="button">导出 Excel</button>
+            <button class="secondary" id="btnCsv" type="button">导出 CSV</button>
+            <button class="warn" id="btnJson" type="button">导出 JSON</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+
+    <section class="panel">
+      <div class="panel-head"><h2>选择类别与字段</h2>
+        <span class="hint">先全量识别，再由你决定要哪些类、哪些列</span>
+      </div>
+      <div class="choose-grid">
+        <div>
+          <div class="panel-head" style="margin-bottom:8px">
+            <h3 style="margin:0;font-size:13px;color:#16324f">物料类别</h3>
+            <div class="actions" style="margin:0">
+              <button class="ghost" id="catAll" type="button">全选</button>
+              <button class="ghost" id="catNone" type="button">全不选</button>
+            </div>
+          </div>
+          <div id="categoryList"></div>
+        </div>
+        <div>
+          <div class="field-block">
+            <h3>显示方式</h3>
+            <div class="view-modes">
+              <label><input type="radio" name="viewMode" value="parent" /> 仅订单行</label>
+              <label><input type="radio" name="viewMode" value="nested" checked /> 订单行 + 展开子件</label>
+              <label><input type="radio" name="viewMode" value="flat" /> 子件展开为独立行</label>
+            </div>
+          </div>
+          <div class="field-block">
+            <h3>订单行字段</h3>
+            <div class="field-list" id="parentFields"></div>
+          </div>
+          <div class="field-block">
+            <h3>规格字段（点选加入列，也可自行添加）</h3>
+            <div class="actions" style="margin-top:0">
+              <input id="keywordInput" type="text" placeholder="例如：轿内净高 或 Wire Length" />
+              <button class="secondary" id="addKeyword" type="button">添加</button>
+            </div>
+            <div class="chips" id="keywordChips"></div>
+            <div class="suggests" id="suggestedKeys"></div>
+          </div>
+          <div class="field-block">
+            <h3>子件字段（含下方备注行）</h3>
+            <div class="field-list" id="bomFields"></div>
+          </div>
+          <div class="field-block">
+            <h3>子件描述列（勾选后显示在订单行右侧）</h3>
+            <div class="actions" style="margin:0 0 8px">
+              <button class="ghost" id="bdAll" type="button">全选</button>
+              <button class="ghost" id="bdNone" type="button">全不选</button>
+            </div>
+            <p class="hint" style="margin:0 0 8px">列标题是子件描述；单元格为该子件的物料、数量，以及备注 A/B/C/D（没有该子件的订单行为空）。</p>
+            <div class="bom-desc-list" id="bomDescList"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>列内容处理</h2>
+        <span class="hint">每列单独处理：查找替换、正则提取、分段、日期/数值格式、映射。表格和导出都用处理后的值。点表头也可选中该列。</span>
+      </div>
+      <div class="colproc">
+        <div class="colproc-side">
+          <label class="hint" style="display:block;margin-bottom:6px">选择列</label>
+          <select id="colSelect"></select>
+          <div class="actions" style="margin-top:8px">
+            <button class="ghost" id="colClear" type="button">清空本列规则</button>
+            <button class="ghost" id="colClearAll" type="button">清空全部列规则</button>
+          </div>
+          <p class="hint" style="margin:12px 0 6px">常用模板（应用到当前列）</p>
+          <div class="suggests" id="colPresets"></div>
+        </div>
+        <div class="colproc-main">
+          <div id="colSteps"></div>
+          <div class="actions">
+            <select id="colAddType"></select>
+            <button class="secondary" id="colAddStep" type="button">添加步骤</button>
+          </div>
+          <div class="preview-box">
+            <p class="hint" style="margin:0 0 6px">预览（当前可见行的前几条）</p>
+            <table class="mini" id="colPreview"><thead><tr><th>原始</th><th>处理后</th></tr></thead><tbody></tbody></table>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>识别结果 · 请核对订单行</h2></div>
+      <div class="stats" id="summaryCards"></div>
+      <div class="po-grid" id="poCards"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>识别明细</h2><span class="hint">点列标题可编辑该列处理规则；单元格悬停可看原始值</span></div>
+      <div class="table-wrap">
+        <table class="results">
+          <thead id="resultHead"></thead>
+          <tbody id="resultBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <div class="toast" id="toast"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="assets/js/transforms.js"></script>
+  <script src="assets/js/parser.js"></script>
+  <script src="assets/js/app.js"></script>
+</body>
+</html>
