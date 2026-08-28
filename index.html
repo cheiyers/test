@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>通力采购订单批量识别</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/css/app.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <div>
+        <h1>通力采购订单批量识别</h1>
+        <p>针对 KONE Purchase Order PDF：按「每一行订单」识别物料、数量、价格、销售订单号、项目号，以及行内规格 / BOM 子件。可自定义关键字，把你关心的字段抽成独立列并导出。</p>
+      </div>
+      <span class="tag" id="sourceTag">示例文档（已预识别）</span>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="panel">
+      <div class="panel-head">
+        <h2>文档结构（基于三份样张）</h2>
+        <button class="ghost" id="toggleStructure" type="button">收起</button>
+      </div>
+      <div class="anatomy structure-body" id="structureBody">
+        <div class="po-sketch" aria-hidden="true">
+          <div class="top">
+            <div class="box navy">KONE Elevators Co. Ltd. · Purchase order · No. 4801xxxxxxx</div>
+            <div class="box">页码 · 版本 · 日期 / 打印日</div>
+            <div class="box">Seller/Vendor 供应商<br/>苏州海联成套电器设备有限公司</div>
+            <div class="box">Buyer 通力电梯 · Invoicing · 联系人 / 供应商号</div>
+            <div class="box">Delivery address 送货仓</div>
+            <div class="box gold">Terms of payment · CURRENCY · TOTAL AMOUNT</div>
+          </div>
+          <div class="rowline">
+            <div class="cell">Pos.</div><div class="cell">Material</div><div class="cell">Arr.date</div>
+            <div class="cell">Qty</div><div class="cell">Price</div><div class="cell">Amount</div>
+          </div>
+          <div class="box">10 KM…… &nbsp; 物料描述 / 1 PC<br/>Sales order ref. · Project ref.<br/>规格参数（轿内净高 / Wire Length …）<br/>可选 BOM：.1 0010 KM…… 1.000 PC</div>
+        </div>
+        <div>
+          <p class="notes">
+            这三份文件都是<strong>通力电梯有限公司采购订单</strong>，版式固定，真正要识别的「订单」是表格里的 <b>Pos 行</b>，不是整份 PDF 算一张单。
+          </p>
+          <p class="notes">
+            <b>1. 抬头</b>：PO 号、供应商、买方、送货地址、订单日期、账期、币种、总金额。<br/>
+            <b>2. 订单行（主识别对象）</b>：Pos / 物料号 / 到货日 / 数量 / 单价 / 金额 / 中英文描述 / Sales order ref. / Project ref. / 发货说明。<br/>
+            <b>3. 行内规格</b>：例如轿厢尺寸、吊顶材料、额定载重、Wire Length，左右分栏。<br/>
+            <b>4. BOM 子件</b>（电气类物料常见）：<code>.1 0010 KM52255244V000 1.000 PC</code> 这种下层零件清单。<br/>
+            <b>5. 页脚条款</b>与签核栏每页重复，不作为订单行。
+          </p>
+          <p class="notes">
+            样张差异：4801006558 / 4801007230 是轿厢 <b>LED STRIP</b> 小单（各 4 行，合计 RMB 401.08）；4801169630 是主开关 + 井道照明电缆大单（254 行 / 117 页，合计 RMB 51,928.13）。下面表格就是按这个理解抽出来的结果，请先核对是否就是你要的内容。
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>批量导入</h2></div>
+      <div class="toolbar">
+        <div>
+          <div class="dropzone" id="dropzone">
+            <strong>拖入多个 KONE PO PDF，或点击选择</strong>
+            <span>浏览器本地识别，文件不会上传到服务器</span>
+          </div>
+          <input id="fileInput" type="file" accept="application/pdf" multiple hidden />
+          <div class="actions">
+            <button class="primary" id="loadDemo" type="button">查看三份样张识别结果</button>
+            <button class="warn" id="parseSamples" type="button">用浏览器重新解析样张 PDF</button>
+          </div>
+          <div id="progressWrap" hidden>
+            <div class="progress"><div id="progressBar"></div></div>
+            <div id="progressLabel"></div>
+          </div>
+        </div>
+        <div>
+          <p class="hint" style="margin-top:0">自定义提取关键字：匹配规格参数名称，抽成表格新列。过滤关键字只显示包含该词的行。</p>
+          <div class="actions">
+            <input id="keywordInput" type="text" placeholder="例如：轿内净高 或 Wire Length" />
+            <button class="secondary" id="addKeyword" type="button">添加提取关键字</button>
+          </div>
+          <div class="chips" id="keywordChips"></div>
+          <div class="actions" style="margin-top:10px">
+            <input id="filterInput" type="text" placeholder="过滤：物料 / 项目号 / 描述…" />
+          </div>
+          <div class="suggests" id="suggestedKeys"></div>
+          <div class="actions">
+            <button class="primary" id="btnXlsx" type="button">导出 Excel</button>
+            <button class="secondary" id="btnCsv" type="button">导出 CSV</button>
+            <button class="warn" id="btnJson" type="button">导出 JSON</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>识别结果 · 请核对订单行</h2></div>
+      <div class="stats" id="summaryCards"></div>
+      <div class="po-grid" id="poCards"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>每一行订单</h2><span class="hint">点 + 可展开规格参数和 BOM 子件</span></div>
+      <div class="table-wrap">
+        <table class="results">
+          <thead id="resultHead"></thead>
+          <tbody id="resultBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <div class="toast" id="toast"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="assets/js/parser.js"></script>
+  <script src="assets/js/app.js"></script>
+</body>
+</html>
