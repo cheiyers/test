@@ -4,6 +4,8 @@
   const MONEY_RE = /^\d+\.\d{2}$/;
   const QTY_RE = /^\d+$/;
   const UNIT_PRICE_RE = /^(\S+)\s+(\d+\.\d{2}\/\d+)$/;
+  const PRICE_ONLY_RE = /^\d+\.\d{2}(?:\/\d+)?$/;
+  const UNIT_LIKE_RE = /^(件|个|套|台|只|米|KG|kg|PC|PCE|EA|SET)$/i;
   const KV_RE = /^([^:：]{1,20})[:：]\s*(.*)$/;
   const KEYWORD_LABELS = [
     "图号/版本",
@@ -109,10 +111,66 @@
   }
 
   function parseUnitPrice(text) {
-    const m = String(text || "")
-      .trim()
-      .match(UNIT_PRICE_RE);
-    return m ? { unit: m[1], price: m[2] } : { unit: "", price: "" };
+    const raw = String(text || "").trim();
+    const m = raw.match(UNIT_PRICE_RE);
+    if (m) return { unit: m[1], price: m[2] };
+    if (PRICE_ONLY_RE.test(raw)) return { unit: "", price: raw };
+    return { unit: "", price: "" };
+  }
+
+  function fillQtyUnitPrice(item, spans) {
+    const qtySpan = spans.filter(function (s) {
+      return QTY_RE.test(s.text) && s.x >= 160 && s.x < 210;
+    })[0];
+    const amountSpan = spans.filter(function (s) {
+      return MONEY_RE.test(s.text) && s.x >= 350;
+    })[0];
+    if (!qtySpan || !amountSpan) return false;
+    if (item.qty) return true;
+    item.qty = qtySpan.text;
+    item.amount = amountSpan.text;
+    const combined = spans.filter(function (s) {
+      return UNIT_PRICE_RE.test(s.text);
+    })[0];
+    if (combined) {
+      const up = parseUnitPrice(combined.text);
+      item.unit = up.unit;
+      item.unitPrice = up.price;
+      return true;
+    }
+    const unitSpan = spans.filter(function (s) {
+      return s.x >= 200 && s.x < 280 && (UNIT_LIKE_RE.test(s.text) || (!PRICE_ONLY_RE.test(s.text) && !QTY_RE.test(s.text)));
+    })[0];
+    const priceSpan = spans.filter(function (s) {
+      return PRICE_ONLY_RE.test(s.text) && s.x >= 250 && s.x < 360;
+    })[0];
+    if (unitSpan) item.unit = unitSpan.text;
+    if (priceSpan) item.unitPrice = priceSpan.text;
+    return true;
+  }
+
+  function fillKvFields(item, spans) {
+    let found = false;
+    spans.forEach(function (s, i) {
+      const m = String(s.text).match(KV_RE);
+      let key = "";
+      let val = "";
+      if (m && m[2] && m[2].trim()) {
+        key = m[1].trim();
+        val = m[2].trim();
+      } else if (/[:：]\s*$/.test(s.text)) {
+        key = s.text.replace(/[:：]\s*$/, "").trim();
+        const nxt = spans.slice(i + 1).filter(function (t) {
+          return t.x >= s.x && !/[:：]\s*$/.test(t.text);
+        })[0];
+        if (key && nxt) val = nxt.text.trim();
+      }
+      if (!key || !val) return;
+      found = true;
+      item.extras[key] = val;
+      if (KEYWORD_MAP[key]) item[KEYWORD_MAP[key]] = val;
+    });
+    return found;
   }
 
   function parseHeader(rows) {
@@ -298,39 +356,8 @@
       }
       if (!current) return;
 
-      const qtySpan = spans.filter(function (s) {
-        return QTY_RE.test(s.text) && s.x >= 160 && s.x < 210;
-      })[0];
-      const priceSpan = spans.filter(function (s) {
-        return UNIT_PRICE_RE.test(s.text) || (s.x >= 220 && s.x < 350 && s.text.indexOf("/") >= 0);
-      })[0];
-      const amountSpan = spans.filter(function (s) {
-        return MONEY_RE.test(s.text) && s.x >= 350;
-      })[0];
-      if (qtySpan && amountSpan) {
-        if (!current.qty) {
-          current.qty = qtySpan.text;
-          if (priceSpan) {
-            const up = parseUnitPrice(priceSpan.text);
-            current.unit = up.unit;
-            current.unitPrice = up.price;
-          }
-          current.amount = amountSpan.text;
-        }
-        return;
-      }
-
-      let kvFound = false;
-      spans.forEach(function (s) {
-        const m = String(s.text).match(KV_RE);
-        if (!m) return;
-        kvFound = true;
-        const key = m[1].trim();
-        const val = m[2].trim();
-        current.extras[key] = val;
-        if (KEYWORD_MAP[key]) current[KEYWORD_MAP[key]] = val;
-      });
-      if (kvFound) return;
+      if (fillQtyUnitPrice(current, spans)) return;
+      if (fillKvFields(current, spans)) return;
       if (spans[0].x >= 200) {
         const extra = spans
           .map(function (s) {

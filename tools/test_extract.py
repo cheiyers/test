@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
-from extract_po import parse_pdf  # noqa: E402
+from extract_po import fill_qty_unit_price, parse_pdf  # noqa: E402
 
 SAMPLES = ROOT / "samples"
 
@@ -155,6 +155,24 @@ def main() -> int:
                 errors.append(f"{name} item1 颜色 {extras1.get('颜色')!r}")
             if extras1.get("表面处理") != "喷塑":
                 errors.append(f"{name} item1 表面处理 {extras1.get('表面处理')!r}")
+    split_item = {
+        "qty": "",
+        "unit": "",
+        "unitPrice": "",
+        "amount": "",
+    }
+    fill_qty_unit_price(
+        split_item,
+        [
+            {"text": "5", "x": 179.2},
+            {"text": "件", "x": 226.8},
+            {"text": "93.50/1", "x": 287.6},
+            {"text": "467.50", "x": 367.6},
+        ],
+    )
+    if split_item["unit"] != "件" or split_item["unitPrice"] != "93.50/1":
+        errors.append(f"split unit/price {split_item}")
+
     if errors:
         print("FAIL")
         for e in errors:

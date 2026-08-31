@@ -15,6 +15,8 @@ PO_GROUP_RE = re.compile(r"^(\d{10})/(\S+)$")
 MONEY_RE = re.compile(r"^\d+\.\d{2}$")
 QTY_RE = re.compile(r"^\d+$")
 UNIT_PRICE_RE = re.compile(r"^(\S+)\s+(\d+\.\d{2}/\d+)$")
+PRICE_ONLY_RE = re.compile(r"^\d+\.\d{2}(?:/\d+)?$")
+UNIT_LIKE_RE = re.compile(r"^(件|个|套|台|只|米|KG|kg|PC|PCE|EA|SET)$", re.I)
 KV_RE = re.compile(r"^([^:：]{1,20})[:：]\s*(.*)$")
 KEYWORD_LABELS = (
     "图号/版本",
@@ -132,10 +134,74 @@ def value_after_label(
 
 
 def parse_unit_price(text: str) -> tuple[str, str]:
-    m = UNIT_PRICE_RE.match(text.strip())
+    raw = text.strip()
+    m = UNIT_PRICE_RE.match(raw)
     if m:
         return m.group(1), m.group(2)
+    if PRICE_ONLY_RE.match(raw):
+        return "", raw
     return "", ""
+
+
+def fill_qty_unit_price(item: dict, spans: list[dict]) -> bool:
+    """Fill qty / unit / unitPrice / amount. Handles '件 93.50/1' in one span or split words."""
+    qty_span = next((s for s in spans if QTY_RE.match(s["text"]) and 160 <= s["x"] < 210), None)
+    amount_span = next((s for s in spans if MONEY_RE.match(s["text"]) and s["x"] >= 350), None)
+    if not qty_span or not amount_span:
+        return False
+    if item.get("qty"):
+        return True
+    item["qty"] = qty_span["text"]
+    item["amount"] = amount_span["text"]
+
+    combined = next((s for s in spans if UNIT_PRICE_RE.match(s["text"])), None)
+    if combined:
+        unit, price = parse_unit_price(combined["text"])
+        item["unit"] = unit
+        item["unitPrice"] = price
+        return True
+
+    unit_span = next(
+        (
+            s
+            for s in spans
+            if 200 <= s["x"] < 280
+            and (UNIT_LIKE_RE.match(s["text"]) or (not PRICE_ONLY_RE.match(s["text"]) and not QTY_RE.match(s["text"])))
+        ),
+        None,
+    )
+    price_span = next(
+        (s for s in spans if PRICE_ONLY_RE.match(s["text"]) and 250 <= s["x"] < 360),
+        None,
+    )
+    if unit_span:
+        item["unit"] = unit_span["text"]
+    if price_span:
+        item["unitPrice"] = price_span["text"]
+    return True
+
+
+def fill_kv_fields(item: dict, spans: list[dict]) -> bool:
+    """Accept '图号/版本: Z1' or split '图号/版本:' + 'Z1'."""
+    found = False
+    for i, s in enumerate(spans):
+        m = KV_RE.match(s["text"])
+        if m and m.group(2).strip():
+            found = True
+            key, val = m.group(1).strip(), m.group(2).strip()
+        elif s["text"].endswith(":") or s["text"].endswith("："):
+            key = s["text"].rstrip(":：").strip()
+            nxt = next((t for t in spans[i + 1 :] if t["x"] >= s["x"] and not t["text"].endswith((":", "："))), None)
+            if not key or not nxt:
+                continue
+            found = True
+            val = nxt["text"].strip()
+        else:
+            continue
+        item["extras"][key] = val
+        if key in KEYWORD_MAP:
+            item[KEYWORD_MAP[key]] = val
+    return found
 
 
 LEFT = (0, 280)
@@ -330,33 +396,10 @@ def parse_line_items(rows: list[dict], header: dict) -> list[dict]:
             continue
 
         # qty / unit+price / amount row (appears twice: under the item, and as a subtotal)
-        qty_span = next((s for s in spans if QTY_RE.match(s["text"]) and 160 <= s["x"] < 210), None)
-        price_span = next((s for s in spans if UNIT_PRICE_RE.match(s["text"]) or (s["x"] >= 220 and s["x"] < 350 and "/" in s["text"])), None)
-        amount_span = next((s for s in spans if MONEY_RE.match(s["text"]) and s["x"] >= 350), None)
-        if qty_span and amount_span:
-            if not current["qty"]:
-                current["qty"] = qty_span["text"]
-                if price_span:
-                    unit, price = parse_unit_price(price_span["text"])
-                    current["unit"] = unit
-                    current["unitPrice"] = price
-                current["amount"] = amount_span["text"]
-            else:
-                seen_repeat = True
+        if fill_qty_unit_price(current, spans):
             continue
 
-        # key-value extra fields under the item (including newly added labels)
-        kv_found = False
-        for s in spans:
-            m = KV_RE.match(s["text"])
-            if not m:
-                continue
-            kv_found = True
-            key, val = m.group(1).strip(), m.group(2).strip()
-            current["extras"][key] = val
-            if key in KEYWORD_MAP:
-                current[KEYWORD_MAP[key]] = val
-        if kv_found:
+        if fill_kv_fields(current, spans):
             continue
 
         # wrapped description / second visual line of the same item

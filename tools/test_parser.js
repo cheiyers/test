@@ -62,4 +62,51 @@ if (doc.header.poNumber !== "4551750099") {
   console.error("po", doc.header);
   process.exit(1);
 }
-console.log("OK parser two-line + new fields");
+if (doc.items[0].unit !== "件" || doc.items[0].unitPrice !== "93.50/1") {
+  console.error("combined unit/price", doc.items[0]);
+  process.exit(1);
+}
+
+const splitWords = [
+  w(42.5, 31.4, "迅达(中国）电梯有限公司"),
+  w(42.5, 95.1, "采购订单"),
+  w(42.5, 126.7, "采购订单号/采购组:"),
+  w(136.1, 126.7, "4551750005/T0M"),
+  w(283.5, 386.8, "交货日期: 2026/09/09"),
+  w(42.5, 483.8, "行项目"),
+  w(85.0, 483.8, "物料号"),
+  w(42.5, 513.8, "00010"),
+  w(85.0, 513.8, "57668963"),
+  w(170.1, 513.8, "XH"),
+  w(240.9, 513.8, "Round"),
+  w(271.0, 513.8, "spot"),
+  w(296.0, 513.8, "4LED照明"),
+  w(179.2, 525.8, "5"),
+  w(226.8, 525.8, "件"),
+  w(287.6, 525.8, "93.50/1"),
+  w(367.6, 525.8, "467.50"),
+  w(42.5, 537.8, "图号/版本:"),
+  w(97.5, 537.8, "Z57668961+0+000"),
+  w(179.3, 639.8, "不含增值税总价"),
+  w(254.3, 639.8, "CNY"),
+  w(367.6, 639.8, "467.50"),
+];
+const splitDoc = parser.parseDocument("PO_4551750005.pdf", [{ words: splitWords }]);
+const it = splitDoc.items[0];
+if (!it) {
+  console.error("split parse missing item", splitDoc);
+  process.exit(1);
+}
+if (it.unit !== "件" || it.unitPrice !== "93.50/1") {
+  console.error("split unit/price", it);
+  process.exit(1);
+}
+if (it.qty !== "5" || it.amount !== "467.50") {
+  console.error("split qty/amount", it);
+  process.exit(1);
+}
+if (it.drawingRev !== "Z57668961+0+000" && it.extras["图号/版本"] !== "Z57668961+0+000") {
+  console.error("split drawing", it);
+  process.exit(1);
+}
+console.log("OK parser two-line + split unit/price");
