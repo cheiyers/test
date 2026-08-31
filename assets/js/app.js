@@ -712,20 +712,15 @@
         openColFormat(head.dataset.colId);
       }
     });
-    document.addEventListener("pointerdown", function (ev) {
-      const grip = ev.target.closest && ev.target.closest(".col-drag");
-      if (!grip || !$("outputTable").contains(grip)) return;
+    function beginColDrag(ev, grip) {
       const th = grip.closest("th.col-head");
       if (!th || !th.dataset.colId) return;
       state.dragColId = th.dataset.colId;
       state.dropBeforeId = undefined;
       state.dragActive = false;
       state.dragStartX = ev.clientX;
-      try {
-        grip.setPointerCapture(ev.pointerId);
-      } catch (err) {}
-    });
-    document.addEventListener("pointermove", function (ev) {
+    }
+    function moveColDrag(ev) {
       if (!state.dragColId) return;
       if (!state.dragActive && Math.abs(ev.clientX - state.dragStartX) > 6) {
         state.dragActive = true;
@@ -753,7 +748,7 @@
         const target = $("outputTable").querySelector('th.col-head[data-col-id="' + beforeId + '"]');
         if (target) target.classList.add("drop-before");
       }
-    });
+    }
     function finishColDrag(ev) {
       const draggedId = state.dragColId;
       const wasActive = state.dragActive;
@@ -773,6 +768,15 @@
       if (!canDrop) return;
       applyColumnOrder(F.reorderColumns(state.columns, draggedId, beforeId));
     }
+    document.addEventListener("pointerdown", function (ev) {
+      const grip = ev.target.closest && ev.target.closest(".col-drag");
+      if (!grip || !$("outputTable").contains(grip)) return;
+      beginColDrag(ev, grip);
+      try {
+        grip.setPointerCapture(ev.pointerId);
+      } catch (err) {}
+    });
+    document.addEventListener("pointermove", moveColDrag);
     document.addEventListener("pointerup", finishColDrag);
     document.addEventListener("pointercancel", function () {
       state.dragColId = null;
@@ -780,6 +784,14 @@
       state.dropBeforeId = undefined;
       clearDropMarks();
     });
+    document.addEventListener("mousedown", function (ev) {
+      if (ev.button !== 0) return;
+      const grip = ev.target.closest && ev.target.closest(".col-drag");
+      if (!grip || !$("outputTable").contains(grip)) return;
+      beginColDrag(ev, grip);
+    });
+    document.addEventListener("mousemove", moveColDrag);
+    document.addEventListener("mouseup", finishColDrag);
     $("btnSelAll").addEventListener("click", function () {
       state.selectedRows = new Set(state.rows.map(function (r) { return r.id; }));
       render();
