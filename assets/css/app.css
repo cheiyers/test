@@ -306,11 +306,15 @@ th.col-head.drop-after::after { right: 0; }
 th.col-head .col-drag {
   display: inline-block;
   margin-right: 6px;
-  padding: 0 2px;
+  padding: 2px 6px;
   cursor: grab;
-  color: #a8a29e;
-  letter-spacing: -2px;
-  font-size: 12px;
+  color: #44403c;
+  background: #e7e5e4;
+  border-radius: 4px;
+  letter-spacing: -1px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.1;
   vertical-align: middle;
 }
 th.col-head .col-drag:active { cursor: grabbing; }

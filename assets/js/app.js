@@ -361,7 +361,7 @@
       grip.className = "col-drag";
       grip.draggable = true;
       grip.title = "拖动调整列顺序";
-      grip.textContent = "⋮⋮";
+      grip.textContent = "::";
       th.appendChild(grip);
       const name = document.createElement("span");
       name.className = "col-name";
