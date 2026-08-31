@@ -1,4 +1,4 @@
-{
+window.DEMO_DATA = {
   "documents": [
     {
       "file": "PO_4551750005.pdf",
@@ -199,4 +199,4 @@
       ]
     }
   ]
-}
+};

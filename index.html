@@ -3,228 +3,100 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>迅达采购订单 · 结构分析与识别预览</title>
+  <title>迅达采购订单批量识别</title>
   <link rel="stylesheet" href="assets/css/app.css">
 </head>
 <body>
   <header class="topbar">
-    <h1>迅达采购订单识别预览</h1>
-    <p>请先核对下面抽出的订单行是否就是后续批量系统要导出的内容</p>
+    <h1>迅达采购订单批量识别</h1>
+    <p>勾选选配字段与关键字 → 选择订单行 → 改表头 / 写公式 → 导出表格</p>
   </header>
   <main>
     <div class="banner">
-      这三份都是 SAP 打印的迅达（中国）电梯采购订单（表单 ZT1_MEDRUCK ZH）。当前按「一张 PO = 抬头 + 若干行项目」识别：<strong>每份样张各抽出 1 条行项目 00010</strong>。行末重复的数量/单价/金额当作小计，没有当成第二行。
+      空着的附加字段（安装国家、运输类型、产品家族等）会留成<strong>可配置关键字</strong>，勾选才进入输出表。
+      <strong>供应商、交货地址、付款条件</strong>是选配：勾选才导出，不勾选不出现在输出表。
     </div>
 
-    <h2>1. 文档结构</h2>
-    <div class="zones">
-      <div class="zone">
-        <div class="tag">A 抬头</div>
-        <p>买方、采购订单号/采购组、凭证日期、买卖双方联系人、供应商名称与地址。</p>
+    <section class="panel">
+      <h2>1. 导入识别</h2>
+      <div class="dropzone" id="dropzone">
+        <strong>拖入多个迅达采购订单 PDF，或点击选择</strong>
+        <span>浏览器本地识别，文件不会上传到服务器</span>
       </div>
-      <div class="zone">
-        <div class="tag">B 条款与地址</div>
-        <p>开票抬头、交货地址、工厂/公司代码、付款条件、抬头交货日期、打印日期。</p>
+      <input id="fileInput" type="file" accept="application/pdf" multiple hidden>
+      <div class="actions" style="margin-top:10px">
+        <button type="button" id="btnDemo">加载三份样张</button>
+        <button type="button" class="ghost" id="btnToggleDocs">显示/隐藏原件对照</button>
       </div>
-      <div class="zone">
-        <div class="tag">C 行项目表</div>
-        <p>列：行项目、物料号、物料组、物料描述；下一行是数量、单位、未税单价、未税金额。再下一块是图号等附加字段。</p>
-      </div>
-      <div class="zone">
-        <div class="tag">D 合计</div>
-        <p>重复一遍数量金额后，给出「不含增值税总价 CNY」。页脚电子签名与页码不进入订单行。</p>
-      </div>
-    </div>
-    <div class="notes">
-      <div class="note"><strong>订单行怎么切：</strong>以五位行号（00010、00020…）起一行。样张表格里的「交货日期」列是空的，日期沿用抬头「交货日期」。</div>
-      <div class="note"><strong>可自定义关键字：</strong>行下的「图号/版本」「成组技术码」「SCM大小/量纲」「安装国家」等，后续可按关键字增删导出列。空值已标成 —。</div>
-    </div>
+      <div class="hint" id="sourceHint" style="margin-top:8px"></div>
+    </section>
 
-    <h2>2. 识别出的订单行（请重点核对这一表）</h2>
-    <div class="toolbar">
-      <div class="meta" id="row-count"></div>
-      <button type="button" id="btn-csv">导出 CSV</button>
-    </div>
-    <div class="table-wrap" id="line-table"></div>
+    <section class="panel">
+      <h2>2. 导出字段与关键字</h2>
+      <p class="hint">核心订单行默认导出。选配抬头默认关闭。关键字即使为空也保留，方便以后同类订单有值时直接带出。</p>
+      <div class="choose-grid">
+        <div class="field-block">
+          <h3>订单行字段</h3>
+          <div class="field-list" id="coreFields"></div>
+        </div>
+        <div class="field-block">
+          <h3>选配抬头</h3>
+          <p class="opt-note">勾选才导出，不勾选不出现在输出表</p>
+          <div class="field-list" id="optionalFields"></div>
+        </div>
+        <div class="field-block">
+          <h3>可配置关键字</h3>
+          <div class="field-list" id="keywordFields"></div>
+          <div class="keyword-add">
+            <input id="keywordInput" type="text" placeholder="添加关键字，例如 安装国家">
+            <button type="button" class="ghost" id="btnAddKeyword">添加</button>
+          </div>
+          <div class="chips" id="customChips"></div>
+        </div>
+      </div>
+    </section>
 
-    <h2>3. 按文件对照原件</h2>
-    <div class="docs" id="docs"></div>
+    <section class="panel">
+      <div class="toolbar">
+        <h2 style="margin:0">3. 识别结果 · 勾选要输出的行</h2>
+        <div class="actions">
+          <button type="button" class="ghost" id="btnSelAll">全选行</button>
+          <button type="button" class="ghost" id="btnSelNone">全不选</button>
+          <span class="meta" id="rowCount"></span>
+        </div>
+      </div>
+      <div class="table-wrap" id="resultTable"></div>
+    </section>
+
+    <section class="panel">
+      <h2>4. 输出表格 · 改表头 / 设公式</h2>
+      <p class="hint">
+        只输出上方勾选的行。表头可直接改。公式用 <code>{字段名}</code>，以 <code>=</code> 开头计算，例如
+        <code>={数量}*2</code>、<code>=IF({数量}&gt;3,"大","小")</code>、<code>{物料描述}&amp;" / "&amp;{图号/版本}</code>。
+      </p>
+      <div class="col-editor" id="colEditor"></div>
+      <div class="actions" style="margin:12px 0">
+        <button type="button" class="ghost" id="btnAddCol">增加公式列</button>
+        <button type="button" class="ghost" id="btnResetCols">按勾选字段重建列</button>
+        <button type="button" id="btnXlsx">导出 Excel</button>
+        <button type="button" class="secondary" id="btnCsv">导出 CSV</button>
+      </div>
+      <div class="table-wrap" id="outputTable"></div>
+    </section>
+
+    <section class="panel" id="docsPanel" hidden>
+      <h2>原件对照</h2>
+      <div class="docs" id="docs"></div>
+    </section>
   </main>
-  <script type="application/json" id="demo-data">{
-  "documents": [
-    {
-      "file": "PO_4551750005.pdf",
-      "pageCount": 1,
-      "header": {
-        "buyer": "迅达(中国）电梯有限公司",
-        "docType": "采购订单",
-        "poNumber": "4551750005",
-        "purchaseGroup": "T0M",
-        "documentDate": "2026/08/31",
-        "buyerContact": "Maggie Mao",
-        "buyerPhone": "021-67095773",
-        "buyerEmail": "maggie.mao@schindler.com",
-        "supplierContact": "黄道红",
-        "supplierCode": "1372010",
-        "supplierPhone": "13812765776",
-        "supplierName": "苏州海联成套电器设备有限公司",
-        "supplierAddress": "苏州工业园区东富路9号45幢 215000 苏州",
-        "billingTitle": "公司代码 3260/JDF / 迅达（中国）电梯有限公司",
-        "deliveryAddress": "上海 嘉定区兴顺路588号",
-        "plant": "3260",
-        "companyCode": "3260",
-        "paymentTerms": "90 天之内 到期净值",
-        "incoterms": "",
-        "deliveryDate": "2026/09/09",
-        "printDate": "2026/08/31",
-        "vatTotal": "467.50",
-        "fileNo": "TE 0-92100-002",
-        "page": "1 / 1",
-        "electronicallySigned": true
-      },
-      "items": [
-        {
-          "lineNo": "00010",
-          "materialNo": "57668963",
-          "materialGroup": "XH",
-          "description": "Round spot 4LED照明",
-          "deliveryDate": "2026/09/09",
-          "qty": "5",
-          "unit": "件",
-          "unitPrice": "93.50/1",
-          "amount": "467.50",
-          "drawingRev": "Z57668961+0+000",
-          "installCountry": "",
-          "groupTechCode": "MECH",
-          "transportType": "",
-          "deFlag": "",
-          "productFamily": "",
-          "scmSize": "按照实物"
-        }
-      ],
-      "pages": [
-        {
-          "page": 1,
-          "itemCount": 1
-        }
-      ]
-    },
-    {
-      "file": "PO_4551750009.pdf",
-      "pageCount": 1,
-      "header": {
-        "buyer": "迅达(中国）电梯有限公司",
-        "docType": "采购订单",
-        "poNumber": "4551750009",
-        "purchaseGroup": "T0M",
-        "documentDate": "2026/08/31",
-        "buyerContact": "Maggie Mao",
-        "buyerPhone": "021-67095773",
-        "buyerEmail": "maggie.mao@schindler.com",
-        "supplierContact": "黄道红",
-        "supplierCode": "1372010",
-        "supplierPhone": "13812765776",
-        "supplierName": "苏州海联成套电器设备有限公司",
-        "supplierAddress": "苏州工业园区东富路9号45幢 215000 苏州",
-        "billingTitle": "公司代码 3260/JDF / 迅达（中国）电梯有限公司",
-        "deliveryAddress": "上海 嘉定区兴顺路588号",
-        "plant": "3260",
-        "companyCode": "3260",
-        "paymentTerms": "90 天之内 到期净值",
-        "incoterms": "",
-        "deliveryDate": "2026/09/15",
-        "printDate": "2026/08/31",
-        "vatTotal": "193.20",
-        "fileNo": "TE 0-92100-002",
-        "page": "1 / 1",
-        "electronicallySigned": true
-      },
-      "items": [
-        {
-          "lineNo": "00010",
-          "materialNo": "57664581",
-          "materialGroup": "XH",
-          "description": "LED方型灯",
-          "deliveryDate": "2026/09/15",
-          "qty": "4",
-          "unit": "件",
-          "unitPrice": "48.30/1",
-          "amount": "193.20",
-          "drawingRev": "E57664581+2+000/M57664581+1+000/M57664582+2+000/Q57664581+2+000",
-          "installCountry": "",
-          "groupTechCode": "MECH",
-          "transportType": "",
-          "deFlag": "",
-          "productFamily": "",
-          "scmSize": "按照实物"
-        }
-      ],
-      "pages": [
-        {
-          "page": 1,
-          "itemCount": 1
-        }
-      ]
-    },
-    {
-      "file": "PO_4551750012.pdf",
-      "pageCount": 1,
-      "header": {
-        "buyer": "迅达(中国）电梯有限公司",
-        "docType": "采购订单",
-        "poNumber": "4551750012",
-        "purchaseGroup": "T0M",
-        "documentDate": "2026/08/31",
-        "buyerContact": "Maggie Mao",
-        "buyerPhone": "021-67095773",
-        "buyerEmail": "maggie.mao@schindler.com",
-        "supplierContact": "黄道红",
-        "supplierCode": "1372010",
-        "supplierPhone": "13812765776",
-        "supplierName": "苏州海联成套电器设备有限公司",
-        "supplierAddress": "苏州工业园区东富路9号45幢 215000 苏州",
-        "billingTitle": "公司代码 3260/JDF / 迅达（中国）电梯有限公司",
-        "deliveryAddress": "上海 嘉定区兴顺路588号",
-        "plant": "3260",
-        "companyCode": "3260",
-        "paymentTerms": "90 天之内 到期净值",
-        "incoterms": "",
-        "deliveryDate": "2026/09/08",
-        "printDate": "2026/08/31",
-        "vatTotal": "187.00",
-        "fileNo": "TE 0-92100-002",
-        "page": "1 / 1",
-        "electronicallySigned": true
-      },
-      "items": [
-        {
-          "lineNo": "00010",
-          "materialNo": "57668963",
-          "materialGroup": "XH",
-          "description": "Round spot 4LED照明",
-          "deliveryDate": "2026/09/08",
-          "qty": "2",
-          "unit": "件",
-          "unitPrice": "93.50/1",
-          "amount": "187.00",
-          "drawingRev": "Z57668961+0+000",
-          "installCountry": "",
-          "groupTechCode": "MECH",
-          "transportType": "",
-          "deFlag": "",
-          "productFamily": "",
-          "scmSize": "按照实物"
-        }
-      ],
-      "pages": [
-        {
-          "page": 1,
-          "itemCount": 1
-        }
-      ]
-    }
-  ]
-}</script>
+  <div class="toast" id="toast"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="assets/js/demo-data.js"></script>
+  <script src="assets/js/formula.js"></script>
+  <script src="assets/js/fields.js"></script>
+  <script src="assets/js/parser.js"></script>
   <script src="assets/js/app.js"></script>
 </body>
 </html>

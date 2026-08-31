@@ -16,6 +16,24 @@ MONEY_RE = re.compile(r"^\d+\.\d{2}$")
 QTY_RE = re.compile(r"^\d+$")
 UNIT_PRICE_RE = re.compile(r"^(\S+)\s+(\d+\.\d{2}/\d+)$")
 KV_RE = re.compile(r"^([^:：]{1,20})[:：]\s*(.*)$")
+KEYWORD_LABELS = (
+    "图号/版本",
+    "安装国家",
+    "成组技术码",
+    "运输类型",
+    "D/E",
+    "产品家族",
+    "SCM大小/量纲",
+)
+KEYWORD_MAP = {
+    "图号/版本": "drawingRev",
+    "安装国家": "installCountry",
+    "成组技术码": "groupTechCode",
+    "运输类型": "transportType",
+    "D/E": "deFlag",
+    "产品家族": "productFamily",
+    "SCM大小/量纲": "scmSize",
+}
 SKIP_TABLE_TEXTS = {
     "行项目",
     "物料号",
@@ -260,6 +278,7 @@ def parse_line_items(rows: list[dict], header: dict) -> list[dict]:
     seen_repeat = False
 
     def new_item(line_no: str) -> dict:
+        extras = {label: "" for label in KEYWORD_LABELS}
         return {
             "lineNo": line_no,
             "materialNo": "",
@@ -277,6 +296,7 @@ def parse_line_items(rows: list[dict], header: dict) -> list[dict]:
             "deFlag": "",
             "productFamily": "",
             "scmSize": "",
+            "extras": extras,
         }
 
     for row in body:
@@ -324,17 +344,9 @@ def parse_line_items(rows: list[dict], header: dict) -> list[dict]:
             if not m:
                 continue
             key, val = m.group(1).strip(), m.group(2).strip()
-            mapping = {
-                "图号/版本": "drawingRev",
-                "安装国家": "installCountry",
-                "成组技术码": "groupTechCode",
-                "运输类型": "transportType",
-                "D/E": "deFlag",
-                "产品家族": "productFamily",
-                "SCM大小/量纲": "scmSize",
-            }
-            if key in mapping:
-                current[mapping[key]] = val
+            current["extras"][key] = val
+            if key in KEYWORD_MAP:
+                current[KEYWORD_MAP[key]] = val
 
     if current:
         items.append(current)

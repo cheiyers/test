@@ -35,6 +35,10 @@ EXPECTED = {
                 "drawingRev": "Z57668961+0+000",
                 "groupTechCode": "MECH",
                 "scmSize": "按照实物",
+                "installCountry": "",
+                "transportType": "",
+                "deFlag": "",
+                "productFamily": "",
             }
         ],
     },
@@ -105,6 +109,19 @@ def main() -> int:
         total = float(doc["header"]["vatTotal"])
         if abs(amount_sum - total) > 0.001:
             errors.append(f"{name} amount sum {amount_sum} != vatTotal {total}")
+        for item in doc["items"]:
+            extras = item.get("extras") or {}
+            for key in (
+                "图号/版本",
+                "安装国家",
+                "成组技术码",
+                "运输类型",
+                "D/E",
+                "产品家族",
+                "SCM大小/量纲",
+            ):
+                if key not in extras:
+                    errors.append(f"{name} missing extras[{key}]")
     if errors:
         print("FAIL")
         for e in errors:
