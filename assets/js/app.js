@@ -6,6 +6,9 @@
     pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_BASE + "build/pdf.worker.min.js";
   }
 
+  const PREFS_KEY = "schindler-po-export-v3";
+  const SCHEMES_KEY = "schindler-po-schemes-v1";
+
   const state = {
     docs: [],
     rows: [],
@@ -14,6 +17,8 @@
     selectedRows: new Set(),
     columns: [],
     source: "",
+    schemes: [],
+    editingColId: null,
   };
 
   const $ = function (id) {
@@ -30,39 +35,61 @@
     }, 2400);
   }
 
+  function applyNormalized(norm) {
+    state.extraKeywords = norm.extraKeywords;
+    state.selectedFields = new Set(norm.selectedFields);
+  }
+
   function loadPrefs() {
     try {
+      const fromV3 = localStorage.getItem(PREFS_KEY);
       const fromV2 = localStorage.getItem("schindler-po-export-v2");
-      const raw = fromV2 || localStorage.getItem("schindler-po-export-v1");
-      if (!raw) return;
-      const p = JSON.parse(raw);
-      if (Array.isArray(p.selectedFields)) state.selectedFields = new Set(p.selectedFields);
-      if (Array.isArray(p.extraKeywords)) state.extraKeywords = p.extraKeywords;
-      if (Array.isArray(p.columns)) state.columns = p.columns;
-      if (!fromV2) state.selectedFields.add("documentDate");
+      const raw = fromV3 || fromV2 || localStorage.getItem("schindler-po-export-v1");
+      if (raw) {
+        const p = JSON.parse(raw);
+        if (Array.isArray(p.selectedFields)) state.selectedFields = new Set(p.selectedFields);
+        if (Array.isArray(p.extraKeywords)) state.extraKeywords = p.extraKeywords;
+        if (Array.isArray(p.columns)) state.columns = p.columns;
+        if (!fromV3 && !fromV2) state.selectedFields.add("documentDate");
+      }
+      const schemeRaw = localStorage.getItem(SCHEMES_KEY);
+      if (schemeRaw) {
+        const list = JSON.parse(schemeRaw);
+        if (Array.isArray(list)) state.schemes = list.filter(function (s) { return s && s.name; });
+      }
     } catch (e) {}
+    applyNormalized(
+      F.normalizeKeywordsAndSelection(state.extraKeywords, Array.from(state.selectedFields))
+    );
   }
 
   function savePrefs() {
     localStorage.setItem(
-      "schindler-po-export-v2",
+      PREFS_KEY,
       JSON.stringify({
         selectedFields: Array.from(state.selectedFields),
         extraKeywords: state.extraKeywords,
         columns: state.columns,
       })
     );
+    localStorage.setItem(SCHEMES_KEY, JSON.stringify(state.schemes));
   }
 
-  function mergeDiscoveredKeywords() {
+  function mergeDiscoveredKeywords(autoSelect) {
     const discovered = F.discoverExtraKeywords(state.rows);
-    state.extraKeywords = state.extraKeywords.filter(function (k) {
+    const kept = state.extraKeywords.filter(function (k) {
       return !k.discovered;
     });
-    discovered.forEach(function (k) {
-      state.extraKeywords.push(k);
-      state.selectedFields.add(k.id);
+    const keptLabels = {};
+    kept.forEach(function (k) {
+      keptLabels[k.label] = true;
     });
+    discovered.forEach(function (k) {
+      if (keptLabels[k.label]) return;
+      kept.push(k);
+      if (autoSelect !== false) state.selectedFields.add(k.id);
+    });
+    applyNormalized(F.normalizeKeywordsAndSelection(kept, Array.from(state.selectedFields)));
   }
 
   function setDocs(docs, source) {
@@ -75,7 +102,7 @@
         return r.id;
       })
     );
-    mergeDiscoveredKeywords();
+    mergeDiscoveredKeywords(true);
     const keep = sourceChanged ? [] : state.columns;
     state.columns = F.syncOutputColumns(keep, Array.from(state.selectedFields), state.extraKeywords);
   }
@@ -84,6 +111,14 @@
     return state.rows.filter(function (r) {
       return state.selectedRows.has(r.id);
     });
+  }
+
+  function recognizedSample(field) {
+    for (let i = 0; i < state.rows.length; i++) {
+      const v = F.fieldValue(state.rows[i], field);
+      if (v) return v;
+    }
+    return "";
   }
 
   function renderFieldGroup(el, fields, noteEmpty) {
@@ -99,7 +134,7 @@
       span.textContent = field.label;
       if (noteEmpty) {
         const filled = state.rows.some(function (r) {
-          return r[field.id] || (r.extras && r.extras[field.label]);
+          return F.fieldValue(r, field);
         });
         if (!filled) span.textContent += "（样张为空，仍可导出）";
       }
@@ -124,6 +159,23 @@
     });
   }
 
+  function renderSchemeSelect() {
+    const sel = $("schemeSelect");
+    const current = sel.value;
+    sel.innerHTML = "";
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = state.schemes.length ? "选择已存方案" : "暂无已存方案";
+    sel.appendChild(placeholder);
+    state.schemes.forEach(function (s, i) {
+      const opt = document.createElement("option");
+      opt.value = String(i);
+      opt.textContent = s.name;
+      sel.appendChild(opt);
+    });
+    if (current && Number(current) < state.schemes.length) sel.value = current;
+  }
+
   function renderFields() {
     renderFieldGroup($("coreFields"), F.CORE_FIELDS, false);
     renderFieldGroup($("optionalFields"), F.OPTIONAL_FIELDS, false);
@@ -141,6 +193,7 @@
       $("keywordFields").appendChild(label);
     });
     renderCustomChips();
+    renderSchemeSelect();
   }
 
   function resultColumns() {
@@ -149,12 +202,6 @@
         return { id: k.id, label: k.label };
       })
     );
-  }
-
-  function cellText(row, field) {
-    if (row[field.id] != null && row[field.id] !== "") return String(row[field.id]);
-    if (row.extras && row.extras[field.label]) return String(row.extras[field.label]);
-    return "";
   }
 
   function renderResultTable() {
@@ -183,12 +230,12 @@
       tr.appendChild(td0);
       cols.forEach(function (c) {
         const td = document.createElement("td");
-        const v = cellText(row, c);
+        const v = F.fieldValue(row, c);
         if (!v) {
           td.className = "empty";
           td.textContent = "—";
         } else {
-          if (["qty", "unitPrice", "amount", "poNumber", "lineNo", "materialNo"].indexOf(c.id) >= 0) {
+          if (["qty", "unitPrice", "amount", "poNumber", "lineNo", "materialNo", "companyCode"].indexOf(c.id) >= 0) {
             td.className = "num";
           }
           if (["description", "drawingRev", "supplierName", "deliveryAddress"].indexOf(c.id) >= 0) {
@@ -216,32 +263,44 @@
             : "";
   }
 
-  function renderColEditor() {
-    const box = $("colEditor");
-    box.innerHTML = "";
-    state.columns.forEach(function (col, i) {
-      const row = document.createElement("div");
-      row.className = "col-row";
-      const header = document.createElement("input");
-      header.type = "text";
-      header.value = col.header;
-      header.placeholder = "表头";
-      header.dataset.colHeader = String(i);
-      const formula = document.createElement("input");
-      formula.type = "text";
-      formula.value = col.formula;
-      formula.placeholder = "{物料号} 或 ={数量}*2";
-      formula.dataset.colFormula = String(i);
-      const del = document.createElement("button");
-      del.type = "button";
-      del.className = "ghost";
-      del.textContent = "删除";
-      del.dataset.colDel = String(i);
-      row.appendChild(header);
-      row.appendChild(formula);
-      row.appendChild(del);
-      box.appendChild(row);
-    });
+  function editingColumn() {
+    if (!state.editingColId) return null;
+    return state.columns.find(function (c) {
+      return c.id === state.editingColId;
+    }) || null;
+  }
+
+  function syncFormatBar() {
+    const bar = $("colFormatBar");
+    const col = editingColumn();
+    if (!col) {
+      bar.hidden = true;
+      return;
+    }
+    bar.hidden = false;
+    $("colFormatWhich").textContent = col.header || "未命名列";
+    if (document.activeElement !== $("colFormatHeader")) $("colFormatHeader").value = col.header;
+    if (document.activeElement !== $("colFormatFormula")) $("colFormatFormula").value = col.formula;
+  }
+
+  function openColFormat(colId, focusFormula) {
+    state.editingColId = colId;
+    const col = editingColumn();
+    if (!col) return;
+    $("colFormatBar").hidden = false;
+    $("colFormatWhich").textContent = col.header || "未命名列";
+    $("colFormatHeader").value = col.header;
+    $("colFormatFormula").value = col.formula;
+    renderOutputTable();
+    const input = focusFormula === false ? $("colFormatHeader") : $("colFormatFormula");
+    input.focus();
+    input.select();
+  }
+
+  function closeColFormat() {
+    state.editingColId = null;
+    $("colFormatBar").hidden = true;
+    renderOutputTable();
   }
 
   function renderOutputTable() {
@@ -251,7 +310,16 @@
     const hr = document.createElement("tr");
     state.columns.forEach(function (col) {
       const th = document.createElement("th");
-      th.textContent = col.header || "";
+      th.className = "col-head" + (col.id === state.editingColId ? " editing" : "");
+      th.dataset.colId = col.id;
+      th.title = "点击设置列名和输出格式";
+      const name = document.createElement("span");
+      name.textContent = col.header || "（空列名）";
+      th.appendChild(name);
+      const hint = document.createElement("span");
+      hint.className = "edit-hint";
+      hint.textContent = col.id === state.editingColId ? "编辑中" : "点击编辑";
+      th.appendChild(hint);
       hr.appendChild(th);
     });
     thead.appendChild(hr);
@@ -276,6 +344,7 @@
     table.appendChild(tbody);
     $("outputTable").innerHTML = "";
     $("outputTable").appendChild(table);
+    syncFormatBar();
   }
 
   function renderDocs() {
@@ -312,6 +381,8 @@
         ["交货地址", doc.header.deliveryAddress],
         ["付款条件", doc.header.paymentTerms],
         ["交货日期", doc.header.deliveryDate],
+        ["公司代码", doc.header.companyCode],
+        ["工厂", doc.header.plant],
       ].forEach(function (pair) {
         const dt = document.createElement("dt");
         dt.textContent = pair[0];
@@ -327,7 +398,6 @@
   function render() {
     renderFields();
     renderResultTable();
-    renderColEditor();
     renderOutputTable();
     renderDocs();
     savePrefs();
@@ -335,6 +405,70 @@
 
   function syncColumnsFromFields() {
     state.columns = F.syncOutputColumns(state.columns, Array.from(state.selectedFields), state.extraKeywords);
+  }
+
+  function saveScheme() {
+    const name = String($("schemeName").value || "").trim();
+    if (!name) {
+      toast("请输入方案名称");
+      $("schemeName").focus();
+      return;
+    }
+    const snap = F.captureScheme(
+      name,
+      Array.from(state.selectedFields),
+      state.extraKeywords,
+      state.columns
+    );
+    const idx = state.schemes.findIndex(function (s) {
+      return s.name === name;
+    });
+    if (idx >= 0) state.schemes[idx] = snap;
+    else state.schemes.push(snap);
+    renderSchemeSelect();
+    $("schemeSelect").value = String(idx >= 0 ? idx : state.schemes.length - 1);
+    savePrefs();
+    toast(idx >= 0 ? "已更新方案「" + name + "」" : "已保存方案「" + name + "」");
+  }
+
+  function applyScheme() {
+    const idx = Number($("schemeSelect").value);
+    const scheme = state.schemes[idx];
+    if (!scheme) {
+      toast("请先选择方案");
+      return;
+    }
+    const snap = F.cloneScheme(scheme);
+    applyNormalized(
+      F.normalizeKeywordsAndSelection(snap.extraKeywords, snap.selectedFields)
+    );
+    mergeDiscoveredKeywords(false);
+    state.columns = (snap.columns || []).map(function (c) {
+      return {
+        id: c.id,
+        sourceId: c.sourceId || "",
+        header: c.header || "",
+        formula: c.formula || "",
+      };
+    });
+    state.columns = F.syncOutputColumns(state.columns, Array.from(state.selectedFields), state.extraKeywords);
+    $("schemeName").value = snap.name;
+    closeColFormat();
+    render();
+    toast("已应用方案「" + snap.name + "」");
+  }
+
+  function deleteScheme() {
+    const idx = Number($("schemeSelect").value);
+    const scheme = state.schemes[idx];
+    if (!scheme) {
+      toast("请先选择要删除的方案");
+      return;
+    }
+    state.schemes.splice(idx, 1);
+    renderSchemeSelect();
+    savePrefs();
+    toast("已删除方案「" + scheme.name + "」");
   }
 
   function exportMatrix() {
@@ -361,7 +495,7 @@
     const text = "\ufeff" + matrix.map(function (r) {
       return r.map(csvEscape).join(",");
     }).join("\n");
-    downloadBlob(new Blob([text], { type: "text/csv;charset=utf-8" }), "schindler-po.xlsx".replace(".xlsx", ".csv"));
+    downloadBlob(new Blob([text], { type: "text/csv;charset=utf-8" }), "schindler-po.csv");
     toast("已导出 CSV（" + (matrix.length - 1) + " 行）");
   }
 
@@ -438,23 +572,33 @@
   }
 
   function addKeyword(raw) {
-    const label = String(raw || "").trim();
-    if (!label) return;
-    const builtin = F.ALL_BUILTIN.find(function (f) {
-      return f.label === label || f.id === label;
-    });
-    if (builtin) {
-      state.selectedFields.add(builtin.id);
+    const field = F.resolveKeyword(raw);
+    if (!field) return;
+    if (F.isBuiltinId(field.id)) {
+      state.selectedFields.add(field.id);
       syncColumnsFromFields();
       render();
+      const sample = recognizedSample(field);
+      toast(sample ? "已勾选「" + field.label + "」： " + sample : "已勾选「" + field.label + "」，当前单据无值");
       return;
     }
-    if (state.extraKeywords.some(function (k) { return k.label === label; })) return;
-    const id = "kw-" + label;
-    state.extraKeywords.push({ id: id, label: label });
-    state.selectedFields.add(id);
+    const existing = state.extraKeywords.find(function (k) {
+      return k.label === field.label || k.id === field.id;
+    });
+    if (existing) {
+      state.selectedFields.add(existing.id);
+      syncColumnsFromFields();
+      render();
+      const sample = recognizedSample(existing);
+      toast(sample ? "已勾选「" + existing.label + "」： " + sample : "已勾选「" + existing.label + "」");
+      return;
+    }
+    state.extraKeywords.push({ id: field.id, label: field.label });
+    state.selectedFields.add(field.id);
     syncColumnsFromFields();
     render();
+    const sample = recognizedSample(field);
+    toast(sample ? "已添加「" + field.label + "」： " + sample : "已添加关键字「" + field.label + "」");
   }
 
   function bind() {
@@ -478,25 +622,22 @@
     });
     document.addEventListener("input", function (ev) {
       const t = ev.target;
-      if (t.dataset && t.dataset.colHeader != null) {
-        const i = Number(t.dataset.colHeader);
-        if (state.columns[i]) state.columns[i].header = t.value;
+      const col = editingColumn();
+      if (!col) return;
+      if (t.id === "colFormatHeader") {
+        col.header = t.value;
+        $("colFormatWhich").textContent = col.header || "未命名列";
         renderOutputTable();
         savePrefs();
       }
-      if (t.dataset && t.dataset.colFormula != null) {
-        const i = Number(t.dataset.colFormula);
-        if (state.columns[i]) state.columns[i].formula = t.value;
+      if (t.id === "colFormatFormula") {
+        col.formula = t.value;
         renderOutputTable();
         savePrefs();
       }
     });
     document.addEventListener("click", function (ev) {
       const t = ev.target;
-      if (t.dataset && t.dataset.colDel != null) {
-        state.columns.splice(Number(t.dataset.colDel), 1);
-        render();
-      }
       if (t.dataset && t.dataset.removeKw != null) {
         const i = Number(t.dataset.removeKw);
         const kw = state.extraKeywords[i];
@@ -506,6 +647,11 @@
           syncColumnsFromFields();
           render();
         }
+        return;
+      }
+      const head = t.closest && t.closest("th.col-head");
+      if (head && head.dataset.colId && $("outputTable").contains(head)) {
+        openColFormat(head.dataset.colId);
       }
     });
     $("btnSelAll").addEventListener("click", function () {
@@ -517,16 +663,32 @@
       render();
     });
     $("btnAddCol").addEventListener("click", function () {
-      state.columns.push({
+      const col = {
         id: "col-extra-" + Date.now(),
         sourceId: "",
         header: "新列",
         formula: "=",
-      });
-      render();
+      };
+      state.columns.push(col);
+      openColFormat(col.id);
+      savePrefs();
     });
     $("btnResetCols").addEventListener("click", function () {
       state.columns = F.syncOutputColumns([], Array.from(state.selectedFields), state.extraKeywords);
+      closeColFormat();
+      render();
+    });
+    $("btnColFormatDone").addEventListener("click", function () {
+      closeColFormat();
+      savePrefs();
+    });
+    $("btnColFormatDel").addEventListener("click", function () {
+      const id = state.editingColId;
+      if (!id) return;
+      state.columns = state.columns.filter(function (c) {
+        return c.id !== id;
+      });
+      closeColFormat();
       render();
     });
     $("btnAddKeyword").addEventListener("click", function () {
@@ -538,6 +700,15 @@
         ev.preventDefault();
         addKeyword($("keywordInput").value);
         $("keywordInput").value = "";
+      }
+    });
+    $("btnSaveScheme").addEventListener("click", saveScheme);
+    $("btnApplyScheme").addEventListener("click", applyScheme);
+    $("btnDeleteScheme").addEventListener("click", deleteScheme);
+    $("schemeName").addEventListener("keydown", function (ev) {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        saveScheme();
       }
     });
     $("btnXlsx").addEventListener("click", exportXlsx);

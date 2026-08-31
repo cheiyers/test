@@ -9,7 +9,7 @@
 <body>
   <header class="topbar">
     <h1>迅达采购订单批量识别</h1>
-    <p>勾选选配字段与关键字 → 选择订单行 → 改表头 / 写公式 → 导出表格</p>
+    <p>勾选字段并保存方案 → 点击输出列表头填写格式 → 导出表格</p>
   </header>
   <main>
     <div class="banner">
@@ -35,7 +35,7 @@
 
     <section class="panel">
       <h2>2. 导出字段与关键字</h2>
-      <p class="hint">核心订单行默认导出。选配抬头默认关闭。文档里新出现的「颜色」「表面处理」等会自动列在关键字里并勾选。</p>
+      <p class="hint">核心订单行默认导出。选配抬头（含公司代码、工厂）默认关闭。抬头关键字如「公司代码」会对应识别值。文档里新出现的「颜色」等会自动列入关键字。</p>
       <div class="choose-grid">
         <div class="field-block">
           <h3>订单行字段</h3>
@@ -50,10 +50,21 @@
           <h3>可配置关键字</h3>
           <div class="field-list" id="keywordFields"></div>
           <div class="keyword-add">
-            <input id="keywordInput" type="text" placeholder="添加关键字，例如 安装国家">
+            <input id="keywordInput" type="text" placeholder="添加关键字，例如 公司代码">
             <button type="button" class="ghost" id="btnAddKeyword">添加</button>
           </div>
           <div class="chips" id="customChips"></div>
+        </div>
+      </div>
+      <div class="scheme-bar">
+        <h3>导出方案</h3>
+        <p class="hint">保存当前勾选的字段、自定义关键字、输出列名与格式，下次直接应用。</p>
+        <div class="actions">
+          <input id="schemeName" type="text" placeholder="方案名称，例如 物料对账">
+          <button type="button" id="btnSaveScheme">保存方案</button>
+          <select id="schemeSelect" aria-label="已存方案"></select>
+          <button type="button" class="ghost" id="btnApplyScheme">应用方案</button>
+          <button type="button" class="ghost" id="btnDeleteScheme">删除方案</button>
         </div>
       </div>
     </section>
@@ -71,12 +82,19 @@
     </section>
 
     <section class="panel">
-      <h2>4. 输出表格 · 改表头 / 设公式</h2>
+      <h2>4. 输出表格 · 点击列设置格式</h2>
       <p class="hint">
-        只输出上方勾选的行。表头可直接改。公式用 <code>{字段名}</code>，以 <code>=</code> 开头计算，例如
+        只输出上方勾选的行。<strong>点击表头</strong>即可改列名和输出格式。格式用 <code>{字段名}</code>，以 <code>=</code> 开头计算，例如
         <code>={数量}*2</code>、<code>=IF({数量}&gt;3,"大","小")</code>、<code>{物料描述}&amp;" / "&amp;{图号/版本}</code>。
       </p>
-      <div class="col-editor" id="colEditor"></div>
+      <div class="col-format-bar" id="colFormatBar" hidden>
+        <strong>列格式</strong>
+        <span class="meta" id="colFormatWhich"></span>
+        <label>列名 <input id="colFormatHeader" type="text"></label>
+        <label>输出格式 <input id="colFormatFormula" class="formula" type="text" placeholder="{物料号} 或 ={数量}*2"></label>
+        <button type="button" id="btnColFormatDone">完成</button>
+        <button type="button" class="ghost" id="btnColFormatDel">删除此列</button>
+      </div>
       <div class="actions" style="margin:12px 0">
         <button type="button" class="ghost" id="btnAddCol">增加公式列</button>
         <button type="button" class="ghost" id="btnResetCols">按勾选字段重建列</button>

@@ -134,4 +134,79 @@ if (twoOut[0][colorCol.id] !== "黑色" || twoOut[1][colorCol.id] !== "银色") 
   process.exit(1);
 }
 
+if (rows[0].companyCode !== "3260" || rows[0].extras["公司代码"] !== "3260") {
+  console.error("companyCode not flattened", rows[0].companyCode, rows[0].extras["公司代码"]);
+  process.exit(1);
+}
+const companyField = fields.resolveKeyword("公司代码");
+if (!companyField || companyField.id !== "companyCode") {
+  console.error("resolve 公司代码", companyField);
+  process.exit(1);
+}
+if (fields.fieldValue(rows[0], companyField) !== "3260") {
+  console.error("fieldValue 公司代码", fields.fieldValue(rows[0], companyField));
+  process.exit(1);
+}
+selected = selected.concat(["companyCode"]);
+cols = fields.syncOutputColumns(cols, selected, []);
+const companyCol = cols.find(function (c) { return c.sourceId === "companyCode"; });
+if (!companyCol) {
+  console.error("companyCode column missing after select");
+  process.exit(1);
+}
+const companyOut = fields.computeOutput(rows.slice(0, 1), [companyCol], []);
+if (companyOut[0][companyCol.id] !== "3260") {
+  console.error("companyCode output", companyOut[0]);
+  process.exit(1);
+}
+
+const absorbed = fields.normalizeKeywordsAndSelection(
+  [{ id: "kw-公司代码", label: "公司代码" }],
+  ["kw-公司代码", "poNumber"]
+);
+if (absorbed.selectedFields.indexOf("companyCode") < 0 || absorbed.selectedFields.indexOf("poNumber") < 0) {
+  console.error("absorb selection", absorbed.selectedFields);
+  process.exit(1);
+}
+if (absorbed.extraKeywords.length !== 0) {
+  console.error("absorb should drop builtin keyword", absorbed.extraKeywords);
+  process.exit(1);
+}
+if (fields.fieldValue(rows[0], { id: "kw-公司代码", label: "公司代码" }) !== "3260") {
+  console.error("legacy kw fieldValue", fields.fieldValue(rows[0], { id: "kw-公司代码", label: "公司代码" }));
+  process.exit(1);
+}
+const pg = fields.resolveKeyword("采购组");
+if (!pg || pg.id !== "purchaseGroup") {
+  console.error("resolve 采购组", pg);
+  process.exit(1);
+}
+if (fields.fieldValue(rows[0], pg) !== "T0M") {
+  console.error("fieldValue 采购组", fields.fieldValue(rows[0], pg));
+  process.exit(1);
+}
+
+const scheme = fields.captureScheme(
+  "物料对账",
+  ["poNumber", "companyCode"],
+  [{ id: "kw-公司代码", label: "公司代码" }],
+  [{ id: "col-poNumber", sourceId: "poNumber", header: "PO", formula: "{采购订单号}" }]
+);
+if (scheme.name !== "物料对账") {
+  console.error("scheme name", scheme);
+  process.exit(1);
+}
+if (scheme.selectedFields.indexOf("companyCode") < 0 || scheme.selectedFields.indexOf("poNumber") < 0) {
+  console.error("scheme fields", scheme.selectedFields);
+  process.exit(1);
+}
+if (scheme.extraKeywords.length !== 0) {
+  console.error("scheme should not keep builtin extras", scheme.extraKeywords);
+  process.exit(1);
+}
+if (scheme.columns[0].header !== "PO" || scheme.columns[0].formula !== "{采购订单号}") {
+  console.error("scheme columns", scheme.columns);
+  process.exit(1);
+}
+
 console.log("OK fields", rows.length, "rows", cols.length, "cols", "two-line", twoRows.length);

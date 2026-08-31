@@ -17,7 +17,31 @@
     { id: "supplierName", label: "供应商", group: "optional" },
     { id: "deliveryAddress", label: "交货地址", group: "optional" },
     { id: "paymentTerms", label: "付款条件", group: "optional" },
+    { id: "companyCode", label: "公司代码", group: "optional" },
+    { id: "plant", label: "工厂", group: "optional" },
   ];
+
+  const HEADER_ALIASES = {
+    公司代码: "companyCode",
+    工厂: "plant",
+    采购组: "purchaseGroup",
+    供应商编号: "supplierCode",
+    开票抬头: "billingTitle",
+    打印日期: "printDate",
+    文件编号: "fileNo",
+    买方: "buyer",
+    联系人: "buyerContact",
+    邮箱: "buyerEmail",
+    供应商联系人: "supplierContact",
+    供应商电话: "supplierPhone",
+    不含税总价: "vatTotal",
+    采购订单号: "poNumber",
+    凭证日期: "documentDate",
+    交货日期: "deliveryDate",
+    付款条件: "paymentTerms",
+    供应商: "supplierName",
+    交货地址: "deliveryAddress",
+  };
 
   const KEYWORD_FIELDS = [
     { id: "drawingRev", label: "图号/版本", group: "keyword" },
@@ -40,7 +64,7 @@
         KEYWORD_FIELDS.forEach(function (f) {
           if (extras[f.label] == null) extras[f.label] = item[f.id] || "";
         });
-        rows.push({
+        const row = {
           id: (header.poNumber || doc.file || "po") + "-" + (item.lineNo || ii) + "-" + di + "-" + ii,
           file: doc.file || "",
           extras: extras,
@@ -51,6 +75,9 @@
           supplierCode: header.supplierCode || "",
           supplierContact: header.supplierContact || "",
           supplierPhone: header.supplierPhone || "",
+          buyerEmail: header.buyerEmail || "",
+          printDate: header.printDate || "",
+          fileNo: header.fileNo || "",
           deliveryAddress: header.deliveryAddress || "",
           paymentTerms: header.paymentTerms || "",
           billingTitle: header.billingTitle || "",
@@ -75,10 +102,32 @@
           deFlag: item.deFlag || extras["D/E"] || "",
           productFamily: item.productFamily || extras["产品家族"] || "",
           scmSize: item.scmSize || extras["SCM大小/量纲"] || "",
+        };
+        Object.keys(HEADER_ALIASES).forEach(function (label) {
+          const id = HEADER_ALIASES[label];
+          if (!extras[label]) extras[label] = row[id] || "";
         });
+        rows.push(row);
       });
     });
     return rows;
+  }
+
+  function resolveKeyword(label) {
+    const name = String(label || "").trim();
+    if (!name) return null;
+    const builtin = ALL_BUILTIN.find(function (f) {
+      return f.label === name || f.id === name;
+    });
+    if (builtin) return builtin;
+    const aliasId = HEADER_ALIASES[name];
+    if (aliasId) {
+      const mapped = ALL_BUILTIN.find(function (f) {
+        return f.id === aliasId;
+      });
+      return mapped || { id: aliasId, label: name, group: "keyword" };
+    }
+    return { id: "kw-" + name, label: name, group: "keyword" };
   }
 
   function fieldById(id, extraKeywords) {
@@ -86,6 +135,10 @@
       return f.id === id;
     });
     if (hit) return hit;
+    const byAlias = Object.keys(HEADER_ALIASES).find(function (label) {
+      return HEADER_ALIASES[label] === id;
+    });
+    if (byAlias) return { id: id, label: byAlias, group: "keyword" };
     const custom = (extraKeywords || []).find(function (k) {
       return k.id === id || k.label === id;
     });
@@ -93,24 +146,39 @@
     return null;
   }
 
+  function fieldValue(row, field) {
+    if (!row || !field) return "";
+    if (row[field.id] != null && String(row[field.id]) !== "") return String(row[field.id]);
+    if (row.extras && row.extras[field.label]) return String(row.extras[field.label]);
+    const aliasId = HEADER_ALIASES[field.label];
+    if (aliasId && row[aliasId]) return String(row[aliasId]);
+    return "";
+  }
+
   function rowContext(row, extraKeywords) {
     const ctx = {};
     ALL_BUILTIN.forEach(function (f) {
-      const v = row[f.id] == null ? "" : row[f.id];
+      const v = fieldValue(row, f);
       ctx[f.id] = v;
       ctx[f.label] = v;
     });
+    Object.keys(HEADER_ALIASES).forEach(function (label) {
+      const id = HEADER_ALIASES[label];
+      const v = (row && row[id]) || (row.extras && row.extras[label]) || "";
+      ctx[label] = v;
+      ctx[id] = v;
+    });
     Object.keys(row.extras || {}).forEach(function (label) {
-      ctx[label] = row.extras[label];
+      if (ctx[label] == null || ctx[label] === "") ctx[label] = row.extras[label];
     });
     (extraKeywords || []).forEach(function (k) {
-      const label = k.label || k.id;
-      const v = (row.extras && row.extras[label]) || row[k.id] || "";
-      ctx[label] = v;
+      const field = resolveKeyword(k.label || k.id);
+      const v = fieldValue(row, field);
+      ctx[k.label || k.id] = v;
       if (k.id) ctx[k.id] = v;
+      if (field && field.id) ctx[field.id] = v;
+      if (field && field.label) ctx[field.label] = v;
     });
-    ctx["供应商编号"] = row.supplierCode || "";
-    ctx.supplierCode = row.supplierCode || "";
     ctx.file = row.file || "";
     return ctx;
   }
@@ -120,11 +188,15 @@
     ALL_BUILTIN.forEach(function (f) {
       builtin[f.label] = true;
     });
+    Object.keys(HEADER_ALIASES).forEach(function (label) {
+      builtin[label] = true;
+    });
     const found = [];
     const seen = {};
     (rows || []).forEach(function (row) {
       Object.keys(row.extras || {}).forEach(function (label) {
         if (!label || builtin[label] || seen[label]) return;
+        if (!row.extras[label]) return;
         seen[label] = true;
         found.push({ id: "kw-" + label, label: label, discovered: true });
       });
@@ -132,10 +204,74 @@
     return found;
   }
 
+  function isBuiltinId(id) {
+    return ALL_BUILTIN.some(function (f) {
+      return f.id === id;
+    });
+  }
+
   function defaultSelectedIds() {
     return CORE_FIELDS.concat(KEYWORD_FIELDS).map(function (f) {
       return f.id;
     });
+  }
+
+  function normalizeKeywordsAndSelection(extraKeywords, selectedIds) {
+    const selected = {};
+    (selectedIds || []).forEach(function (id) {
+      if (id) selected[id] = true;
+    });
+    const nextKw = [];
+    const seenLabel = {};
+    (extraKeywords || []).forEach(function (k) {
+      const field = resolveKeyword(k.label || k.id);
+      if (!field) return;
+      const wasSelected = selected[k.id] || selected[k.label] || selected[field.id];
+      delete selected[k.id];
+      if (isBuiltinId(field.id)) {
+        if (wasSelected) selected[field.id] = true;
+        return;
+      }
+      if (seenLabel[field.label]) {
+        if (wasSelected) selected[field.id] = true;
+        return;
+      }
+      seenLabel[field.label] = true;
+      nextKw.push({
+        id: field.id,
+        label: field.label,
+        discovered: !!k.discovered,
+      });
+      if (wasSelected) selected[field.id] = true;
+    });
+    return {
+      extraKeywords: nextKw,
+      selectedFields: Object.keys(selected).filter(function (id) {
+        return selected[id];
+      }),
+    };
+  }
+
+  function captureScheme(name, selectedIds, extraKeywords, columns) {
+    const norm = normalizeKeywordsAndSelection(extraKeywords, selectedIds);
+    return {
+      name: String(name || "").trim(),
+      selectedFields: norm.selectedFields,
+      extraKeywords: norm.extraKeywords,
+      columns: (columns || []).map(function (c) {
+        return {
+          id: c.id,
+          sourceId: c.sourceId || "",
+          header: c.header || "",
+          formula: c.formula || "",
+        };
+      }),
+    };
+  }
+
+  function cloneScheme(scheme) {
+    if (!scheme) return null;
+    return captureScheme(scheme.name, scheme.selectedFields, scheme.extraKeywords, scheme.columns);
   }
 
   function columnFromField(field) {
@@ -189,11 +325,18 @@
     OPTIONAL_FIELDS: OPTIONAL_FIELDS,
     KEYWORD_FIELDS: KEYWORD_FIELDS,
     ALL_BUILTIN: ALL_BUILTIN,
+    HEADER_ALIASES: HEADER_ALIASES,
     flattenDocs: flattenDocs,
+    resolveKeyword: resolveKeyword,
+    fieldValue: fieldValue,
     discoverExtraKeywords: discoverExtraKeywords,
     fieldById: fieldById,
     rowContext: rowContext,
     defaultSelectedIds: defaultSelectedIds,
+    isBuiltinId: isBuiltinId,
+    normalizeKeywordsAndSelection: normalizeKeywordsAndSelection,
+    captureScheme: captureScheme,
+    cloneScheme: cloneScheme,
     columnFromField: columnFromField,
     syncOutputColumns: syncOutputColumns,
     computeOutput: computeOutput,

@@ -245,14 +245,56 @@ td.num { font-family: var(--mono); text-align: right; }
 .dropzone span { color: var(--muted); font-size: 12px; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
-.col-editor { display: flex; flex-direction: column; gap: 8px; }
-.col-row {
-  display: grid;
-  grid-template-columns: 160px 1fr auto;
+.scheme-bar {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.scheme-bar select {
+  font: inherit;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 8px;
+  min-width: 180px;
+  background: #fff;
+}
+.col-format-bar {
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+  background: var(--accent-soft);
+  border: 1px solid #fecdd3;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
 }
-.col-row input { width: 100%; }
+.col-format-bar[hidden] { display: none; }
+.col-format-bar strong { font-size: 13px; }
+.col-format-bar .meta { font-size: 12px; color: var(--muted); }
+.col-format-bar label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+.col-format-bar input { min-width: 140px; }
+.col-format-bar input.formula { min-width: 260px; }
+th.col-head {
+  cursor: pointer;
+  user-select: none;
+}
+th.col-head:hover,
+th.col-head.editing {
+  background: #ffe4e6;
+  color: var(--accent);
+}
+th.col-head .edit-hint {
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--muted);
+  margin-left: 6px;
+}
 
 .toast {
   position: fixed;
@@ -273,6 +315,6 @@ button.secondary { background: #fff; color: var(--navy); }
 button.warn { background: #9f1239; border-color: #9f1239; }
 
 @media (max-width: 960px) {
-  .zones, .notes, .doc-body, .choose-grid, .col-row { grid-template-columns: 1fr; }
+  .zones, .notes, .doc-body, .choose-grid { grid-template-columns: 1fr; }
   .doc-body img { border-right: 0; border-bottom: 1px solid var(--line); max-height: 420px; object-fit: contain; }
 }

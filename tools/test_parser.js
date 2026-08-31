@@ -74,6 +74,7 @@ const splitWords = [
   w(136.1, 126.7, "4551750005/T0M"),
   w(42.5, 141.1, "凭证日期:"),
   w(136.1, 141.1, "2026/08/31"),
+  w(283.5, 323.9, "公司代码:3260"),
   w(283.5, 386.8, "交货日期: 2026/09/09"),
   w(42.5, 483.8, "行项目"),
   w(85.0, 483.8, "物料号"),
@@ -113,6 +114,10 @@ if (it.drawingRev !== "Z57668961+0+000" && it.extras["图号/版本"] !== "Z5766
 }
 if (splitDoc.header.documentDate !== "2026/08/31") {
   console.error("documentDate", splitDoc.header);
+  process.exit(1);
+}
+if (splitDoc.header.companyCode !== "3260") {
+  console.error("companyCode", splitDoc.header);
   process.exit(1);
 }
 console.log("OK parser two-line + split unit/price");
