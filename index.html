@@ -13,8 +13,9 @@
   </header>
   <main>
     <div class="banner">
-      空着的附加字段（安装国家、运输类型、产品家族等）会留成<strong>可配置关键字</strong>，勾选才进入输出表。
-      <strong>供应商、交货地址、付款条件</strong>是选配：勾选才导出，不勾选不出现在输出表。
+      同一张 PO 里多条行项目（00010、00020…）会各成一行；描述换行会拼进同一行。
+      行下新出现的「字段: 值」会自动发现为关键字。空附加字段仍可勾选导出。
+      <strong>供应商、交货地址、付款条件</strong>勾选才导出。
     </div>
 
     <section class="panel">
@@ -26,6 +27,7 @@
       <input id="fileInput" type="file" accept="application/pdf" multiple hidden>
       <div class="actions" style="margin-top:10px">
         <button type="button" id="btnDemo">加载三份样张</button>
+        <button type="button" class="ghost" id="btnTwoLines">加载双行+新字段样张</button>
         <button type="button" class="ghost" id="btnToggleDocs">显示/隐藏原件对照</button>
       </div>
       <div class="hint" id="sourceHint" style="margin-top:8px"></div>
@@ -33,7 +35,7 @@
 
     <section class="panel">
       <h2>2. 导出字段与关键字</h2>
-      <p class="hint">核心订单行默认导出。选配抬头默认关闭。关键字即使为空也保留，方便以后同类订单有值时直接带出。</p>
+      <p class="hint">核心订单行默认导出。选配抬头默认关闭。文档里新出现的「颜色」「表面处理」等会自动列在关键字里并勾选。</p>
       <div class="choose-grid">
         <div class="field-block">
           <h3>订单行字段</h3>

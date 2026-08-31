@@ -1,5 +1,5 @@
 (function (root) {
-  const LINE_NO_RE = /^0\d{4}$/;
+  const LINE_NO_RE = /^\d{5}$/;
   const PO_GROUP_RE = /^(\d{10})\/(\S+)$/;
   const MONEY_RE = /^\d+\.\d{2}$/;
   const QTY_RE = /^\d+$/;
@@ -153,7 +153,7 @@
         inDelivery = true;
         rightT = "";
       }
-      if (leftT.indexOf("你们的参考号") === 0) inBilling = false;
+      if (leftT.indexOf("你们的参考号") === 0 || leftT === "行项目" || row.y >= 430) inBilling = false;
       if (rightT.indexOf("工厂") === 0) inDelivery = false;
       if (inBilling && leftT) billing.push(leftT);
       if (inDelivery && rightT) delivery.push(rightT);
@@ -278,6 +278,14 @@
       });
       if (!spans.length) return;
       const first = spans[0].text;
+      const merged = first.match(/^(\d{5})(\d{6,})$/);
+      if (merged && spans[0].x < 80) {
+        first = merged[1];
+        spans = [{ text: first, x: spans[0].x }].concat(
+          [{ text: merged[2], x: Math.max(spans[0].x + 40, 85) }],
+          spans.slice(1)
+        );
+      }
       if (LINE_NO_RE.test(first) && spans[0].x < 80) {
         if (current) items.push(current);
         current = newItem(first);
@@ -312,14 +320,26 @@
         return;
       }
 
+      let kvFound = false;
       spans.forEach(function (s) {
         const m = String(s.text).match(KV_RE);
         if (!m) return;
+        kvFound = true;
         const key = m[1].trim();
         const val = m[2].trim();
         current.extras[key] = val;
         if (KEYWORD_MAP[key]) current[KEYWORD_MAP[key]] = val;
       });
+      if (kvFound) return;
+      if (spans[0].x >= 200) {
+        const extra = spans
+          .map(function (s) {
+            return s.text;
+          })
+          .join(" ")
+          .trim();
+        if (extra) current.description = (current.description + " " + extra).trim();
+      }
     });
     if (current) items.push(current);
     return items;

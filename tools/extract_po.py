@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pymupdf
 
-LINE_NO_RE = re.compile(r"^0\d{4}$")
+LINE_NO_RE = re.compile(r"^\d{5}$")
 PO_GROUP_RE = re.compile(r"^(\d{10})/(\S+)$")
 MONEY_RE = re.compile(r"^\d+\.\d{2}$")
 QTY_RE = re.compile(r"^\d+$")
@@ -177,7 +177,7 @@ def parse_header(rows: list[dict]) -> dict:
         if right_t.startswith("交货地址"):
             in_delivery = True
             right_t = ""
-        if left_t.startswith("你们的参考号"):
+        if left_t.startswith("你们的参考号") or left_t == "行项目" or row["y"] >= 430:
             in_billing = False
         if right_t.startswith("工厂"):
             in_delivery = False
@@ -305,6 +305,13 @@ def parse_line_items(rows: list[dict], header: dict) -> list[dict]:
             continue
         first = spans[0]["text"]
 
+        merged = re.match(r"^(\d{5})(\d{6,})$", first)
+        if merged and spans[0]["x"] < 80:
+            first = merged.group(1)
+            spans = [
+                {**spans[0], "text": first},
+                {**spans[0], "text": merged.group(2), "x": max(spans[0]["x"] + 40, 85)},
+            ] + spans[1:]
         if LINE_NO_RE.match(first) and spans[0]["x"] < 80:
             if current:
                 items.append(current)
@@ -338,15 +345,25 @@ def parse_line_items(rows: list[dict], header: dict) -> list[dict]:
                 seen_repeat = True
             continue
 
-        # key-value extra fields under the item
+        # key-value extra fields under the item (including newly added labels)
+        kv_found = False
         for s in spans:
             m = KV_RE.match(s["text"])
             if not m:
                 continue
+            kv_found = True
             key, val = m.group(1).strip(), m.group(2).strip()
             current["extras"][key] = val
             if key in KEYWORD_MAP:
                 current[KEYWORD_MAP[key]] = val
+        if kv_found:
+            continue
+
+        # wrapped description / second visual line of the same item
+        if spans[0]["x"] >= 200:
+            extra = " ".join(s["text"] for s in spans).strip()
+            if extra:
+                current["description"] = (current["description"] + " " + extra).strip()
 
     if current:
         items.append(current)

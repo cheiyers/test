@@ -85,4 +85,45 @@ if (headerEdit.header !== "料号") {
   process.exit(1);
 }
 
-console.log("OK fields", rows.length, "rows", cols.length, "cols");
+const twoLineDoc = {
+  file: "PO_two_lines.pdf",
+  header: { poNumber: "4551750099", deliveryDate: "2026/09/20", vatTotal: "660.70" },
+  items: [
+    {
+      lineNo: "00010",
+      materialNo: "57668963",
+      description: "Round spot 4LED照明 含安装附件",
+      qty: "5",
+      amount: "467.50",
+      extras: { 颜色: "黑色", 表面处理: "" },
+    },
+    {
+      lineNo: "00020",
+      materialNo: "57664581",
+      description: "LED方型灯",
+      qty: "4",
+      amount: "193.20",
+      extras: { 颜色: "银色", 表面处理: "喷塑" },
+    },
+  ],
+};
+const twoRows = fields.flattenDocs([twoLineDoc]);
+if (twoRows.length !== 2) {
+  console.error("two-line flatten", twoRows.length);
+  process.exit(1);
+}
+const discovered = fields.discoverExtraKeywords(twoRows);
+const labels = discovered.map(function (k) { return k.label; }).sort();
+if (labels.join(",") !== "颜色,表面处理" && labels.join(",") !== "表面处理,颜色") {
+  console.error("discovered", labels);
+  process.exit(1);
+}
+const twoCols = fields.syncOutputColumns([], ["poNumber", "lineNo", "kw-颜色", "kw-表面处理"], discovered);
+const twoOut = fields.computeOutput(twoRows, twoCols, discovered);
+const colorCol = twoCols.find(function (c) { return c.sourceId === "kw-颜色"; });
+if (twoOut[0][colorCol.id] !== "黑色" || twoOut[1][colorCol.id] !== "银色") {
+  console.error("color output", twoOut);
+  process.exit(1);
+}
+
+console.log("OK fields", rows.length, "rows", cols.length, "cols", "two-line", twoRows.length);

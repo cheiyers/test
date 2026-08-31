@@ -61,6 +61,30 @@ EXPECTED = {
             }
         ],
     },
+    "PO_two_lines.pdf": {
+        "poNumber": "4551750099",
+        "supplierName": "苏州海联成套电器设备有限公司",
+        "deliveryDate": "2026/09/20",
+        "vatTotal": "660.70",
+        "items": [
+            {
+                "lineNo": "00010",
+                "materialNo": "57668963",
+                "description": "Round spot 4LED照明 含安装附件",
+                "qty": "5",
+                "amount": "467.50",
+                "drawingRev": "Z57668961+0+000",
+            },
+            {
+                "lineNo": "00020",
+                "materialNo": "57664581",
+                "description": "LED方型灯",
+                "qty": "4",
+                "amount": "193.20",
+                "drawingRev": "E57664581+2+000",
+            },
+        ],
+    },
     "PO_4551750012.pdf": {
         "poNumber": "4551750012",
         "deliveryDate": "2026/09/08",
@@ -122,6 +146,15 @@ def main() -> int:
             ):
                 if key not in extras:
                     errors.append(f"{name} missing extras[{key}]")
+        if name == "PO_two_lines.pdf":
+            extras0 = doc["items"][0].get("extras") or {}
+            extras1 = doc["items"][1].get("extras") or {}
+            if extras0.get("颜色") != "黑色":
+                errors.append(f"{name} item0 颜色 {extras0.get('颜色')!r}")
+            if extras1.get("颜色") != "银色":
+                errors.append(f"{name} item1 颜色 {extras1.get('颜色')!r}")
+            if extras1.get("表面处理") != "喷塑":
+                errors.append(f"{name} item1 表面处理 {extras1.get('表面处理')!r}")
     if errors:
         print("FAIL")
         for e in errors:

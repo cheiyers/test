@@ -114,6 +114,23 @@
     return ctx;
   }
 
+  function discoverExtraKeywords(rows) {
+    const builtin = {};
+    ALL_BUILTIN.forEach(function (f) {
+      builtin[f.label] = true;
+    });
+    const found = [];
+    const seen = {};
+    (rows || []).forEach(function (row) {
+      Object.keys(row.extras || {}).forEach(function (label) {
+        if (!label || builtin[label] || seen[label]) return;
+        seen[label] = true;
+        found.push({ id: "kw-" + label, label: label, discovered: true });
+      });
+    });
+    return found;
+  }
+
   function defaultSelectedIds() {
     return CORE_FIELDS.concat(KEYWORD_FIELDS).map(function (f) {
       return f.id;
@@ -172,6 +189,7 @@
     KEYWORD_FIELDS: KEYWORD_FIELDS,
     ALL_BUILTIN: ALL_BUILTIN,
     flattenDocs: flattenDocs,
+    discoverExtraKeywords: discoverExtraKeywords,
     fieldById: fieldById,
     rowContext: rowContext,
     defaultSelectedIds: defaultSelectedIds,

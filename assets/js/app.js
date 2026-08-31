@@ -52,6 +52,17 @@
     );
   }
 
+  function mergeDiscoveredKeywords() {
+    const discovered = F.discoverExtraKeywords(state.rows);
+    state.extraKeywords = state.extraKeywords.filter(function (k) {
+      return !k.discovered;
+    });
+    discovered.forEach(function (k) {
+      state.extraKeywords.push(k);
+      state.selectedFields.add(k.id);
+    });
+  }
+
   function setDocs(docs, source) {
     state.docs = docs || [];
     state.rows = F.flattenDocs(state.docs);
@@ -61,11 +72,8 @@
         return r.id;
       })
     );
-    if (!state.columns.length) {
-      state.columns = F.syncOutputColumns([], Array.from(state.selectedFields), state.extraKeywords);
-    } else {
-      state.columns = F.syncOutputColumns(state.columns, Array.from(state.selectedFields), state.extraKeywords);
-    }
+    mergeDiscoveredKeywords();
+    state.columns = F.syncOutputColumns(state.columns, Array.from(state.selectedFields), state.extraKeywords);
   }
 
   function selectedRowObjects() {
@@ -124,7 +132,7 @@
       input.dataset.fieldId = k.id;
       label.appendChild(input);
       const span = document.createElement("span");
-      span.textContent = k.label + "（自定义）";
+      span.textContent = k.label + (k.discovered ? "（文档中发现）" : "（自定义）");
       label.appendChild(span);
       $("keywordFields").appendChild(label);
     });
@@ -194,7 +202,14 @@
     $("resultTable").appendChild(table);
     $("rowCount").textContent =
       "已选 " + state.selectedRows.size + " / " + state.rows.length + " 行 · " + state.docs.length + " 张 PO";
-    $("sourceHint").textContent = state.source === "demo" ? "当前：三份样张预识别结果" : state.source === "upload" ? "当前：本地上传识别" : "";
+    $("sourceHint").textContent =
+      state.source === "demo"
+        ? "当前：三份样张预识别结果"
+        : state.source === "two-lines"
+          ? "当前：双行项目 + 新字段（颜色 / 表面处理）样张"
+          : state.source === "upload"
+            ? "当前：本地上传识别"
+            : "";
   }
 
   function renderColEditor() {
@@ -530,6 +545,15 @@
       }
       setDocs(window.DEMO_DATA.documents, "demo");
       render();
+    });
+    $("btnTwoLines").addEventListener("click", function () {
+      if (!window.DEMO_TWO_LINES) {
+        toast("没有双行样张");
+        return;
+      }
+      setDocs(window.DEMO_TWO_LINES.documents, "two-lines");
+      render();
+      toast("已识别 1 份 PO，共 " + state.rows.length + " 行；新字段已加入关键字");
     });
     $("btnToggleDocs").addEventListener("click", function () {
       $("docsPanel").hidden = !$("docsPanel").hidden;
