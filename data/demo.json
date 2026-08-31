@@ -1,0 +1,175 @@
+{
+  "documents": [
+    {
+      "file": "PO_4551750005.pdf",
+      "pageCount": 1,
+      "header": {
+        "buyer": "迅达(中国）电梯有限公司",
+        "docType": "采购订单",
+        "poNumber": "4551750005",
+        "purchaseGroup": "T0M",
+        "documentDate": "2026/08/31",
+        "buyerContact": "Maggie Mao",
+        "buyerPhone": "021-67095773",
+        "buyerEmail": "maggie.mao@schindler.com",
+        "supplierContact": "黄道红",
+        "supplierCode": "1372010",
+        "supplierPhone": "13812765776",
+        "supplierName": "苏州海联成套电器设备有限公司",
+        "supplierAddress": "苏州工业园区东富路9号45幢 215000 苏州",
+        "billingTitle": "公司代码 3260/JDF / 迅达（中国）电梯有限公司",
+        "deliveryAddress": "上海 嘉定区兴顺路588号",
+        "plant": "3260",
+        "companyCode": "3260",
+        "paymentTerms": "90 天之内 到期净值",
+        "incoterms": "",
+        "deliveryDate": "2026/09/09",
+        "printDate": "2026/08/31",
+        "vatTotal": "467.50",
+        "fileNo": "TE 0-92100-002",
+        "page": "1 / 1",
+        "electronicallySigned": true
+      },
+      "items": [
+        {
+          "lineNo": "00010",
+          "materialNo": "57668963",
+          "materialGroup": "XH",
+          "description": "Round spot 4LED照明",
+          "deliveryDate": "2026/09/09",
+          "qty": "5",
+          "unit": "件",
+          "unitPrice": "93.50/1",
+          "amount": "467.50",
+          "drawingRev": "Z57668961+0+000",
+          "installCountry": "",
+          "groupTechCode": "MECH",
+          "transportType": "",
+          "deFlag": "",
+          "productFamily": "",
+          "scmSize": "按照实物"
+        }
+      ],
+      "pages": [
+        {
+          "page": 1,
+          "itemCount": 1
+        }
+      ]
+    },
+    {
+      "file": "PO_4551750009.pdf",
+      "pageCount": 1,
+      "header": {
+        "buyer": "迅达(中国）电梯有限公司",
+        "docType": "采购订单",
+        "poNumber": "4551750009",
+        "purchaseGroup": "T0M",
+        "documentDate": "2026/08/31",
+        "buyerContact": "Maggie Mao",
+        "buyerPhone": "021-67095773",
+        "buyerEmail": "maggie.mao@schindler.com",
+        "supplierContact": "黄道红",
+        "supplierCode": "1372010",
+        "supplierPhone": "13812765776",
+        "supplierName": "苏州海联成套电器设备有限公司",
+        "supplierAddress": "苏州工业园区东富路9号45幢 215000 苏州",
+        "billingTitle": "公司代码 3260/JDF / 迅达（中国）电梯有限公司",
+        "deliveryAddress": "上海 嘉定区兴顺路588号",
+        "plant": "3260",
+        "companyCode": "3260",
+        "paymentTerms": "90 天之内 到期净值",
+        "incoterms": "",
+        "deliveryDate": "2026/09/15",
+        "printDate": "2026/08/31",
+        "vatTotal": "193.20",
+        "fileNo": "TE 0-92100-002",
+        "page": "1 / 1",
+        "electronicallySigned": true
+      },
+      "items": [
+        {
+          "lineNo": "00010",
+          "materialNo": "57664581",
+          "materialGroup": "XH",
+          "description": "LED方型灯",
+          "deliveryDate": "2026/09/15",
+          "qty": "4",
+          "unit": "件",
+          "unitPrice": "48.30/1",
+          "amount": "193.20",
+          "drawingRev": "E57664581+2+000/M57664581+1+000/M57664582+2+000/Q57664581+2+000",
+          "installCountry": "",
+          "groupTechCode": "MECH",
+          "transportType": "",
+          "deFlag": "",
+          "productFamily": "",
+          "scmSize": "按照实物"
+        }
+      ],
+      "pages": [
+        {
+          "page": 1,
+          "itemCount": 1
+        }
+      ]
+    },
+    {
+      "file": "PO_4551750012.pdf",
+      "pageCount": 1,
+      "header": {
+        "buyer": "迅达(中国）电梯有限公司",
+        "docType": "采购订单",
+        "poNumber": "4551750012",
+        "purchaseGroup": "T0M",
+        "documentDate": "2026/08/31",
+        "buyerContact": "Maggie Mao",
+        "buyerPhone": "021-67095773",
+        "buyerEmail": "maggie.mao@schindler.com",
+        "supplierContact": "黄道红",
+        "supplierCode": "1372010",
+        "supplierPhone": "13812765776",
+        "supplierName": "苏州海联成套电器设备有限公司",
+        "supplierAddress": "苏州工业园区东富路9号45幢 215000 苏州",
+        "billingTitle": "公司代码 3260/JDF / 迅达（中国）电梯有限公司",
+        "deliveryAddress": "上海 嘉定区兴顺路588号",
+        "plant": "3260",
+        "companyCode": "3260",
+        "paymentTerms": "90 天之内 到期净值",
+        "incoterms": "",
+        "deliveryDate": "2026/09/08",
+        "printDate": "2026/08/31",
+        "vatTotal": "187.00",
+        "fileNo": "TE 0-92100-002",
+        "page": "1 / 1",
+        "electronicallySigned": true
+      },
+      "items": [
+        {
+          "lineNo": "00010",
+          "materialNo": "57668963",
+          "materialGroup": "XH",
+          "description": "Round spot 4LED照明",
+          "deliveryDate": "2026/09/08",
+          "qty": "2",
+          "unit": "件",
+          "unitPrice": "93.50/1",
+          "amount": "187.00",
+          "drawingRev": "Z57668961+0+000",
+          "installCountry": "",
+          "groupTechCode": "MECH",
+          "transportType": "",
+          "deFlag": "",
+          "productFamily": "",
+          "scmSize": "按照实物"
+        }
+      ],
+      "pages": [
+        {
+          "page": 1,
+          "itemCount": 1
+        }
+      ]
+    }
+  ]
+}
