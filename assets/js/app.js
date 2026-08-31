@@ -32,18 +32,20 @@
 
   function loadPrefs() {
     try {
-      const raw = localStorage.getItem("schindler-po-export-v1");
+      const fromV2 = localStorage.getItem("schindler-po-export-v2");
+      const raw = fromV2 || localStorage.getItem("schindler-po-export-v1");
       if (!raw) return;
       const p = JSON.parse(raw);
       if (Array.isArray(p.selectedFields)) state.selectedFields = new Set(p.selectedFields);
       if (Array.isArray(p.extraKeywords)) state.extraKeywords = p.extraKeywords;
       if (Array.isArray(p.columns)) state.columns = p.columns;
+      if (!fromV2) state.selectedFields.add("documentDate");
     } catch (e) {}
   }
 
   function savePrefs() {
     localStorage.setItem(
-      "schindler-po-export-v1",
+      "schindler-po-export-v2",
       JSON.stringify({
         selectedFields: Array.from(state.selectedFields),
         extraKeywords: state.extraKeywords,

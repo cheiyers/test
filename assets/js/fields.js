@@ -1,6 +1,7 @@
 (function (root) {
   const CORE_FIELDS = [
     { id: "poNumber", label: "采购订单号", group: "core" },
+    { id: "documentDate", label: "凭证日期", group: "core" },
     { id: "lineNo", label: "行项目", group: "core" },
     { id: "materialNo", label: "物料号", group: "core" },
     { id: "materialGroup", label: "物料组", group: "core" },

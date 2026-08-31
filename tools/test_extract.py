@@ -15,6 +15,7 @@ SAMPLES = ROOT / "samples"
 EXPECTED = {
     "PO_4551750005.pdf": {
         "poNumber": "4551750005",
+        "documentDate": "2026/08/31",
         "purchaseGroup": "T0M",
         "supplierName": "苏州海联成套电器设备有限公司",
         "supplierCode": "1372010",

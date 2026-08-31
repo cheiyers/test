@@ -37,6 +37,14 @@ if (headers.indexOf("供应商") >= 0 || headers.indexOf("交货地址") >= 0 ||
   console.error("optional fields leaked into default export", headers);
   process.exit(1);
 }
+if (headers.indexOf("凭证日期") < 0) {
+  console.error("documentDate should be a default export column", headers);
+  process.exit(1);
+}
+if (rows.some(function (r) { return r.documentDate !== "2026/08/31"; })) {
+  console.error("documentDate missing on flattened rows");
+  process.exit(1);
+}
 if (headers.indexOf("安装国家") < 0 || headers.indexOf("图号/版本") < 0) {
   console.error("empty keywords should stay as export columns", headers);
   process.exit(1);
