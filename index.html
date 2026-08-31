@@ -9,7 +9,7 @@
 <body>
   <header class="topbar">
     <h1>迅达采购订单批量识别</h1>
-    <p>勾选字段并保存方案 → 点击输出列表头填写格式 → 导出表格</p>
+    <p>勾选字段并保存方案 → 点击列头改格式、拖动调整顺序 → 导出表格</p>
   </header>
   <main>
     <div class="banner">
@@ -58,7 +58,7 @@
       </div>
       <div class="scheme-bar">
         <h3>导出方案</h3>
-        <p class="hint">保存当前勾选的字段、自定义关键字、输出列名与格式，下次直接应用。</p>
+        <p class="hint">保存当前勾选的字段、自定义关键字、列顺序、列名与格式，下次直接应用。</p>
         <div class="actions">
           <input id="schemeName" type="text" placeholder="方案名称，例如 物料对账">
           <button type="button" id="btnSaveScheme">保存方案</button>
@@ -84,7 +84,7 @@
     <section class="panel">
       <h2>4. 输出表格 · 点击列设置格式</h2>
       <p class="hint">
-        只输出上方勾选的行。<strong>点击表头</strong>即可改列名和输出格式。格式用 <code>{字段名}</code>，以 <code>=</code> 开头计算，例如
+        只输出上方勾选的行。<strong>点击表头</strong>改列名和格式，<strong>拖动左侧手柄</strong>或用左移 / 右移调整列顺序。格式用 <code>{字段名}</code>，以 <code>=</code> 开头计算，例如
         <code>={数量}*2</code>、<code>=IF({数量}&gt;3,"大","小")</code>、<code>{物料描述}&amp;" / "&amp;{图号/版本}</code>。
       </p>
       <div class="col-format-bar" id="colFormatBar" hidden>
@@ -92,6 +92,8 @@
         <span class="meta" id="colFormatWhich"></span>
         <label>列名 <input id="colFormatHeader" type="text"></label>
         <label>输出格式 <input id="colFormatFormula" class="formula" type="text" placeholder="{物料号} 或 ={数量}*2"></label>
+        <button type="button" class="ghost" id="btnColMoveLeft">左移</button>
+        <button type="button" class="ghost" id="btnColMoveRight">右移</button>
         <button type="button" id="btnColFormatDone">完成</button>
         <button type="button" class="ghost" id="btnColFormatDel">删除此列</button>
       </div>

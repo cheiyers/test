@@ -283,12 +283,37 @@ td.num { font-family: var(--mono); text-align: right; }
 th.col-head {
   cursor: pointer;
   user-select: none;
+  position: relative;
 }
 th.col-head:hover,
 th.col-head.editing {
   background: #ffe4e6;
   color: var(--accent);
 }
+th.col-head.dragging { opacity: 0.45; }
+th.col-head.drop-before::before,
+th.col-head.drop-after::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+th.col-head.drop-before::before { left: 0; }
+th.col-head.drop-after::after { right: 0; }
+th.col-head .col-drag {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 2px;
+  cursor: grab;
+  color: #a8a29e;
+  letter-spacing: -2px;
+  font-size: 12px;
+  vertical-align: middle;
+}
+th.col-head .col-drag:active { cursor: grabbing; }
 th.col-head .edit-hint {
   font-weight: 400;
   font-size: 11px;

@@ -274,6 +274,39 @@
     return captureScheme(scheme.name, scheme.selectedFields, scheme.extraKeywords, scheme.columns);
   }
 
+  function reorderColumns(columns, draggedId, beforeId) {
+    const cols = (columns || []).slice();
+    if (!draggedId || draggedId === beforeId) return cols;
+    const from = cols.findIndex(function (c) {
+      return c.id === draggedId;
+    });
+    if (from < 0) return cols;
+    const item = cols.splice(from, 1)[0];
+    if (!beforeId) {
+      cols.push(item);
+      return cols;
+    }
+    const to = cols.findIndex(function (c) {
+      return c.id === beforeId;
+    });
+    if (to < 0) cols.push(item);
+    else cols.splice(to, 0, item);
+    return cols;
+  }
+
+  function moveColumnBy(columns, colId, delta) {
+    const cols = (columns || []).slice();
+    const from = cols.findIndex(function (c) {
+      return c.id === colId;
+    });
+    if (from < 0 || !delta) return cols;
+    const to = from + Number(delta);
+    if (to < 0 || to >= cols.length) return cols;
+    const item = cols.splice(from, 1)[0];
+    cols.splice(to, 0, item);
+    return cols;
+  }
+
   function columnFromField(field) {
     return {
       id: "col-" + field.id,
@@ -337,6 +370,8 @@
     normalizeKeywordsAndSelection: normalizeKeywordsAndSelection,
     captureScheme: captureScheme,
     cloneScheme: cloneScheme,
+    reorderColumns: reorderColumns,
+    moveColumnBy: moveColumnBy,
     columnFromField: columnFromField,
     syncOutputColumns: syncOutputColumns,
     computeOutput: computeOutput,

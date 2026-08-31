@@ -209,4 +209,54 @@ if (scheme.columns[0].header !== "PO" || scheme.columns[0].formula !== "{采购�
   process.exit(1);
 }
 
+const abc = [
+  { id: "a", header: "A" },
+  { id: "b", header: "B" },
+  { id: "c", header: "C" },
+];
+const movedRight = fields.moveColumnBy(abc, "a", 1);
+if (movedRight.map(function (c) { return c.id; }).join(",") !== "b,a,c") {
+  console.error("move right", movedRight);
+  process.exit(1);
+}
+const movedLeft = fields.moveColumnBy(abc, "c", -1);
+if (movedLeft.map(function (c) { return c.id; }).join(",") !== "a,c,b") {
+  console.error("move left", movedLeft);
+  process.exit(1);
+}
+const noMove = fields.moveColumnBy(abc, "a", -1);
+if (noMove.map(function (c) { return c.id; }).join(",") !== "a,b,c") {
+  console.error("move past start", noMove);
+  process.exit(1);
+}
+const reordered = fields.reorderColumns(abc, "c", "a");
+if (reordered.map(function (c) { return c.id; }).join(",") !== "c,a,b") {
+  console.error("reorder before a", reordered);
+  process.exit(1);
+}
+const toEnd = fields.reorderColumns(abc, "a", null);
+if (toEnd.map(function (c) { return c.id; }).join(",") !== "b,c,a") {
+  console.error("reorder to end", toEnd);
+  process.exit(1);
+}
+const selfDrop = fields.reorderColumns(abc, "b", "b");
+if (selfDrop.map(function (c) { return c.id; }).join(",") !== "a,b,c") {
+  console.error("self drop", selfDrop);
+  process.exit(1);
+}
+if (abc.map(function (c) { return c.id; }).join(",") !== "a,b,c") {
+  console.error("reorder should not mutate", abc);
+  process.exit(1);
+}
+
+const customOrder = [
+  { id: "col-qty", sourceId: "qty", header: "数量", formula: "{数量}" },
+  { id: "col-poNumber", sourceId: "poNumber", header: "采购订单号", formula: "{采购订单号}" },
+];
+const keptOrder = fields.syncOutputColumns(customOrder, ["poNumber", "qty"], []);
+if (keptOrder.map(function (c) { return c.sourceId; }).join(",") !== "qty,poNumber") {
+  console.error("sync should keep custom order", keptOrder);
+  process.exit(1);
+}
+
 console.log("OK fields", rows.length, "rows", cols.length, "cols", "two-line", twoRows.length);

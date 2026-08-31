@@ -19,6 +19,9 @@
     source: "",
     schemes: [],
     editingColId: null,
+    dragColId: null,
+    dropBeforeId: undefined,
+    suppressHeadClick: false,
   };
 
   const $ = function (id) {
@@ -281,6 +284,11 @@
     $("colFormatWhich").textContent = col.header || "未命名列";
     if (document.activeElement !== $("colFormatHeader")) $("colFormatHeader").value = col.header;
     if (document.activeElement !== $("colFormatFormula")) $("colFormatFormula").value = col.formula;
+    const idx = state.columns.findIndex(function (c) {
+      return c.id === col.id;
+    });
+    $("btnColMoveLeft").disabled = idx <= 0;
+    $("btnColMoveRight").disabled = idx < 0 || idx >= state.columns.length - 1;
   }
 
   function openColFormat(colId, focusFormula) {
@@ -303,6 +311,41 @@
     renderOutputTable();
   }
 
+  function applyColumnOrder(next) {
+    const same =
+      next.length === state.columns.length &&
+      next.every(function (c, i) {
+        return c.id === state.columns[i].id;
+      });
+    if (same) return false;
+    state.columns = next;
+    renderOutputTable();
+    savePrefs();
+    return true;
+  }
+
+  function moveEditingColumn(delta) {
+    const col = editingColumn();
+    if (!col) return;
+    applyColumnOrder(F.moveColumnBy(state.columns, col.id, delta));
+  }
+
+  function dropTargetBeforeId(th, clientX) {
+    const rect = th.getBoundingClientRect();
+    const after = clientX > rect.left + rect.width / 2;
+    if (!after) return th.dataset.colId;
+    const next = th.nextElementSibling;
+    return next && next.dataset && next.dataset.colId ? next.dataset.colId : null;
+  }
+
+  function clearDropMarks() {
+    const table = $("outputTable");
+    if (!table) return;
+    table.querySelectorAll("th.col-head").forEach(function (th) {
+      th.classList.remove("drop-before", "drop-after", "dragging");
+    });
+  }
+
   function renderOutputTable() {
     const rows = F.computeOutput(selectedRowObjects(), state.columns, state.extraKeywords);
     const table = document.createElement("table");
@@ -311,9 +354,17 @@
     state.columns.forEach(function (col) {
       const th = document.createElement("th");
       th.className = "col-head" + (col.id === state.editingColId ? " editing" : "");
+      if (col.id === state.dragColId) th.classList.add("dragging");
       th.dataset.colId = col.id;
-      th.title = "点击设置列名和输出格式";
+      th.title = "点击设置列名和格式；拖动手柄调整顺序";
+      const grip = document.createElement("span");
+      grip.className = "col-drag";
+      grip.draggable = true;
+      grip.title = "拖动调整列顺序";
+      grip.textContent = "⋮⋮";
+      th.appendChild(grip);
       const name = document.createElement("span");
+      name.className = "col-name";
       name.textContent = col.header || "（空列名）";
       th.appendChild(name);
       const hint = document.createElement("span");
@@ -651,8 +702,62 @@
       }
       const head = t.closest && t.closest("th.col-head");
       if (head && head.dataset.colId && $("outputTable").contains(head)) {
+        if (t.closest && t.closest(".col-drag")) return;
+        if (state.suppressHeadClick) {
+          state.suppressHeadClick = false;
+          return;
+        }
         openColFormat(head.dataset.colId);
       }
+    });
+    document.addEventListener("dragstart", function (ev) {
+      const grip = ev.target.closest && ev.target.closest(".col-drag");
+      if (!grip || !$("outputTable").contains(grip)) return;
+      const th = grip.closest("th.col-head");
+      if (!th || !th.dataset.colId) return;
+      state.dragColId = th.dataset.colId;
+      state.dropBeforeId = undefined;
+      th.classList.add("dragging");
+      ev.dataTransfer.effectAllowed = "move";
+      ev.dataTransfer.setData("text/plain", th.dataset.colId);
+    });
+    document.addEventListener("dragover", function (ev) {
+      if (!state.dragColId) return;
+      const th = ev.target.closest && ev.target.closest("th.col-head");
+      if (!th || !$("outputTable").contains(th)) return;
+      ev.preventDefault();
+      ev.dataTransfer.dropEffect = "move";
+      const beforeId = dropTargetBeforeId(th, ev.clientX);
+      state.dropBeforeId = beforeId;
+      clearDropMarks();
+      const dragged = $("outputTable").querySelector('th.col-head[data-col-id="' + state.dragColId + '"]');
+      if (dragged) dragged.classList.add("dragging");
+      if (!beforeId) {
+        const last = $("outputTable").querySelector("thead tr th.col-head:last-child");
+        if (last) last.classList.add("drop-after");
+      } else if (beforeId !== state.dragColId) {
+        const target = $("outputTable").querySelector('th.col-head[data-col-id="' + beforeId + '"]');
+        if (target) target.classList.add("drop-before");
+      }
+    });
+    document.addEventListener("drop", function (ev) {
+      if (!state.dragColId) return;
+      const th = ev.target.closest && ev.target.closest("th.col-head");
+      if (!th || !$("outputTable").contains(th)) return;
+      ev.preventDefault();
+      const beforeId = dropTargetBeforeId(th, ev.clientX);
+      const draggedId = state.dragColId;
+      state.dragColId = null;
+      state.dropBeforeId = undefined;
+      clearDropMarks();
+      state.suppressHeadClick = true;
+      applyColumnOrder(F.reorderColumns(state.columns, draggedId, beforeId));
+    });
+    document.addEventListener("dragend", function () {
+      if (state.dragColId) state.suppressHeadClick = true;
+      state.dragColId = null;
+      state.dropBeforeId = undefined;
+      clearDropMarks();
     });
     $("btnSelAll").addEventListener("click", function () {
       state.selectedRows = new Set(state.rows.map(function (r) { return r.id; }));
@@ -681,6 +786,12 @@
     $("btnColFormatDone").addEventListener("click", function () {
       closeColFormat();
       savePrefs();
+    });
+    $("btnColMoveLeft").addEventListener("click", function () {
+      moveEditingColumn(-1);
+    });
+    $("btnColMoveRight").addEventListener("click", function () {
+      moveEditingColumn(1);
     });
     $("btnColFormatDel").addEventListener("click", function () {
       const id = state.editingColId;
