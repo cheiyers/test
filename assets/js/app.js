@@ -64,6 +64,7 @@
   }
 
   function setDocs(docs, source) {
+    const sourceChanged = Boolean(state.source) && state.source !== source;
     state.docs = docs || [];
     state.rows = F.flattenDocs(state.docs);
     state.source = source;
@@ -73,7 +74,8 @@
       })
     );
     mergeDiscoveredKeywords();
-    state.columns = F.syncOutputColumns(state.columns, Array.from(state.selectedFields), state.extraKeywords);
+    const keep = sourceChanged ? [] : state.columns;
+    state.columns = F.syncOutputColumns(keep, Array.from(state.selectedFields), state.extraKeywords);
   }
 
   function selectedRowObjects() {
