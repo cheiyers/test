@@ -20,6 +20,8 @@
     schemes: [],
     editingColId: null,
     dragColId: null,
+    dragActive: false,
+    dragStartX: 0,
     dropBeforeId: undefined,
     suppressHeadClick: false,
   };
@@ -343,6 +345,7 @@
     if (!table) return;
     table.querySelectorAll("th.col-head").forEach(function (th) {
       th.classList.remove("drop-before", "drop-after", "dragging");
+      th.style.pointerEvents = "";
     });
   }
 
@@ -359,7 +362,6 @@
       th.title = "点击设置列名和格式；拖动手柄调整顺序";
       const grip = document.createElement("span");
       grip.className = "col-drag";
-      grip.draggable = true;
       grip.title = "拖动调整列顺序";
       grip.textContent = "::";
       th.appendChild(grip);
@@ -710,28 +712,40 @@
         openColFormat(head.dataset.colId);
       }
     });
-    document.addEventListener("dragstart", function (ev) {
+    document.addEventListener("pointerdown", function (ev) {
       const grip = ev.target.closest && ev.target.closest(".col-drag");
       if (!grip || !$("outputTable").contains(grip)) return;
       const th = grip.closest("th.col-head");
       if (!th || !th.dataset.colId) return;
       state.dragColId = th.dataset.colId;
       state.dropBeforeId = undefined;
-      th.classList.add("dragging");
-      ev.dataTransfer.effectAllowed = "move";
-      ev.dataTransfer.setData("text/plain", th.dataset.colId);
+      state.dragActive = false;
+      state.dragStartX = ev.clientX;
+      try {
+        grip.setPointerCapture(ev.pointerId);
+      } catch (err) {}
     });
-    document.addEventListener("dragover", function (ev) {
+    document.addEventListener("pointermove", function (ev) {
       if (!state.dragColId) return;
-      const th = ev.target.closest && ev.target.closest("th.col-head");
-      if (!th || !$("outputTable").contains(th)) return;
+      if (!state.dragActive && Math.abs(ev.clientX - state.dragStartX) > 6) {
+        state.dragActive = true;
+        state.suppressHeadClick = true;
+      }
+      if (!state.dragActive) return;
       ev.preventDefault();
-      ev.dataTransfer.dropEffect = "move";
+      const dragged = $("outputTable").querySelector('th.col-head[data-col-id="' + state.dragColId + '"]');
+      if (dragged) {
+        dragged.classList.add("dragging");
+        dragged.style.pointerEvents = "none";
+      }
+      const el = document.elementFromPoint(ev.clientX, ev.clientY);
+      const th = el && el.closest ? el.closest("th.col-head") : null;
+      $("outputTable").querySelectorAll("th.col-head").forEach(function (node) {
+        node.classList.remove("drop-before", "drop-after");
+      });
+      if (!th || !$("outputTable").contains(th)) return;
       const beforeId = dropTargetBeforeId(th, ev.clientX);
       state.dropBeforeId = beforeId;
-      clearDropMarks();
-      const dragged = $("outputTable").querySelector('th.col-head[data-col-id="' + state.dragColId + '"]');
-      if (dragged) dragged.classList.add("dragging");
       if (!beforeId) {
         const last = $("outputTable").querySelector("thead tr th.col-head:last-child");
         if (last) last.classList.add("drop-after");
@@ -740,22 +754,29 @@
         if (target) target.classList.add("drop-before");
       }
     });
-    document.addEventListener("drop", function (ev) {
-      if (!state.dragColId) return;
-      const th = ev.target.closest && ev.target.closest("th.col-head");
-      if (!th || !$("outputTable").contains(th)) return;
-      ev.preventDefault();
-      const beforeId = dropTargetBeforeId(th, ev.clientX);
+    function finishColDrag(ev) {
       const draggedId = state.dragColId;
+      const wasActive = state.dragActive;
+      let th = null;
+      if (wasActive && ev) {
+        const el = document.elementFromPoint(ev.clientX, ev.clientY);
+        th = el && el.closest ? el.closest("th.col-head") : null;
+      }
+      const beforeId = th && $("outputTable").contains(th) ? dropTargetBeforeId(th, ev.clientX) : undefined;
+      const canDrop = Boolean(th && $("outputTable").contains(th));
       state.dragColId = null;
+      state.dragActive = false;
       state.dropBeforeId = undefined;
       clearDropMarks();
+      if (!wasActive || !draggedId) return;
       state.suppressHeadClick = true;
+      if (!canDrop) return;
       applyColumnOrder(F.reorderColumns(state.columns, draggedId, beforeId));
-    });
-    document.addEventListener("dragend", function () {
-      if (state.dragColId) state.suppressHeadClick = true;
+    }
+    document.addEventListener("pointerup", finishColDrag);
+    document.addEventListener("pointercancel", function () {
       state.dragColId = null;
+      state.dragActive = false;
       state.dropBeforeId = undefined;
       clearDropMarks();
     });

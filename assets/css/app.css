@@ -316,6 +316,7 @@ th.col-head .col-drag {
   font-weight: 700;
   line-height: 1.1;
   vertical-align: middle;
+  touch-action: none;
 }
 th.col-head .col-drag:active { cursor: grabbing; }
 th.col-head .edit-hint {
