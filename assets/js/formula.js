@@ -39,12 +39,18 @@
       return n == null ? 0 : n;
     },
     TEXT: function (v, fmt) {
-      if (v instanceof Date) return formatDate(v, fmt || "yyyy-mm-dd");
+      const d = parseDate(v);
+      if (d) return formatDate(d, fmt || "yyyy-mm-dd");
       if (typeof v === "number" && fmt && /0/.test(fmt)) {
         const digits = (String(fmt).split(".")[1] || "").length;
         return v.toFixed(digits);
       }
       return String(v == null ? "" : v);
+    },
+    DATEVALUE: function (v) {
+      const d = parseDate(v);
+      if (!d) throw new Error("无法解析日期");
+      return d;
     },
     TODAY: function () {
       const d = new Date();
@@ -56,6 +62,28 @@
       }).join("");
     },
   };
+
+  function parseDate(v) {
+    if (v instanceof Date && !Number.isNaN(v.getTime())) return v;
+    const s = String(v == null ? "" : v).trim();
+    if (!s) return null;
+    let m = s.match(/^(\d{4})[/\-.](\d{1,2})[/\-.](\d{1,2})$/);
+    if (m) {
+      const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+      if (d.getFullYear() === Number(m[1]) && d.getMonth() === Number(m[2]) - 1 && d.getDate() === Number(m[3])) {
+        return d;
+      }
+      return null;
+    }
+    m = s.match(/^(\d{4})(\d{2})(\d{2})$/);
+    if (m) {
+      const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+      if (d.getFullYear() === Number(m[1]) && d.getMonth() === Number(m[2]) - 1 && d.getDate() === Number(m[3])) {
+        return d;
+      }
+    }
+    return null;
+  }
 
   function formatDate(d, fmt) {
     const yyyy = String(d.getFullYear());
