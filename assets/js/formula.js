@@ -87,12 +87,18 @@
 
   function formatDate(d, fmt) {
     const yyyy = String(d.getFullYear());
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
+    const yy = yyyy.slice(-2);
+    const m = String(d.getMonth() + 1);
+    const mm = m.padStart(2, "0");
+    const day = String(d.getDate());
+    const dd = day.padStart(2, "0");
     return String(fmt)
       .replace(/yyyy/g, yyyy)
+      .replace(/yy/g, yy)
       .replace(/mm/g, mm)
-      .replace(/dd/g, dd);
+      .replace(/dd/g, dd)
+      .replace(/m/g, m)
+      .replace(/d/g, day);
   }
 
   function parseNumber(v) {

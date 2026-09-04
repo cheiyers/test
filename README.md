@@ -37,7 +37,14 @@ python3 -m http.server 8080
 =TEXT({交货日期},"yyyy-mm-dd")
 ```
 
-也支持 `yyyy/mm/dd`、`yyyymmdd`。可用函数：`TEXT`、`DATEVALUE`、`IF`、`ROUND`、`LEFT` / `RIGHT` / `MID`、`LEN`、`TRIM`、`UPPER` / `LOWER`、`VALUE`、`TODAY`、`CONCAT`，以及 `+ - * /`、`&` 拼接。
+也支持 `yyyy/mm/dd`、`yyyymmdd`。月、日不要前导 0（`2026/9/16`、`2026/9/1`）用：
+
+```
+=TEXT({凭证日期},"yyyy/m/d")
+=TEXT({交货日期},"yyyy/m/d")
+```
+
+`mm`/`dd` 补成两位数，`m`/`d` 不补零。可用函数：`TEXT`、`DATEVALUE`、`IF`、`ROUND`、`LEFT` / `RIGHT` / `MID`、`LEN`、`TRIM`、`UPPER` / `LOWER`、`VALUE`、`TODAY`、`CONCAT`，以及 `+ - * /`、`&` 拼接。
 
 命令行核对样张：
 
