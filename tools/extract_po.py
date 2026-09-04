@@ -388,7 +388,7 @@ def collect_warnings(doc: dict) -> list[dict]:
                 "type": "cross-page",
                 "poNumber": po,
                 "file": file_name,
-                "message": f"{po} 共 {page_count} 页。跨页续行尚未按整单拼接，请核对行项目、数量和金额是否完整。",
+                "message": f"{po} 共 {page_count} 页，已识别 {len(items)} 条行项目。跨页订单请核对是否与原件一致。",
             }
         )
         later = pages[1:]
@@ -433,6 +433,19 @@ def collect_warnings(doc: dict) -> list[dict]:
     return warnings
 
 
+def is_ignorable_item_row(row: dict, spans: list[dict]) -> bool:
+    joined = re.sub(r"\s+", " ", (row.get("text") or " ".join(s["text"] for s in spans)).strip())
+    if not joined:
+        return True
+    if joined in {"页", "此文档已电子签名"}:
+        return True
+    if re.fullmatch(r"页?\s*\d+\s*/\s*\d+", joined):
+        return True
+    if re.fullmatch(r"\d+\s*/\s*\d+", joined) and spans and spans[0]["x"] >= 400:
+        return True
+    return False
+
+
 def analyze_line_items(rows: list[dict], header: dict) -> dict:
     start_i = None
     end_i = len(rows)
@@ -474,6 +487,8 @@ def analyze_line_items(rows: list[dict], header: dict) -> dict:
     for row in body:
         spans = [s for s in row["spans"] if s["text"] not in SKIP_TABLE_TEXTS]
         if not spans:
+            continue
+        if is_ignorable_item_row(row, spans):
             continue
         first = spans[0]["text"]
 
@@ -543,6 +558,8 @@ def parse_pdf(path: str | Path) -> dict:
         page_header = parse_header(rows)
         if i == 0:
             header = page_header
+        elif not page_header.get("deliveryDate") and header.get("deliveryDate"):
+            page_header["deliveryDate"] = header["deliveryDate"]
         analyzed = analyze_line_items(rows, page_header)
         all_items.extend(analyzed["items"])
         pages.append(
@@ -556,6 +573,8 @@ def parse_pdf(path: str | Path) -> dict:
         )
         if page_header.get("vatTotal"):
             header["vatTotal"] = page_header["vatTotal"]
+        if page_header.get("electronicallySigned"):
+            header["electronicallySigned"] = True
     attach_review_flags(all_items)
     result = {
         "file": path.name,

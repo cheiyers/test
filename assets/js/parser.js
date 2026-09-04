@@ -343,7 +343,7 @@
         type: "cross-page",
         poNumber: po,
         file: file,
-        message: po + " 共 " + pageCount + " 页。跨页续行尚未按整单拼接，请核对行项目、数量和金额是否完整。",
+        message: po + " 共 " + pageCount + " 页，已识别 " + items.length + " 条行项目。跨页订单请核对是否与原件一致。",
       });
       const later = pages.slice(1);
       const laterHasRows = later.some(function (p) {
@@ -383,6 +383,24 @@
       }
     });
     return warnings;
+  }
+
+  function isIgnorableItemRow(row, spans) {
+    const joined = (row && row.text
+      ? row.text
+      : (spans || [])
+          .map(function (s) {
+            return s.text;
+          })
+          .join(" ")
+    )
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!joined) return true;
+    if (joined === "页" || joined === "此文档已电子签名") return true;
+    if (/^页?\s*\d+\s*\/\s*\d+$/.test(joined)) return true;
+    if (/^\d+\s*\/\s*\d+$/.test(joined) && spans && spans[0] && spans[0].x >= 400) return true;
+    return false;
   }
 
   function analyzeLineItems(rows, header) {
@@ -433,6 +451,7 @@
         return !SKIP[s.text];
       });
       if (!spans.length) return;
+      if (isIgnorableItemRow(row, spans)) return;
       let first = spans[0].text;
       const merged = first.match(/^(\d{5})(\d{6,})$/);
       if (merged && spans[0].x < 80) {
@@ -509,11 +528,15 @@
       const rows = groupRows(page.words || page.spans || []);
       const pageHeader = parseHeader(rows);
       if (i === 0) header = pageHeader;
+      else if (!pageHeader.deliveryDate && header.deliveryDate) {
+        pageHeader.deliveryDate = header.deliveryDate;
+      }
       const analyzed = analyzeLineItems(rows, pageHeader);
       analyzed.items.forEach(function (it) {
         items.push(it);
       });
       if (pageHeader.vatTotal) header.vatTotal = pageHeader.vatTotal;
+      if (pageHeader.electronicallySigned) header.electronicallySigned = true;
       pageMeta.push({
         page: i + 1,
         itemCount: analyzed.items.length,

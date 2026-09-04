@@ -216,4 +216,70 @@ if (!reviewDoc.pages[0].lastIncomplete || !reviewDoc.pages[1].orphanContinuation
   console.error("page meta", reviewDoc.pages);
   process.exit(1);
 }
-console.log("OK parser two-line + split unit/price + comma amount + review warnings");
+
+const twoPageWords1 = [
+  w(42.5, 31.4, "迅达(中国）电梯有限公司"),
+  w(42.5, 95.1, "采购订单"),
+  w(42.5, 126.7, "采购订单号/采购组:"),
+  w(136.1, 126.7, "4551787549/T0M"),
+  w(283.5, 386.8, "交货日期: 2026/09/08"),
+  w(42.5, 483.8, "行项目"),
+  w(85.0, 483.8, "物料号"),
+  w(42.5, 513.8, "00010"),
+  w(85.0, 513.8, "C57647479-002"),
+  w(170.1, 513.8, "XH"),
+  w(240.9, 513.8, "整流器"),
+  w(179.2, 525.8, "1"),
+  w(226.8, 525.8, "件         47.50/1"),
+  w(372.6, 525.8, "47.50"),
+  w(42.5, 537.8, "图号/版本: L57647479(C57647479-002)+0+000"),
+  w(481.9, 757.3, "页"),
+  w(489.9, 755.8, "1 / 2"),
+];
+const twoPageWords2 = [
+  w(42.5, 31.4, "迅达(中国）电梯有限公司"),
+  w(42.5, 95.1, "采购订单"),
+  w(42.5, 126.7, "采购订单号/采购组:"),
+  w(136.1, 126.7, "4551787549/T0M"),
+  w(42.5, 172.1, "行项目"),
+  w(85.0, 172.1, "物料号"),
+  w(42.5, 208.1, "00020"),
+  w(85.0, 208.1, "57664581"),
+  w(170.1, 208.1, "XH"),
+  w(240.9, 208.1, "LED方型灯"),
+  w(179.2, 220.1, "2"),
+  w(226.8, 220.1, "件         48.30/1"),
+  w(372.6, 220.1, "96.60"),
+  w(179.3, 334.1, "不含增值税总价 CNY"),
+  w(367.6, 334.1, "144.10"),
+  w(42.5, 370.1, "此文档已电子签名"),
+];
+const twoPageDoc = parser.parseDocument("PO_4551787549.pdf", [
+  { words: twoPageWords1 },
+  { words: twoPageWords2 },
+]);
+if (twoPageDoc.items.length !== 2) {
+  console.error("two-page item count", twoPageDoc.items);
+  process.exit(1);
+}
+if (twoPageDoc.items[0].description !== "整流器") {
+  console.error("footer in description", twoPageDoc.items[0].description);
+  process.exit(1);
+}
+if (twoPageDoc.items[1].lineNo !== "00020" || twoPageDoc.items[1].qty !== "2" || twoPageDoc.items[1].amount !== "96.60") {
+  console.error("page2 item", twoPageDoc.items[1]);
+  process.exit(1);
+}
+if (twoPageDoc.items[1].deliveryDate !== "2026/09/08") {
+  console.error("page2 deliveryDate", twoPageDoc.items[1]);
+  process.exit(1);
+}
+if (!twoPageDoc.header.electronicallySigned) {
+  console.error("e-sign", twoPageDoc.header);
+  process.exit(1);
+}
+if (!(twoPageDoc.warnings || []).some(function (w) { return w.type === "cross-page"; })) {
+  console.error("two-page warning", twoPageDoc.warnings);
+  process.exit(1);
+}
+console.log("OK parser two-line + split unit/price + comma amount + review warnings + two-page");

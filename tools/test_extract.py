@@ -140,6 +140,37 @@ EXPECTED = {
             }
         ],
     },
+    "PO_4551787549.pdf": {
+        "poNumber": "4551787549",
+        "documentDate": "2026/09/02",
+        "purchaseGroup": "T0M",
+        "deliveryDate": "2026/09/08",
+        "vatTotal": "144.10",
+        "electronicallySigned": True,
+        "items": [
+            {
+                "lineNo": "00010",
+                "materialNo": "C57647479-002",
+                "description": "整流器",
+                "qty": "1",
+                "unit": "件",
+                "unitPrice": "47.50/1",
+                "amount": "47.50",
+                "drawingRev": "L57647479(C57647479-002)+0+000",
+                "deliveryDate": "2026/09/08",
+            },
+            {
+                "lineNo": "00020",
+                "materialNo": "57664581",
+                "description": "LED方型灯",
+                "qty": "2",
+                "unit": "件",
+                "unitPrice": "48.30/1",
+                "amount": "96.60",
+                "deliveryDate": "2026/09/08",
+            },
+        ],
+    },
 }
 
 
@@ -186,8 +217,14 @@ def main() -> int:
             ):
                 if key not in extras:
                     errors.append(f"{name} missing extras[{key}]")
-        if doc.get("warnings"):
+        if doc.get("pageCount", 1) <= 1 and doc.get("warnings"):
             errors.append(f"{name} unexpected warnings {doc['warnings']}")
+        if name == "PO_4551787549.pdf":
+            types = {w.get("type") for w in (doc.get("warnings") or [])}
+            if "cross-page" not in types:
+                errors.append(f"{name} missing cross-page warning {doc.get('warnings')}")
+            if "页" in (doc["items"][0].get("description") or ""):
+                errors.append(f"{name} footer leaked into description {doc['items'][0]}")
         for item in doc["items"]:
             if item.get("reviewFlags"):
                 errors.append(f"{name} unexpected reviewFlags {item.get('lineNo')} {item.get('reviewFlags')}")
