@@ -186,6 +186,11 @@ def main() -> int:
             ):
                 if key not in extras:
                     errors.append(f"{name} missing extras[{key}]")
+        if doc.get("warnings"):
+            errors.append(f"{name} unexpected warnings {doc['warnings']}")
+        for item in doc["items"]:
+            if item.get("reviewFlags"):
+                errors.append(f"{name} unexpected reviewFlags {item.get('lineNo')} {item.get('reviewFlags')}")
         if name == "PO_two_lines.pdf":
             extras0 = doc["items"][0].get("extras") or {}
             extras1 = doc["items"][1].get("extras") or {}

@@ -17,6 +17,8 @@ QTY_RE = re.compile(r"^\d+$")
 UNIT_PRICE_RE = re.compile(r"^(\S+)\s+(\d+\.\d{2}/\d+)$")
 PRICE_ONLY_RE = re.compile(r"^\d+\.\d{2}(?:/\d+)?$")
 UNIT_LIKE_RE = re.compile(r"^(件|个|套|台|只|米|KG|kg|PC|PCE|EA|SET)$", re.I)
+SERVICE_UNIT_RE = re.compile(r"^(项|次|式|AU|LE|ACT|LOT|H|HR|MAN)$", re.I)
+SERVICE_TEXT_RE = re.compile(r"服务|劳务|service", re.I)
 KV_RE = re.compile(r"^([^:：]{1,20})[:：]\s*(.*)$")
 KEYWORD_LABELS = (
     "图号/版本",
@@ -350,22 +352,102 @@ def parse_header(rows: list[dict]) -> dict:
     return header
 
 
-def parse_line_items(rows: list[dict], header: dict) -> list[dict]:
+def service_reason(item: dict) -> str:
+    desc = str((item or {}).get("description") or "")
+    if SERVICE_TEXT_RE.search(desc):
+        return "描述含服务/劳务"
+    unit = (item or {}).get("unit") or ""
+    if unit and SERVICE_UNIT_RE.match(unit):
+        return f"单位为 {unit}"
+    return ""
+
+
+def attach_review_flags(items: list[dict]) -> None:
+    for item in items:
+        flags = []
+        if not item.get("materialNo") and (item.get("description") or item.get("qty") or item.get("amount")):
+            flags.append("no-material")
+        if service_reason(item):
+            flags.append("service")
+        item["reviewFlags"] = flags
+
+
+def collect_warnings(doc: dict) -> list[dict]:
+    header = (doc or {}).get("header") or {}
+    items = (doc or {}).get("items") or []
+    pages = (doc or {}).get("pages") or []
+    file_name = (doc or {}).get("file") or ""
+    po = header.get("poNumber") or file_name or "PO"
+    page_count = doc.get("pageCount") if doc and doc.get("pageCount") else (len(pages) or 1)
+    attach_review_flags(items)
+    warnings: list[dict] = []
+
+    if page_count > 1:
+        warnings.append(
+            {
+                "type": "cross-page",
+                "poNumber": po,
+                "file": file_name,
+                "message": f"{po} 共 {page_count} 页。跨页续行尚未按整单拼接，请核对行项目、数量和金额是否完整。",
+            }
+        )
+        later = pages[1:]
+        later_has_rows = any(
+            p and (p.get("itemCount", 0) > 0 or p.get("orphanContinuation") or p.get("hasTable"))
+            for p in later
+        )
+        if later_has_rows and pages and pages[0].get("lastIncomplete"):
+            warnings.append(
+                {
+                    "type": "cross-page",
+                    "poNumber": po,
+                    "file": file_name,
+                    "message": f"{po} 第 1 页末行数量或金额未齐，后续页可能是续行，请对照原件。",
+                }
+            )
+
+    for item in items:
+        line = item.get("lineNo") or "（未知行）"
+        no_mat = not item.get("materialNo") and (item.get("description") or item.get("qty") or item.get("amount"))
+        if no_mat:
+            warnings.append(
+                {
+                    "type": "no-material",
+                    "poNumber": po,
+                    "file": file_name,
+                    "lineNo": item.get("lineNo") or "",
+                    "message": f"{po} 行项目 {line} 没有物料号，可能是文本行或服务类行，请确认后再导出。",
+                }
+            )
+        why = service_reason(item)
+        if why:
+            warnings.append(
+                {
+                    "type": "service",
+                    "poNumber": po,
+                    "file": file_name,
+                    "lineNo": item.get("lineNo") or "",
+                    "message": f"{po} 行项目 {line} 疑似服务类行（{why}），请核对数量与金额。",
+                }
+            )
+    return warnings
+
+
+def analyze_line_items(rows: list[dict], header: dict) -> dict:
     start_i = None
-    end_i = None
+    end_i = len(rows)
     for i, row in enumerate(rows):
         if start_i is None and any(s["text"] == "行项目" for s in row["spans"]):
             start_i = i
         if start_i is not None and any("不含增值税总价" in s["text"] for s in row["spans"]):
-            end_i = i
-            break
+            end_i = min(end_i, i)
     if start_i is None:
-        return []
+        return {"items": [], "hasTable": False, "orphanContinuation": False, "lastIncomplete": False}
     body = rows[start_i + 1 : end_i]
 
     items: list[dict] = []
     current = None
-    seen_repeat = False
+    orphan_continuation = False
 
     def new_item(line_no: str) -> dict:
         extras = {label: "" for label in KEYWORD_LABELS}
@@ -406,7 +488,6 @@ def parse_line_items(rows: list[dict], header: dict) -> list[dict]:
             if current:
                 items.append(current)
             current = new_item(first)
-            seen_repeat = False
             for s in spans[1:]:
                 if 80 <= s["x"] < 160:
                     current["materialNo"] = s["text"]
@@ -417,16 +498,17 @@ def parse_line_items(rows: list[dict], header: dict) -> list[dict]:
             continue
 
         if current is None:
+            qty_like = any(QTY_RE.match(s["text"]) and 160 <= s["x"] < 220 for s in spans)
+            if qty_like or find_amount_span(spans) or (spans[0]["x"] >= 200 and spans[0]["text"]):
+                orphan_continuation = True
             continue
 
-        # qty / unit+price / amount row (appears twice: under the item, and as a subtotal)
         if fill_qty_unit_price(current, spans):
             continue
 
         if fill_kv_fields(current, spans):
             continue
 
-        # wrapped description / second visual line of the same item
         if spans[0]["x"] >= 200:
             extra = " ".join(s["text"] for s in spans).strip()
             if extra:
@@ -434,6 +516,18 @@ def parse_line_items(rows: list[dict], header: dict) -> list[dict]:
 
     if current:
         items.append(current)
+    last = items[-1] if items else None
+    return {
+        "items": items,
+        "hasTable": True,
+        "orphanContinuation": orphan_continuation,
+        "lastIncomplete": bool(last and (not last.get("qty") or not last.get("amount"))),
+    }
+
+
+def parse_line_items(rows: list[dict], header: dict) -> list[dict]:
+    items = analyze_line_items(rows, header)["items"]
+    attach_review_flags(items)
     return items
 
 
@@ -449,18 +543,29 @@ def parse_pdf(path: str | Path) -> dict:
         page_header = parse_header(rows)
         if i == 0:
             header = page_header
-        items = parse_line_items(rows, page_header)
-        pages.append({"page": i + 1, "itemCount": len(items)})
-        all_items.extend(items)
+        analyzed = analyze_line_items(rows, page_header)
+        all_items.extend(analyzed["items"])
+        pages.append(
+            {
+                "page": i + 1,
+                "itemCount": len(analyzed["items"]),
+                "hasTable": analyzed["hasTable"],
+                "orphanContinuation": analyzed["orphanContinuation"],
+                "lastIncomplete": analyzed["lastIncomplete"],
+            }
+        )
         if page_header.get("vatTotal"):
             header["vatTotal"] = page_header["vatTotal"]
-    return {
+    attach_review_flags(all_items)
+    result = {
         "file": path.name,
         "pageCount": len(doc),
         "header": header,
         "items": all_items,
         "pages": pages,
     }
+    result["warnings"] = collect_warnings(result)
+    return result
 
 
 def main() -> None:

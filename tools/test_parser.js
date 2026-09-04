@@ -156,4 +156,64 @@ if (commaDoc.header.vatTotal !== "1402.50") {
   console.error("comma vatTotal", commaDoc.header);
   process.exit(1);
 }
-console.log("OK parser two-line + split unit/price + comma amount");
+if ((commaDoc.warnings || []).length !== 0) {
+  console.error("unexpected warnings on goods PO", commaDoc.warnings);
+  process.exit(1);
+}
+if ((commaItem.reviewFlags || []).length !== 0) {
+  console.error("unexpected reviewFlags", commaItem.reviewFlags);
+  process.exit(1);
+}
+
+const reviewPage1 = [
+  w(42.5, 31.4, "迅达(中国）电梯有限公司"),
+  w(42.5, 95.1, "采购订单"),
+  w(42.5, 126.7, "采购订单号/采购组:"),
+  w(136.1, 126.7, "4551999001/T0M"),
+  w(42.5, 483.8, "行项目"),
+  w(85.0, 483.8, "物料号"),
+  w(42.5, 513.8, "00010"),
+  w(85.0, 513.8, "57668963"),
+  w(170.1, 513.8, "XH"),
+  w(240.9, 513.8, "Round spot 4LED照明"),
+];
+const reviewPage2 = [
+  w(42.5, 483.8, "行项目"),
+  w(85.0, 483.8, "物料号"),
+  w(179.2, 513.8, "5"),
+  w(226.8, 513.8, "件         93.50/1"),
+  w(367.6, 513.8, "467.50"),
+  w(42.5, 549.8, "00020"),
+  w(240.9, 549.8, "现场安装劳务"),
+  w(179.2, 561.8, "1"),
+  w(226.8, 561.8, "项         800.00/1"),
+  w(367.6, 561.8, "800.00"),
+  w(42.5, 597.8, "00030"),
+  w(240.9, 597.8, "包装注意事项请随箱附说明书"),
+  w(179.3, 710.0, "不含增值税总价 CNY"),
+  w(367.6, 710.0, "1267.50"),
+];
+const reviewDoc = parser.parseDocument("PO_review.pdf", [{ words: reviewPage1 }, { words: reviewPage2 }]);
+const types = {};
+(reviewDoc.warnings || []).forEach(function (w) {
+  types[w.type] = (types[w.type] || 0) + 1;
+});
+if (!types["cross-page"] || !types["no-material"] || !types["service"]) {
+  console.error("review warning types", reviewDoc.warnings);
+  process.exit(1);
+}
+const line20 = reviewDoc.items.filter(function (i) { return i.lineNo === "00020"; })[0];
+const line30 = reviewDoc.items.filter(function (i) { return i.lineNo === "00030"; })[0];
+if (!line20 || line20.reviewFlags.indexOf("no-material") < 0 || line20.reviewFlags.indexOf("service") < 0) {
+  console.error("line20 flags", line20);
+  process.exit(1);
+}
+if (!line30 || line30.reviewFlags.indexOf("no-material") < 0 || line30.reviewFlags.indexOf("service") >= 0) {
+  console.error("line30 flags", line30);
+  process.exit(1);
+}
+if (!reviewDoc.pages[0].lastIncomplete || !reviewDoc.pages[1].orphanContinuation) {
+  console.error("page meta", reviewDoc.pages);
+  process.exit(1);
+}
+console.log("OK parser two-line + split unit/price + comma amount + review warnings");

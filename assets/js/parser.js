@@ -6,6 +6,8 @@
   const UNIT_PRICE_RE = /^(\S+)\s+(\d+\.\d{2}\/\d+)$/;
   const PRICE_ONLY_RE = /^\d+\.\d{2}(?:\/\d+)?$/;
   const UNIT_LIKE_RE = /^(件|个|套|台|只|米|KG|kg|PC|PCE|EA|SET)$/i;
+  const SERVICE_UNIT_RE = /^(项|次|式|AU|LE|ACT|LOT|H|HR|MAN)$/i;
+  const SERVICE_TEXT_RE = /服务|劳务|service/i;
   const KV_RE = /^([^:：]{1,20})[:：]\s*(.*)$/;
   const KEYWORD_LABELS = [
     "图号/版本",
@@ -319,7 +321,71 @@
     return header;
   }
 
-  function parseLineItems(rows, header) {
+  function serviceReason(item) {
+    const desc = String((item && item.description) || "");
+    if (SERVICE_TEXT_RE.test(desc)) return "描述含服务/劳务";
+    if (item && item.unit && SERVICE_UNIT_RE.test(item.unit)) return "单位为 " + item.unit;
+    return "";
+  }
+
+  function collectWarnings(doc) {
+    const header = (doc && doc.header) || {};
+    const items = (doc && doc.items) || [];
+    attachReviewFlags(items);
+    const pages = (doc && doc.pages) || [];
+    const file = (doc && doc.file) || "";
+    const po = header.poNumber || file || "PO";
+    const pageCount = doc && doc.pageCount ? doc.pageCount : pages.length || 1;
+    const warnings = [];
+
+    if (pageCount > 1) {
+      warnings.push({
+        type: "cross-page",
+        poNumber: po,
+        file: file,
+        message: po + " 共 " + pageCount + " 页。跨页续行尚未按整单拼接，请核对行项目、数量和金额是否完整。",
+      });
+      const later = pages.slice(1);
+      const laterHasRows = later.some(function (p) {
+        return p && (p.itemCount > 0 || p.orphanContinuation || p.hasTable);
+      });
+      if (laterHasRows && pages[0] && pages[0].lastIncomplete) {
+        warnings.push({
+          type: "cross-page",
+          poNumber: po,
+          file: file,
+          message: po + " 第 1 页末行数量或金额未齐，后续页可能是续行，请对照原件。",
+        });
+      }
+    }
+
+    items.forEach(function (item) {
+      const line = item.lineNo || "（未知行）";
+      const noMat = !item.materialNo && (item.description || item.qty || item.amount);
+      if (noMat) {
+        warnings.push({
+          type: "no-material",
+          poNumber: po,
+          file: file,
+          lineNo: item.lineNo || "",
+          message: po + " 行项目 " + line + " 没有物料号，可能是文本行或服务类行，请确认后再导出。",
+        });
+      }
+      const why = serviceReason(item);
+      if (why) {
+        warnings.push({
+          type: "service",
+          poNumber: po,
+          file: file,
+          lineNo: item.lineNo || "",
+          message: po + " 行项目 " + line + " 疑似服务类行（" + why + "），请核对数量与金额。",
+        });
+      }
+    });
+    return warnings;
+  }
+
+  function analyzeLineItems(rows, header) {
     let startI = -1;
     let endI = rows.length;
     rows.forEach(function (row, i) {
@@ -328,10 +394,13 @@
         endI = Math.min(endI, i);
       }
     });
-    if (startI < 0) return [];
+    if (startI < 0) {
+      return { items: [], hasTable: false, orphanContinuation: false, lastIncomplete: false };
+    }
     const body = rows.slice(startI + 1, endI);
     const items = [];
     let current = null;
+    let orphanContinuation = false;
 
     function newItem(lineNo) {
       const extras = {};
@@ -360,11 +429,11 @@
     }
 
     body.forEach(function (row) {
-      const spans = row.spans.filter(function (s) {
+      let spans = row.spans.filter(function (s) {
         return !SKIP[s.text];
       });
       if (!spans.length) return;
-      const first = spans[0].text;
+      let first = spans[0].text;
       const merged = first.match(/^(\d{5})(\d{6,})$/);
       if (merged && spans[0].x < 80) {
         first = merged[1];
@@ -383,7 +452,15 @@
         });
         return;
       }
-      if (!current) return;
+      if (!current) {
+        const qtyLike = spans.some(function (s) {
+          return QTY_RE.test(s.text) && s.x >= 160 && s.x < 220;
+        });
+        if (qtyLike || findAmountSpan(spans) || (spans[0].x >= 200 && spans[0].text)) {
+          orphanContinuation = true;
+        }
+        return;
+      }
 
       if (fillQtyUnitPrice(current, spans)) return;
       if (fillKvFields(current, spans)) return;
@@ -398,34 +475,73 @@
       }
     });
     if (current) items.push(current);
+    const last = items[items.length - 1];
+    return {
+      items: items,
+      hasTable: true,
+      orphanContinuation: orphanContinuation,
+      lastIncomplete: Boolean(last && (!last.qty || !last.amount)),
+    };
+  }
+
+  function attachReviewFlags(items) {
+    (items || []).forEach(function (item) {
+      const flags = [];
+      if (!item.materialNo && (item.description || item.qty || item.amount)) {
+        flags.push("no-material");
+      }
+      if (serviceReason(item)) flags.push("service");
+      item.reviewFlags = flags;
+    });
+  }
+
+  function parseLineItems(rows, header) {
+    const items = analyzeLineItems(rows, header).items;
+    attachReviewFlags(items);
     return items;
   }
 
   function parseDocument(fileName, pages) {
     let header = {};
     const items = [];
+    const pageMeta = [];
     pages.forEach(function (page, i) {
       const rows = groupRows(page.words || page.spans || []);
       const pageHeader = parseHeader(rows);
       if (i === 0) header = pageHeader;
-      const pageItems = parseLineItems(rows, pageHeader);
-      pageItems.forEach(function (it) {
+      const analyzed = analyzeLineItems(rows, pageHeader);
+      analyzed.items.forEach(function (it) {
         items.push(it);
       });
       if (pageHeader.vatTotal) header.vatTotal = pageHeader.vatTotal;
+      pageMeta.push({
+        page: i + 1,
+        itemCount: analyzed.items.length,
+        hasTable: analyzed.hasTable,
+        orphanContinuation: analyzed.orphanContinuation,
+        lastIncomplete: analyzed.lastIncomplete,
+      });
     });
-    return {
+    attachReviewFlags(items);
+    const doc = {
       file: fileName,
       pageCount: pages.length,
       header: header,
       items: items,
-      pages: pages.map(function (_, i) {
-        return { page: i + 1 };
-      }),
+      pages: pageMeta,
     };
+    doc.warnings = collectWarnings(doc);
+    return doc;
   }
 
-  const api = { groupRows: groupRows, parseDocument: parseDocument, parseHeader: parseHeader, parseLineItems: parseLineItems };
+  const api = {
+    groupRows: groupRows,
+    parseDocument: parseDocument,
+    parseHeader: parseHeader,
+    parseLineItems: parseLineItems,
+    collectWarnings: collectWarnings,
+    attachReviewFlags: attachReviewFlags,
+  };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.SchindlerPoParser = api;
 })(typeof window !== "undefined" ? window : globalThis);

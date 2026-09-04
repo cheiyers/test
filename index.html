@@ -16,6 +16,7 @@
       同一张 PO 里多条行项目（00010、00020…）会各成一行；描述换行会拼进同一行。
       行下新出现的「字段: 值」会自动发现为关键字。空附加字段仍可勾选导出。
       <strong>供应商、交货地址、付款条件</strong>勾选才导出。
+      若出现<strong>跨页续行、无物料号文本行、服务类行</strong>，识别区会提示人工核对。
     </div>
 
     <section class="panel">
@@ -28,9 +29,11 @@
       <div class="actions" style="margin-top:10px">
         <button type="button" id="btnDemo">加载三份样张</button>
         <button type="button" class="ghost" id="btnTwoLines">加载双行+新字段样张</button>
+        <button type="button" class="ghost" id="btnReview">加载需核对样张</button>
         <button type="button" class="ghost" id="btnToggleDocs">显示/隐藏原件对照</button>
       </div>
       <div class="hint" id="sourceHint" style="margin-top:8px"></div>
+      <div class="warn-box" id="parseWarnings" hidden></div>
     </section>
 
     <section class="panel">

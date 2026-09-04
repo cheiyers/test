@@ -102,6 +102,7 @@
           deFlag: item.deFlag || extras["D/E"] || "",
           productFamily: item.productFamily || extras["产品家族"] || "",
           scmSize: item.scmSize || extras["SCM大小/量纲"] || "",
+          reviewFlags: item.reviewFlags || [],
         };
         Object.keys(HEADER_ALIASES).forEach(function (label) {
           const id = HEADER_ALIASES[label];

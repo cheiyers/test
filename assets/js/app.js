@@ -30,14 +30,71 @@
     return document.getElementById(id);
   };
 
-  function toast(msg) {
+  function toast(msg, ms) {
     const el = $("toast");
     el.textContent = msg;
     el.classList.add("show");
     clearTimeout(toast._t);
     toast._t = setTimeout(function () {
       el.classList.remove("show");
-    }, 2400);
+    }, ms || 2400);
+  }
+
+  function ensureDocWarnings(docs) {
+    const P = window.SchindlerPoParser;
+    return (docs || []).map(function (doc) {
+      if (P && P.collectWarnings) doc.warnings = P.collectWarnings(doc);
+      else if (!doc.warnings) doc.warnings = [];
+      return doc;
+    });
+  }
+
+  function allWarnings() {
+    const list = [];
+    state.docs.forEach(function (doc) {
+      (doc.warnings || []).forEach(function (w) {
+        list.push(w);
+      });
+    });
+    return list;
+  }
+
+  function flagLabel(flag) {
+    if (flag === "no-material") return "无物料号";
+    if (flag === "service") return "服务类行";
+    if (flag === "cross-page") return "跨页续行";
+    return flag;
+  }
+
+  function renderWarnings() {
+    const box = $("parseWarnings");
+    if (!box) return;
+    const warnings = allWarnings();
+    box.innerHTML = "";
+    if (!warnings.length) {
+      box.hidden = true;
+      return;
+    }
+    box.hidden = false;
+    const title = document.createElement("strong");
+    title.textContent = "发现 " + warnings.length + " 处需人工核对（跨页续行 / 无物料号文本行 / 服务类行）";
+    box.appendChild(title);
+    const ul = document.createElement("ul");
+    warnings.forEach(function (w) {
+      const li = document.createElement("li");
+      li.textContent = w.message;
+      ul.appendChild(li);
+    });
+    box.appendChild(ul);
+  }
+
+  function notifyWarnings(prefix) {
+    const n = allWarnings().length;
+    if (!n) {
+      if (prefix) toast(prefix);
+      return;
+    }
+    toast((prefix ? prefix + "；" : "") + "有 " + n + " 处需人工核对，请查看黄色提示", 4200);
   }
 
   function applyNormalized(norm) {
@@ -99,7 +156,7 @@
 
   function setDocs(docs, source) {
     const sourceChanged = Boolean(state.source) && state.source !== source;
-    state.docs = docs || [];
+    state.docs = ensureDocWarnings(docs || []);
     state.rows = F.flattenDocs(state.docs);
     state.source = source;
     state.selectedRows = new Set(
@@ -226,12 +283,23 @@
     const tbody = document.createElement("tbody");
     state.rows.forEach(function (row) {
       const tr = document.createElement("tr");
+      const flags = row.reviewFlags || [];
+      if (flags.length) {
+        tr.classList.add("needs-review");
+        tr.title = "需核对：" + flags.map(flagLabel).join("、");
+      }
       const td0 = document.createElement("td");
       const cb = document.createElement("input");
       cb.type = "checkbox";
       cb.checked = state.selectedRows.has(row.id);
       cb.dataset.rowId = row.id;
       td0.appendChild(cb);
+      if (flags.length) {
+        const mark = document.createElement("span");
+        mark.className = "review-mark";
+        mark.textContent = "需核对";
+        td0.appendChild(mark);
+      }
       tr.appendChild(td0);
       cols.forEach(function (c) {
         const td = document.createElement("td");
@@ -265,7 +333,9 @@
           ? "当前：双行项目 + 新字段（颜色 / 表面处理）样张"
           : state.source === "upload"
             ? "当前：本地上传识别"
-            : "";
+            : state.source === "review"
+              ? "当前：需核对样张（跨页续行 / 无物料号 / 服务类行）"
+              : "";
   }
 
   function editingColumn() {
@@ -453,6 +523,7 @@
     renderResultTable();
     renderOutputTable();
     renderDocs();
+    renderWarnings();
     savePrefs();
   }
 
@@ -621,7 +692,7 @@
     }
     setDocs(docs, "upload");
     render();
-    toast("已识别 " + docs.length + " 份，共 " + state.rows.length + " 行");
+    notifyWarnings("已识别 " + docs.length + " 份，共 " + state.rows.length + " 行");
   }
 
   function addKeyword(raw) {
@@ -873,6 +944,18 @@
       setDocs(window.DEMO_TWO_LINES.documents, "two-lines");
       render();
       toast("已识别 1 份 PO，共 " + state.rows.length + " 行；新字段已加入关键字");
+    });
+    $("btnReview").addEventListener("click", function () {
+      if (!window.SchindlerPoParser || !window.DEMO_REVIEW_PAGES) {
+        toast("没有需核对样张");
+        return;
+      }
+      const docs = [
+        window.SchindlerPoParser.parseDocument("PO_review_cases.pdf", window.DEMO_REVIEW_PAGES),
+      ];
+      setDocs(docs, "review");
+      render();
+      notifyWarnings("已加载需核对样张，共 " + state.rows.length + " 行");
     });
     $("btnToggleDocs").addEventListener("click", function () {
       $("docsPanel").hidden = !$("docsPanel").hidden;
