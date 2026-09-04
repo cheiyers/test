@@ -86,6 +86,45 @@ EXPECTED = {
             },
         ],
     },
+    "PO_4551787546.pdf": {
+        "poNumber": "4551787546",
+        "documentDate": "2026/09/02",
+        "purchaseGroup": "T0M",
+        "deliveryDate": "2026/09/11",
+        "vatTotal": "1402.50",
+        "items": [
+            {
+                "lineNo": "00010",
+                "materialNo": "57668963",
+                "description": "Round spot 4LED照明",
+                "qty": "15",
+                "unit": "件",
+                "unitPrice": "93.50/1",
+                "amount": "1402.50",
+                "drawingRev": "Z57668961+0+000",
+                "groupTechCode": "MECH",
+            }
+        ],
+    },
+    "PO_4551794879.pdf": {
+        "poNumber": "4551794879",
+        "documentDate": "2026/09/02",
+        "purchaseGroup": "T84",
+        "deliveryDate": "2026/09/14",
+        "vatTotal": "1274.76",
+        "items": [
+            {
+                "lineNo": "00010",
+                "materialNo": "57680105",
+                "description": "Line灯组件-4000K",
+                "qty": "18",
+                "unit": "件",
+                "unitPrice": "70.82/1",
+                "amount": "1274.76",
+                "drawingRev": "L57680105(57680105)+0+000",
+            }
+        ],
+    },
     "PO_4551750012.pdf": {
         "poNumber": "4551750012",
         "deliveryDate": "2026/09/08",
@@ -173,6 +212,17 @@ def main() -> int:
     )
     if split_item["unit"] != "件" or split_item["unitPrice"] != "93.50/1":
         errors.append(f"split unit/price {split_item}")
+    comma_item = {"qty": "", "unit": "", "unitPrice": "", "amount": ""}
+    fill_qty_unit_price(
+        comma_item,
+        [
+            {"text": "15", "x": 174.2},
+            {"text": "件         93.50/1", "x": 226.8},
+            {"text": "1,402.50", "x": 357.6},
+        ],
+    )
+    if comma_item["qty"] != "15" or comma_item["amount"] != "1402.50" or comma_item["unit"] != "件":
+        errors.append(f"comma amount {comma_item}")
 
     if errors:
         print("FAIL")

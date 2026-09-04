@@ -12,7 +12,7 @@ import pymupdf
 
 LINE_NO_RE = re.compile(r"^\d{5}$")
 PO_GROUP_RE = re.compile(r"^(\d{10})/(\S+)$")
-MONEY_RE = re.compile(r"^\d+\.\d{2}$")
+MONEY_RE = re.compile(r"^\d{1,3}(?:,\d{3})*\.\d{2}$")
 QTY_RE = re.compile(r"^\d+$")
 UNIT_PRICE_RE = re.compile(r"^(\S+)\s+(\d+\.\d{2}/\d+)$")
 PRICE_ONLY_RE = re.compile(r"^\d+\.\d{2}(?:/\d+)?$")
@@ -133,6 +133,26 @@ def value_after_label(
     return ""
 
 
+def is_money(text: str) -> bool:
+    return bool(MONEY_RE.match(str(text or "").strip()))
+
+
+def normalize_money(text: str) -> str:
+    return str(text or "").replace(",", "").strip()
+
+
+def find_amount_span(spans: list[dict]) -> dict | None:
+    right = [s for s in spans if s["x"] >= 340]
+    for s in right:
+        if is_money(s["text"]):
+            return {"text": normalize_money(s["text"]), "x": s["x"]}
+    if right:
+        joined = "".join(s["text"] for s in right).replace(" ", "")
+        if is_money(joined):
+            return {"text": normalize_money(joined), "x": right[0]["x"]}
+    return None
+
+
 def parse_unit_price(text: str) -> tuple[str, str]:
     raw = text.strip()
     m = UNIT_PRICE_RE.match(raw)
@@ -145,8 +165,8 @@ def parse_unit_price(text: str) -> tuple[str, str]:
 
 def fill_qty_unit_price(item: dict, spans: list[dict]) -> bool:
     """Fill qty / unit / unitPrice / amount. Handles '件 93.50/1' in one span or split words."""
-    qty_span = next((s for s in spans if QTY_RE.match(s["text"]) and 160 <= s["x"] < 210), None)
-    amount_span = next((s for s in spans if MONEY_RE.match(s["text"]) and s["x"] >= 350), None)
+    qty_span = next((s for s in spans if QTY_RE.match(s["text"]) and 160 <= s["x"] < 220), None)
+    amount_span = find_amount_span(spans)
     if not qty_span or not amount_span:
         return False
     if item.get("qty"):
@@ -307,9 +327,13 @@ def parse_header(rows: list[dict]) -> dict:
             header["paymentTerms"] = right.replace("付款条件:", "").strip()
         joined = row["text"]
         if "不含增值税总价" in joined:
-            money = [s["text"] for s in row["spans"] if MONEY_RE.match(s["text"])]
+            money = [normalize_money(s["text"]) for s in row["spans"] if is_money(s["text"])]
             if money:
                 header["vatTotal"] = money[-1]
+            elif not header["vatTotal"]:
+                joined = "".join(s["text"] for s in row["spans"] if s["x"] >= 340).replace(" ", "")
+                if is_money(joined):
+                    header["vatTotal"] = normalize_money(joined)
         if "此文档已电子签名" in joined:
             header["electronicallySigned"] = True
         if row["y"] > 740 and ("页" in joined or re.search(r"\d+\s*/\s*\d+", joined)):

@@ -120,4 +120,40 @@ if (splitDoc.header.companyCode !== "3260") {
   console.error("companyCode", splitDoc.header);
   process.exit(1);
 }
-console.log("OK parser two-line + split unit/price");
+
+const commaWords = [
+  w(42.5, 31.4, "迅达(中国）电梯有限公司"),
+  w(42.5, 95.1, "采购订单"),
+  w(42.5, 126.7, "采购订单号/采购组:"),
+  w(136.1, 126.7, "4551787546/T0M"),
+  w(42.5, 141.1, "凭证日期:"),
+  w(136.1, 141.1, "2026/09/02"),
+  w(283.5, 386.8, "交货日期: 2026/09/11"),
+  w(42.5, 483.8, "行项目"),
+  w(85.0, 483.8, "物料号"),
+  w(42.5, 513.8, "00010"),
+  w(85.0, 513.8, "57668963"),
+  w(170.1, 513.8, "XH"),
+  w(240.9, 513.8, "Round spot 4LED照明"),
+  w(174.2, 525.8, "15"),
+  w(226.8, 525.8, "件         93.50/1"),
+  w(357.6, 525.8, "1,402.50"),
+  w(42.5, 537.8, "图号/版本: Z57668961+0+000"),
+  w(179.3, 639.8, "不含增值税总价 CNY"),
+  w(357.6, 639.8, "1,402.50"),
+];
+const commaDoc = parser.parseDocument("PO_4551787546.pdf", [{ words: commaWords }]);
+const commaItem = commaDoc.items[0];
+if (!commaItem || commaItem.qty !== "15" || commaItem.amount !== "1402.50") {
+  console.error("comma qty/amount", commaItem);
+  process.exit(1);
+}
+if (commaItem.unit !== "件" || commaItem.unitPrice !== "93.50/1") {
+  console.error("comma unit/price", commaItem);
+  process.exit(1);
+}
+if (commaDoc.header.vatTotal !== "1402.50") {
+  console.error("comma vatTotal", commaDoc.header);
+  process.exit(1);
+}
+console.log("OK parser two-line + split unit/price + comma amount");

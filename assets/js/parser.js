@@ -1,7 +1,7 @@
 (function (root) {
   const LINE_NO_RE = /^\d{5}$/;
   const PO_GROUP_RE = /^(\d{10})\/(\S+)$/;
-  const MONEY_RE = /^\d+\.\d{2}$/;
+  const MONEY_RE = /^\d{1,3}(?:,\d{3})*\.\d{2}$/;
   const QTY_RE = /^\d+$/;
   const UNIT_PRICE_RE = /^(\S+)\s+(\d+\.\d{2}\/\d+)$/;
   const PRICE_ONLY_RE = /^\d+\.\d{2}(?:\/\d+)?$/;
@@ -110,6 +110,33 @@
       });
   }
 
+  function isMoney(text) {
+    return MONEY_RE.test(String(text || "").trim());
+  }
+
+  function normalizeMoney(text) {
+    return String(text || "").replace(/,/g, "").trim();
+  }
+
+  function findAmountSpan(spans) {
+    const right = (spans || []).filter(function (s) {
+      return s.x >= 340;
+    });
+    for (let i = 0; i < right.length; i++) {
+      if (isMoney(right[i].text)) return { text: normalizeMoney(right[i].text), x: right[i].x };
+    }
+    if (right.length) {
+      const joined = right
+        .map(function (s) {
+          return s.text;
+        })
+        .join("")
+        .replace(/\s/g, "");
+      if (isMoney(joined)) return { text: normalizeMoney(joined), x: right[0].x };
+    }
+    return null;
+  }
+
   function parseUnitPrice(text) {
     const raw = String(text || "").trim();
     const m = raw.match(UNIT_PRICE_RE);
@@ -120,11 +147,9 @@
 
   function fillQtyUnitPrice(item, spans) {
     const qtySpan = spans.filter(function (s) {
-      return QTY_RE.test(s.text) && s.x >= 160 && s.x < 210;
+      return QTY_RE.test(s.text) && s.x >= 160 && s.x < 220;
     })[0];
-    const amountSpan = spans.filter(function (s) {
-      return MONEY_RE.test(s.text) && s.x >= 350;
-    })[0];
+    const amountSpan = findAmountSpan(spans);
     if (!qtySpan || !amountSpan) return false;
     if (item.qty) return true;
     item.qty = qtySpan.text;
@@ -271,9 +296,13 @@
       }
       if (row.text.indexOf("不含增值税总价") >= 0) {
         const money = row.spans.filter(function (s) {
-          return MONEY_RE.test(s.text);
+          return isMoney(s.text);
         });
-        if (money.length) header.vatTotal = money[money.length - 1].text;
+        if (money.length) header.vatTotal = normalizeMoney(money[money.length - 1].text);
+        else if (!header.vatTotal) {
+          const joined = columnTexts(row, 340, 9999).join("").replace(/\s/g, "");
+          if (isMoney(joined)) header.vatTotal = normalizeMoney(joined);
+        }
       }
       if (row.text.indexOf("此文档已电子签名") >= 0) header.electronicallySigned = true;
     });
