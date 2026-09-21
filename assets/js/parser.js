@@ -1,7 +1,7 @@
 /* KONE Purchase Order parser (coordinate-aware, browser-side). */
 (function (global) {
   const LINE_RE =
-    /^(\d+)\s+(KM[A-Z0-9]+)\s+(\d{2}\.\d{2}\.\d{4})(?:\s+(\d{2}\.\d{2}\.\d{4}))?\s+(\d+)\s*PC\s+([\d,.]+)\s+([\d,.]+)$/;
+    /^(\d+)\s+(?:(KM[A-Z0-9]+)\s+)?(\d{2}\.\d{2}\.\d{4})(?:\s+(\d{2}\.\d{2}\.\d{4}))?\s+(\d+)\s*PC\s+([\d,.]+)\s+([\d,.]+)$/;
   const BOM_RE = /^\.1\s+(\d{4})\s+(KM[A-Z0-9]+)\s+([\d,.]+)\s+PC$/;
   const DATE_RE = /\d{2}\.\d{2}\.\d{4}/g;
   const CONTACT_RE = /([A-Za-z]+,[A-Za-z]+)/;
@@ -50,9 +50,15 @@
     let headerY = null;
     let footerY = 690;
     for (const ln of lines) {
-      if (ln.text.startsWith("Pos.") && ln.text.includes("Material")) headerY = ln.y;
-        if (
+      if (
+        (ln.text.startsWith("Pos.") && ln.text.includes("Material")) ||
+        compactText(ln.text).includes("\u9879\u76ee.\u7269\u6599")
+      ) {
+        headerY = ln.y;
+      }
+      if (
         ln.text.includes("TOTAL AMOUNT") ||
+        ln.text.includes("\u603b\u91d1\u989d") ||
         ln.text.includes(ACCOUNT_MARK) ||
         ln.text.includes("\u8d26\u53f7")
       ) {
@@ -75,6 +81,9 @@
       companyZh: "\u901a\u529b\u7535\u68af\u6709\u9650\u516c\u53f8",
       docType: "Purchase order",
       poNumber: "",
+      purchaseOrderNo: "",
+      quotationNo: "",
+      serviceOrderNo: "",
       vendorName: "",
       vendorNameEn: "",
       vendorAddress: "",
@@ -91,8 +100,7 @@
       tel: "",
     };
     const full = lines.map((l) => l.text).join("\n");
-    const po = full.match(/No\.\s+(\d{7,})/);
-    if (po) header.poNumber = po[1];
+    Object.assign(header, extractOrderIds(full));
     const vat = full.match(/VAT No:\s*(\S+)/);
     if (vat) header.vatNo = vat[1];
     const tel = full.match(/Tel:\s*(\d+)/);
@@ -105,19 +113,39 @@
     for (const ln of lines) {
       let left = columnText(ln, 0, 280);
       const right = columnText(ln, 280, 9999);
-      if (left.includes("Seller/Vendor")) {
+      const leftKey = compactText(left);
+      const lineKey = compactText(ln.text);
+      if (left.includes("Seller/Vendor") || leftKey.includes("\u5356\u65b9(\u4e59\u65b9)")) {
         mode = "vendor";
         continue;
       }
-      if (left === "Buyer" || left.startsWith("Buyer")) {
+      if (left === "Buyer" || left.startsWith("Buyer") || leftKey.includes("\u4e70\u65b9(\u7532\u65b9)")) {
         mode = "buyer";
         continue;
       }
-      if (left.startsWith("Delivery address")) {
+      if (
+        left.startsWith("Delivery address") ||
+        leftKey.startsWith("\u4ea4\u8d27/\u9879\u76ee\u5730\u5740") ||
+        leftKey.startsWith("\u4ea4\u8d27\u5730\u5740")
+      ) {
         mode = "delivery";
         continue;
       }
-      if (left.startsWith("Pos.") && ln.text.includes("Material")) break;
+      if (
+        (left.startsWith("Pos.") && ln.text.includes("Material")) ||
+        lineKey.includes("\u9879\u76ee.\u7269\u6599")
+      ) {
+        break;
+      }
+      if (
+        left.startsWith("Quotation") ||
+        left.startsWith("\u91c7\u8d2d\u8ba2\u5355\u53f7") ||
+        left.startsWith("\u62a5\u4ef7\u5355\u53f7") ||
+        left.startsWith("\u670d\u52a1\u8ba2\u5355\u53f7")
+      ) {
+        mode = null;
+        continue;
+      }
       if (left.includes("Shipping Instruction")) {
         left = left.replace("Shipping Instruction", "").trim();
         if (!left) continue;
@@ -133,11 +161,11 @@
       header.vendorName = vendor[0];
       const en = vendor
         .slice(1)
-        .filter((t) => /[A-Za-z]/.test(t) && t !== "CHINA" && !t.startsWith("Tel:"));
+        .filter((t) => /[A-Za-z]/.test(t) && t !== "CHINA" && !t.startsWith("Tel:") && !t.startsWith("\u7535\u8bdd"));
       header.vendorNameEn = en.join(" ");
       header.vendorAddress = vendor
         .slice(1)
-        .filter((t) => !en.includes(t) && !t.startsWith("Tel:"))
+        .filter((t) => !en.includes(t) && !t.startsWith("Tel:") && !t.startsWith("\u7535\u8bdd"))
         .join(" ");
     }
     if (buyer.length) header.buyerName = buyer[0];
@@ -166,16 +194,74 @@
       }
     }
 
-    for (let i = lines.length - 1; i >= 0; i--) {
-      if (lines[i].y > 680) {
-        const m = lines[i].text.match(/([\d,]+\.\d{2})/);
-        if (m) {
-          header.totalAmount = m[1];
-          break;
-        }
+    header.totalAmount = extractTotalAmount(lines);
+    return header;
+  }
+
+  function compactText(s) {
+    return String(s || "")
+      .replace(/[（]/g, "(")
+      .replace(/[）]/g, ")")
+      .replace(/\s+/g, "");
+  }
+
+  function extractOrderIds(full) {
+    const ids = {
+      poNumber: "",
+      purchaseOrderNo: "",
+      quotationNo: "",
+      serviceOrderNo: "",
+    };
+    const texts = [String(full || ""), compactText(full)];
+    texts.forEach((t) => {
+      const customerPo = t.match(/\u91c7\u8d2d\u8ba2\u5355\u53f7\s*[:\uff1a]\s*([A-Za-z0-9_-]+)/);
+      if (customerPo && !ids.purchaseOrderNo) ids.purchaseOrderNo = customerPo[1];
+      const poZh = t.match(/\u91c7\u8d2d\u5355\u53f7\s*[:\uff1a]\s*(\d{7,})/);
+      if (poZh && !ids.poNumber) ids.poNumber = poZh[1];
+      const poEn = t.match(/No\.\s*(\d{7,})/);
+      if (poEn && !ids.poNumber) ids.poNumber = poEn[1];
+      const quo = t.match(/\u62a5\u4ef7\u5355\u53f7\s*[:\uff1a]\s*([A-Za-z0-9_-]+)/);
+      if (quo && !ids.quotationNo) ids.quotationNo = quo[1];
+      const so = t.match(/\u670d\u52a1\u8ba2\u5355\u53f7\s*[:\uff1a]\s*(\d+)/);
+      if (so && !ids.serviceOrderNo) ids.serviceOrderNo = so[1];
+    });
+    return ids;
+  }
+
+  function extractTotalAmount(lines) {
+    const isDate = (t) => /\d{2}\.\d{2}\.\d{4}/.test(t);
+    for (let i = 0; i < lines.length; i++) {
+      const t = lines[i].text || "";
+      if (!t.includes("TOTAL AMOUNT") && !t.includes("\u603b\u91d1\u989d") && !t.includes("\u5e01\u522b")) continue;
+      for (let j = i; j < Math.min(i + 4, lines.length); j++) {
+        const cleaned = String(lines[j].text || "").replace(/\d{2}\.\d{2}\.\d{4}/g, " ");
+        const m = cleaned.match(/([\d,]+\.\d{2})/);
+        if (m) return m[1];
       }
     }
-    return header;
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (lines[i].y <= 680) continue;
+      if (isDate(lines[i].text)) continue;
+      const m = String(lines[i].text || "").match(/([\d,]+\.\d{2})/);
+      if (m) return m[1];
+    }
+    return "";
+  }
+
+  function matchOrderLine(text) {
+    const tNorm = String(text || "").replace(/\s+/g, " ").trim();
+    const m = tNorm.match(LINE_RE);
+    if (!m) return null;
+    return {
+      pos: m[1],
+      material: m[2] || "",
+      arrDate: m[3],
+      reqShippingDate: m[4] || "",
+      qty: Number(m[5]),
+      unit: "PC",
+      price: m[6],
+      amount: m[7],
+    };
   }
 
   function splitSpec(ln) {
@@ -312,18 +398,18 @@
 
     for (const ln of all) {
       const tNorm = ln.text.replace(/\s+/g, " ").trim();
-      const m = tNorm.match(LINE_RE);
+      const m = matchOrderLine(tNorm);
       if (m) {
         flush();
         current = {
-          pos: m[1],
-          material: m[2],
-          arrDate: m[3],
-          reqShippingDate: m[4] || "",
-          qty: Number(m[5]),
-          unit: "PC",
-          price: m[6],
-          amount: m[7],
+          pos: m.pos,
+          material: m.material,
+          arrDate: m.arrDate,
+          reqShippingDate: m.reqShippingDate,
+          qty: m.qty,
+          unit: m.unit,
+          price: m.price,
+          amount: m.amount,
           description: "",
           salesOrderRef: "",
           projectRef: "",
@@ -550,6 +636,8 @@
     formatBomPivot,
     itemSearchBlob,
     matchKeyword,
+    matchOrderLine,
+    extractOrderIds,
     normalizeDocs,
     normalizeBom,
   };

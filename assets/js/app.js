@@ -7,6 +7,7 @@
 
   const PARENT_FIELDS = [
     { id: "po", label: "PO" },
+    { id: "purchaseOrderNo", label: "\u91c7\u8d2d\u8ba2\u5355\u53f7" },
     { id: "vendor", label: "\u4f9b\u5e94\u5546" },
     { id: "date", label: "\u8ba2\u5355\u65e5\u671f" },
     { id: "pos", label: "Pos" },
@@ -35,6 +36,7 @@
   ];
   const DEFAULT_PARENT = [
     "po",
+    "purchaseOrderNo",
     "pos",
     "material",
     "description",
@@ -208,6 +210,8 @@
     switch (fieldId) {
       case "po":
         return h.poNumber || "";
+      case "purchaseOrderNo":
+        return h.purchaseOrderNo || "";
       case "vendor":
         return h.vendorName || "";
       case "date":
@@ -704,25 +708,33 @@
         const h = d.header || {};
         const mats = {};
         (d.items || []).forEach((it) => {
-          const k = it.material + " " + (it.description || "");
-          mats[k] = (mats[k] || 0) + 1;
+          const material = it.material || "";
+          const desc = it.description || "";
+          const k = material + "||" + desc;
+          if (!mats[k]) mats[k] = { material, desc, n: 0 };
+          mats[k].n += 1;
         });
-        const matHtml = Object.entries(mats)
-          .map(([k, n]) => {
-            const material = k.split(" ")[0];
-            const desc = k.slice(k.indexOf(" ") + 1);
-            const cid = material + "||" + desc;
+        const matHtml = Object.values(mats)
+          .map((row) => {
+            const cid = row.material + "||" + row.desc;
             const on = state.selectedCategories.has(cid);
-            return `<li class="${on ? "" : "off"}"><code>${escapeHtml(material)}</code> ${escapeHtml(
-              desc
-            )} \u00d7${n}</li>`;
+            const matLabel = row.material || "\u2014";
+            return `<li class="${on ? "" : "off"}"><code>${escapeHtml(matLabel)}</code> ${escapeHtml(
+              row.desc
+            )} \u00d7${row.n}</li>`;
           })
           .join("");
+        const extraPo = h.purchaseOrderNo
+          ? `<p class="kicker">${escapeHtml("\u91c7\u8d2d\u8ba2\u5355\u53f7")} ${escapeHtml(
+              h.purchaseOrderNo
+            )}</p>`
+          : "";
         return `<article class="po-card">
           <header>
             <div>
               <p class="kicker">Purchase order</p>
               <h3>No. ${escapeHtml(h.poNumber || "-")}</h3>
+              ${extraPo}
             </div>
             <div class="po-total">${escapeHtml(h.currency || "RMB")} ${escapeHtml(
           h.totalAmount || fmtMoney(d.sumAmount)
@@ -1024,13 +1036,14 @@
     dz.addEventListener("click", () => $("#fileInput").click());
 
     $("#loadDemo").addEventListener("click", () =>
-      loadDemo().then(() => toast("\u5df2\u52a0\u8f7d\u4e09\u4efd\u793a\u4f8b PO"))
+      loadDemo().then(() => toast("\u5df2\u52a0\u8f7d\u793a\u4f8b PO"))
     );
     $("#parseSamples").addEventListener("click", async () => {
       const names = [
         "samples/KONE_PO_4801006558__Please_Acknowledge_Receipt_cd19.pdf",
         "samples/KONE_PO_4801007230__Please_Acknowledge_Receipt_5025.pdf",
         "samples/KONE_PO_4801169630__Please_Acknowledge_Receipt_659c.pdf",
+        "samples/KONE_PO_4801154682__Please_Acknowledge_Receipt_e3cd.pdf",
       ];
       try {
         $("#progressWrap").hidden = false;

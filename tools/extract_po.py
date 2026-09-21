@@ -11,7 +11,8 @@ from pathlib import Path
 import pymupdf
 
 LINE_RE = re.compile(
-    r"^(\d+)\s+(KM[A-Z0-9]+)\s+(\d{2}\.\d{2}\.\d{4})"
+    r"^(\d+)\s+(?:(KM[A-Z0-9]+)\s+)?"
+    r"(\d{2}\.\d{2}\.\d{4})"
     r"(?:\s+(\d{2}\.\d{2}\.\d{4}))?\s+(\d+)\s*PC\s+([\d,.]+)\s+([\d,.]+)$"
 )
 BOM_RE = re.compile(r"^\.1\s+(\d{4})\s+(KM[A-Z0-9]+)\s+([\d,.]+)\s+PC$")
@@ -69,9 +70,15 @@ def content_band(lines):
     header_y = None
     footer_y = 690.0
     for ln in lines:
-        if ln["text"].startswith("Pos.") and "Material" in ln["text"]:
+        if (ln["text"].startswith("Pos.") and "Material" in ln["text"]) or (
+            "项目.物料" in re.sub(r"\s+", "", ln["text"])
+        ):
             header_y = ln["y"]
-        if "TOTAL AMOUNT" in ln["text"] or ln["text"].startswith("\u8d26\u53f7:"):
+        if (
+            "TOTAL AMOUNT" in ln["text"]
+            or "\u603b\u91d1\u989d" in ln["text"]
+            or ln["text"].startswith("\u8d26\u53f7:")
+        ):
             footer_y = min(footer_y, ln["y"] - 2)
         if ln["text"].startswith("1.") and "Please acknowledge" in ln["text"]:
             footer_y = min(footer_y, ln["y"] - 2)
@@ -97,6 +104,9 @@ def parse_header(doc) -> dict:
         "companyZh": "\u901a\u529b\u7535\u68af\u6709\u9650\u516c\u53f8",
         "docType": "Purchase order",
         "poNumber": "",
+        "purchaseOrderNo": "",
+        "quotationNo": "",
+        "serviceOrderNo": "",
         "vendorName": "",
         "vendorNameEn": "",
         "vendorAddress": "",
@@ -113,9 +123,7 @@ def parse_header(doc) -> dict:
         "tel": "",
     }
     full = "\n".join(ln["text"] for ln in lines)
-    m = re.search(r"No\.\s+(\d{7,})", full)
-    if m:
-        header["poNumber"] = m.group(1)
+    header.update(extract_order_ids(full))
     m = re.search(r"VAT No:\s*(\S+)", full)
     if m:
         header["vatNo"] = m.group(1)
@@ -128,17 +136,31 @@ def parse_header(doc) -> dict:
     for ln in lines:
         left = column_text(ln, 0, 280)
         right = column_text(ln, 280, 9999)
-        if "Seller/Vendor" in left:
+        left_key = compact_text(left)
+        line_key = compact_text(ln["text"])
+        if "Seller/Vendor" in left or "卖方(乙方)" in left_key:
             mode = "vendor"
             continue
-        if left == "Buyer" or left.startswith("Buyer"):
+        if left == "Buyer" or left.startswith("Buyer") or "买方(甲方)" in left_key:
             mode = "buyer"
             continue
-        if left.startswith("Delivery address"):
+        if (
+            left.startswith("Delivery address")
+            or left_key.startswith("交货/项目地址")
+            or left_key.startswith("交货地址")
+        ):
             mode = "delivery"
             continue
-        if left.startswith("Pos.") and "Material" in ln["text"]:
+        if (left.startswith("Pos.") and "Material" in ln["text"]) or "项目.物料" in line_key:
             break
+        if (
+            left.startswith("Quotation")
+            or left.startswith("采购订单号")
+            or left.startswith("报价单号")
+            or left.startswith("服务订单号")
+        ):
+            mode = None
+            continue
         if "Shipping Instruction" in left:
             left = left.replace("Shipping Instruction", "").strip()
             if not left:
@@ -157,9 +179,9 @@ def parse_header(doc) -> dict:
         en = [
             t
             for t in vendor[1:]
-            if re.search(r"[A-Za-z]", t) and t not in ("CHINA",) and not t.startswith("Tel:")
+            if re.search(r"[A-Za-z]", t) and t not in ("CHINA",) and not t.startswith("Tel:") and not t.startswith("电话")
         ]
-        zh_rest = [t for t in vendor[1:] if t not in en and not t.startswith("Tel:")]
+        zh_rest = [t for t in vendor[1:] if t not in en and not t.startswith("Tel:") and not t.startswith("电话")]
         header["vendorNameEn"] = " ".join(en)
         header["vendorAddress"] = " ".join(zh_rest)
     if buyer:
@@ -185,13 +207,76 @@ def parse_header(doc) -> dict:
             if m:
                 header["supplierNumber"] = m.group(0)
 
-    for ln in reversed(lines):
-        if ln["y"] > 680:
-            m = re.search(r"([\d,]+\.\d{2})", ln["text"])
-            if m:
-                header["totalAmount"] = m.group(1)
-                break
+    header["totalAmount"] = extract_total_amount(lines)
     return header
+
+
+def compact_text(s: str) -> str:
+    return re.sub(r"\s+", "", (s or "").replace("（", "(").replace("）", ")"))
+
+
+def extract_order_ids(full: str) -> dict:
+    ids = {
+        "poNumber": "",
+        "purchaseOrderNo": "",
+        "quotationNo": "",
+        "serviceOrderNo": "",
+    }
+    for t in (full or "", compact_text(full)):
+        m = re.search(r"采购订单号\s*[:：]\s*([A-Za-z0-9_-]+)", t)
+        if m and not ids["purchaseOrderNo"]:
+            ids["purchaseOrderNo"] = m.group(1)
+        m = re.search(r"采购单号\s*[:：]\s*(\d{7,})", t)
+        if m and not ids["poNumber"]:
+            ids["poNumber"] = m.group(1)
+        m = re.search(r"No\.\s*(\d{7,})", t)
+        if m and not ids["poNumber"]:
+            ids["poNumber"] = m.group(1)
+        m = re.search(r"报价单号\s*[:：]\s*([A-Za-z0-9_-]+)", t)
+        if m and not ids["quotationNo"]:
+            ids["quotationNo"] = m.group(1)
+        m = re.search(r"服务订单号\s*[:：]\s*(\d+)", t)
+        if m and not ids["serviceOrderNo"]:
+            ids["serviceOrderNo"] = m.group(1)
+    return ids
+
+
+def extract_total_amount(lines) -> str:
+    for i, ln in enumerate(lines):
+        t = ln["text"]
+        if "TOTAL AMOUNT" not in t and "总金额" not in t and "币别" not in t:
+            continue
+        for cand in lines[i : i + 4]:
+            cleaned = re.sub(r"\d{2}\.\d{2}\.\d{4}", " ", cand["text"])
+            m = re.search(r"([\d,]+\.\d{2})", cleaned)
+            if m:
+                return m.group(1)
+    for ln in reversed(lines):
+        if ln["y"] <= 680:
+            continue
+        if re.search(r"\d{2}\.\d{2}\.\d{4}", ln["text"]):
+            continue
+        m = re.search(r"([\d,]+\.\d{2})", ln["text"])
+        if m:
+            return m.group(1)
+    return ""
+
+
+def match_order_line(text: str) -> dict | None:
+    t_norm = re.sub(r"\s+", " ", (text or "").strip())
+    m = LINE_RE.match(t_norm)
+    if not m:
+        return None
+    return {
+        "pos": m.group(1),
+        "material": m.group(2) or "",
+        "arrDate": m.group(3),
+        "reqShippingDate": m.group(4) or "",
+        "qty": int(m.group(5)),
+        "unit": "PC",
+        "price": m.group(6),
+        "amount": m.group(7),
+    }
 
 
 def split_spec(ln) -> dict | None:
@@ -236,18 +321,18 @@ def parse_items(doc) -> list[dict]:
 
     for ln in all_lines:
         t_norm = re.sub(r"\s+", " ", ln["text"].strip())
-        m = LINE_RE.match(t_norm)
+        m = match_order_line(t_norm)
         if m:
             flush()
             current = {
-                "pos": m.group(1),
-                "material": m.group(2),
-                "arrDate": m.group(3),
-                "reqShippingDate": m.group(4) or "",
-                "qty": int(m.group(5)),
-                "unit": "PC",
-                "price": m.group(6),
-                "amount": m.group(7),
+                "pos": m["pos"],
+                "material": m["material"],
+                "arrDate": m["arrDate"],
+                "reqShippingDate": m["reqShippingDate"],
+                "qty": m["qty"],
+                "unit": m["unit"],
+                "price": m["price"],
+                "amount": m["amount"],
                 "description": "",
                 "salesOrderRef": "",
                 "projectRef": "",
