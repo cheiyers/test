@@ -93,10 +93,74 @@ def group_rows(spans: list[dict], y_tol: float = 3.5) -> list[dict]:
             rows.append({"y": span["y"], "spans": [span]})
     for row in rows:
         row["spans"].sort(key=lambda s: s["x"])
+        row["spans"] = coalesce_spans(row["spans"])
         row["text"] = " ".join(s["text"] for s in row["spans"])
         row["x"] = row["spans"][0]["x"]
     rows.sort(key=lambda r: r["y"])
     return rows
+
+
+def span_x1(span: dict) -> float:
+    if span.get("x1") is not None:
+        return float(span["x1"])
+    return span["x"] + len(str(span.get("text") or "")) * 5
+
+
+def is_cjk_text(text: str) -> bool:
+    return bool(re.search(r"[\u4e00-\u9fff]", str(text or "")))
+
+
+def should_merge_spans(prev: dict, nxt: dict) -> bool:
+    gap = nxt["x"] - prev["x1"]
+    if gap > 2.2:
+        return False
+    a = str(prev.get("text") or "")
+    b = str(nxt.get("text") or "")
+    if LINE_NO_RE.match(a) or LINE_NO_RE.match(b):
+        return False
+    if re.fullmatch(r"\d{6,}", a) or re.fullmatch(r"\d{6,}", b):
+        return False
+    if is_money(a) or is_money(b) or PRICE_ONLY_RE.match(a) or PRICE_ONLY_RE.match(b):
+        return False
+    if UNIT_PRICE_RE.match(a) or UNIT_PRICE_RE.match(b):
+        return False
+    if is_cjk_text(a) or is_cjk_text(b):
+        return True
+    if re.fullmatch(r"[:：./]", b) or re.search(r"[:：./]$", a):
+        return True
+    if len(a) <= 2 and len(b) <= 2:
+        return True
+    return False
+
+
+def coalesce_spans(spans: list[dict]) -> list[dict]:
+    out: list[dict] = []
+    for s in spans:
+        x1 = span_x1(s)
+        cur = {"text": s["text"], "x": s["x"], "y": s.get("y", 0), "x1": x1}
+        if not out:
+            out.append(cur)
+            continue
+        prev = out[-1]
+        if should_merge_spans(prev, cur):
+            prev["text"] += cur["text"]
+            prev["x1"] = max(prev["x1"], cur["x1"])
+        else:
+            out.append(cur)
+    return out
+
+
+def compact_row(row: dict) -> str:
+    return re.sub(r"\s+", "", "".join(s["text"] for s in row.get("spans") or []))
+
+
+def is_table_header_row(row: dict) -> bool:
+    t = compact_row(row)
+    if "行项目" in t and "物料" in t:
+        return True
+    if "订单数量" in t and "未税" in t:
+        return True
+    return False
 
 
 def span_label(text: str) -> str:
@@ -167,7 +231,7 @@ def parse_unit_price(text: str) -> tuple[str, str]:
 
 def fill_qty_unit_price(item: dict, spans: list[dict]) -> bool:
     """Fill qty / unit / unitPrice / amount. Handles '件 93.50/1' in one span or split words."""
-    qty_span = next((s for s in spans if QTY_RE.match(s["text"]) and 160 <= s["x"] < 220), None)
+    qty_span = next((s for s in spans if QTY_RE.match(s["text"]) and 160 <= s["x"] < 235), None)
     amount_span = find_amount_span(spans)
     if not qty_span or not amount_span:
         return False
@@ -193,7 +257,7 @@ def fill_qty_unit_price(item: dict, spans: list[dict]) -> bool:
         None,
     )
     price_span = next(
-        (s for s in spans if PRICE_ONLY_RE.match(s["text"]) and 250 <= s["x"] < 360),
+        (s for s in spans if PRICE_ONLY_RE.match(s["text"]) and 250 <= s["x"] < 420),
         None,
     )
     if unit_span:
@@ -220,10 +284,30 @@ def fill_kv_fields(item: dict, spans: list[dict]) -> bool:
             val = nxt["text"].strip()
         else:
             continue
+        key = re.sub(r"[.。]+$", "", key).strip()
+        if not key and i > 0:
+            key = re.sub(r"[.。:：]+$", "", spans[i - 1]["text"]).strip()
+        if not key or not val:
+            continue
+        found = True
         item["extras"][key] = val
         if key in KEYWORD_MAP:
             item[KEYWORD_MAP[key]] = val
     return found
+
+
+def fill_spec_fields(item: dict, spans: list[dict]) -> bool:
+    compact = re.sub(r"\s+", "", "".join(s["text"] for s in spans))
+    mm = next((s for s in reversed(spans) if re.search(r"[\d,]+\s*mm", s["text"], re.I)), None)
+    if not mm:
+        return False
+    if "轿厢宽度" in compact:
+        item["extras"]["轿厢宽度"] = mm["text"].strip()
+        return True
+    if "轿厢深度" in compact:
+        item["extras"]["轿厢深度"] = mm["text"].strip()
+        return True
+    return False
 
 
 LEFT = (0, 280)
@@ -244,10 +328,18 @@ def parse_header(rows: list[dict]) -> dict:
         parts = po_raw.split("/")
         po_number = parts[0].strip()
         purchase_group = parts[1].strip() if len(parts) > 1 else ""
+    if not po_number:
+        for row in rows:
+            if row["y"] > 160:
+                continue
+            m = re.search(r"(\d{10})/([A-Za-z0-9]+)", compact_row(row))
+            if m:
+                po_number, purchase_group = m.group(1), m.group(2)
+                break
 
     supplier_lines = []
     for row in rows:
-        if 160 <= row["y"] <= 200:
+        if 148 <= row["y"] <= 215:
             right = column_texts(row, 300, 9999)
             if right:
                 supplier_lines.append(" ".join(right))
@@ -265,9 +357,9 @@ def parse_header(rows: list[dict]) -> dict:
         if right_t.startswith("交货地址"):
             in_delivery = True
             right_t = ""
-        if left_t.startswith("你们的参考号") or left_t == "行项目" or row["y"] >= 430:
+        if left_t.startswith("你们的参考号") or "行项目" in compact_row(row) or row["y"] >= 430:
             in_billing = False
-        if right_t.startswith("工厂"):
+        if right_t.startswith(("工厂", "贸易条款", "付款条件", "我们的增值税号")):
             in_delivery = False
         if in_billing and left_t:
             billing.append(left_t)
@@ -280,6 +372,21 @@ def parse_header(rows: list[dict]) -> dict:
             if s["y"] < 430 and s["text"].startswith("交货日期:"):
                 delivery_date = s["text"].split(":", 1)[-1].strip()
 
+    contacts = []
+    for row in rows:
+        for j, s in enumerate(row["spans"]):
+            if s["x"] >= 280 or s.get("y", 0) > 240:
+                continue
+            if span_label(s["text"]) != "联系人":
+                continue
+            m = KV_RE.match(s["text"])
+            if m and m.group(2).strip():
+                contacts.append(m.group(2).strip())
+            else:
+                later = next((t for t in row["spans"][j + 1 :] if t["x"] < 280), None)
+                if later:
+                    contacts.append(later["text"].strip())
+
     header = {
         "buyer": next(
             (s["text"] for r in rows for s in r["spans"] if "迅达" in s["text"] and s["y"] < 50),
@@ -288,11 +395,13 @@ def parse_header(rows: list[dict]) -> dict:
         "docType": next((s["text"] for r in rows for s in r["spans"] if s["text"] == "采购订单"), "采购订单"),
         "poNumber": po_number,
         "purchaseGroup": purchase_group,
-        "documentDate": value_after_label(rows, "凭证日期", x_min=0, x_max=280),
-        "buyerContact": value_after_label(rows, "联系人", x_min=0, x_max=280),
+        "documentDate": value_after_label(rows, "凭证日期", x_min=0, x_max=280)
+        or value_after_label(rows, "日期", x_min=0, x_max=220),
+        "buyerContact": contacts[0] if contacts else value_after_label(rows, "联系人", x_min=0, x_max=280),
         "buyerPhone": value_after_label(rows, "电话/传真", x_min=0, x_max=280).rstrip(" /"),
         "buyerEmail": value_after_label(rows, "邮箱", x_min=0, x_max=280),
-        "supplierContact": value_after_label(rows, "供应商联系人", x_min=0, x_max=280),
+        "supplierContact": value_after_label(rows, "供应商联系人", x_min=0, x_max=280)
+        or (contacts[1] if len(contacts) > 1 else ""),
         "supplierCode": value_after_label(rows, "供应商", x_min=0, x_max=280),
         "supplierPhone": value_after_label(rows, "电话", x_min=0, x_max=280),
         "supplierName": supplier_lines[0] if supplier_lines else "",
@@ -312,6 +421,7 @@ def parse_header(rows: list[dict]) -> dict:
     }
 
     for row in rows:
+        joined = compact_row(row)
         for s in row["spans"]:
             t = s["text"]
             if t.startswith("工厂:"):
@@ -324,22 +434,25 @@ def parse_header(rows: list[dict]) -> dict:
                 header["fileNo"] = t.split(":", 1)[-1].strip()
             elif t.startswith("贸易条款:"):
                 header["incoterms"] = t.split(":", 1)[-1].strip()
+        if not header["companyCode"]:
+            cc = re.search(r"公司代码(\d{4})", joined)
+            if cc:
+                header["companyCode"] = cc.group(1)
         right = " ".join(column_texts(row, *RIGHT)).strip()
-        if re.search(r"\d+\s*天之内", right) or "到期净值" in right:
-            header["paymentTerms"] = right.replace("付款条件:", "").strip()
-        joined = row["text"]
+        if re.search(r"\d+\s*天之内", right) or re.search(r"到期\s*净值", right):
+            header["paymentTerms"] = re.sub(r"\s+", " ", right.replace("付款条件:", "")).strip()
         if "不含增值税总价" in joined:
             money = [normalize_money(s["text"]) for s in row["spans"] if is_money(s["text"])]
             if money:
                 header["vatTotal"] = money[-1]
             elif not header["vatTotal"]:
-                joined = "".join(s["text"] for s in row["spans"] if s["x"] >= 340).replace(" ", "")
-                if is_money(joined):
-                    header["vatTotal"] = normalize_money(joined)
+                amt = "".join(s["text"] for s in row["spans"] if s["x"] >= 340).replace(" ", "")
+                if is_money(amt):
+                    header["vatTotal"] = normalize_money(amt)
         if "此文档已电子签名" in joined:
             header["electronicallySigned"] = True
         if row["y"] > 740 and ("页" in joined or re.search(r"\d+\s*/\s*\d+", joined)):
-            header["page"] = re.sub(r"^页\s*", "", joined).strip()
+            header["page"] = re.sub(r"^页\s*", "", row["text"]).strip()
 
     # Contact-block 电话 appears twice; keep the 11-digit supplier mobile.
     if header["supplierPhone"] and not re.fullmatch(r"\d{11}", header["supplierPhone"]):
@@ -450,9 +563,10 @@ def analyze_line_items(rows: list[dict], header: dict) -> dict:
     start_i = None
     end_i = len(rows)
     for i, row in enumerate(rows):
-        if start_i is None and any(s["text"] == "行项目" for s in row["spans"]):
+        joined = compact_row(row)
+        if start_i is None and "行项目" in joined:
             start_i = i
-        if start_i is not None and any("不含增值税总价" in s["text"] for s in row["spans"]):
+        if start_i is not None and "不含增值税总价" in joined:
             end_i = min(end_i, i)
     if start_i is None:
         return {"items": [], "hasTable": False, "orphanContinuation": False, "lastIncomplete": False}
@@ -488,7 +602,7 @@ def analyze_line_items(rows: list[dict], header: dict) -> dict:
         spans = [s for s in row["spans"] if s["text"] not in SKIP_TABLE_TEXTS]
         if not spans:
             continue
-        if is_ignorable_item_row(row, spans):
+        if is_table_header_row(row) or is_ignorable_item_row(row, spans):
             continue
         first = spans[0]["text"]
 
@@ -506,14 +620,14 @@ def analyze_line_items(rows: list[dict], header: dict) -> dict:
             for s in spans[1:]:
                 if 80 <= s["x"] < 160:
                     current["materialNo"] = s["text"]
-                elif 160 <= s["x"] < 230:
+                elif 160 <= s["x"] < 230 and not QTY_RE.match(s["text"]):
                     current["materialGroup"] = s["text"]
                 elif s["x"] >= 230:
                     current["description"] = (current["description"] + " " + s["text"]).strip()
             continue
 
         if current is None:
-            qty_like = any(QTY_RE.match(s["text"]) and 160 <= s["x"] < 220 for s in spans)
+            qty_like = any(QTY_RE.match(s["text"]) and 160 <= s["x"] < 235 for s in spans)
             if qty_like or find_amount_span(spans) or (spans[0]["x"] >= 200 and spans[0]["text"]):
                 orphan_continuation = True
             continue
@@ -522,6 +636,8 @@ def analyze_line_items(rows: list[dict], header: dict) -> dict:
             continue
 
         if fill_kv_fields(current, spans):
+            continue
+        if fill_spec_fields(current, spans):
             continue
 
         if spans[0]["x"] >= 200:

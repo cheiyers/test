@@ -282,4 +282,46 @@ if (!(twoPageDoc.warnings || []).some(function (w) { return w.type === "cross-pa
   console.error("two-page warning", twoPageDoc.warnings);
   process.exit(1);
 }
-console.log("OK parser two-line + split unit/price + comma amount + review warnings + two-page");
+
+  function w1(x, y, text, x1) {
+    return { text: text, x: x, y: y, x1: x1 };
+  }
+  const splitGlyphs = [
+    w1(42.5, 31.4, "迅", 52.5), w1(52.5, 31.4, "达", 62.5), w1(62.5, 31.4, "(中国）电梯有限公司", 155.8),
+    w1(42.5, 95.1, "采", 56.5), w1(56.5, 95.1, "购订单", 98.5),
+    w1(42.5, 126.7, "采", 52.5), w1(52.5, 126.7, "购订单", 82.5), w1(82.5, 126.7, "号", 92.5),
+    w1(92.5, 126.7, "/", 95.2), w1(95.2, 126.7, "采", 105.2), w1(105.2, 126.7, "购组", 125.2), w1(125.2, 126.7, ":", 128.0),
+    w1(136.1, 126.7, "4550711151/T0M", 214.1),
+    w1(42.5, 141.1, "日期", 62.5),
+    w1(136.1, 141.1, "2026/06/12", 185.9),
+    w1(283.5, 386.8, "交货日期: 2026/07/01", 379.4),
+    w1(42.5, 483.8, "行", 52.5), w1(52.5, 483.8, "项", 62.5), w1(62.5, 483.8, "目", 72.5),
+    w1(85.0, 483.8, "物料号", 115.0),
+    w1(42.5, 513.8, "00010", 70.2),
+    w1(85.0, 513.8, "57866241", 129.3),
+    w1(240.9, 513.8, "Edge light", 285.2),
+    w1(285.2, 513.8, "灯", 295.2), w1(295.2, 513.8, "组", 305.2), w1(305.2, 513.8, "件", 315.2),
+    w1(207.1, 525.8, "1", 212.6),
+    w1(240.9, 525.8, "件", 250.9),
+    w1(329.9, 525.8, "388.54/1", 390.6),
+    w1(451.0, 525.8, "388.54", 481.5),
+    w1(42.5, 537.8, "合同号", 72.5),
+    w1(72.5, 537.8, ".: JST0011921906", 153.9),
+    w1(179.3, 639.8, "不含增值税总价 CNY", 273.1),
+    w1(451.0, 639.8, "388.54", 481.5),
+  ];
+const glyphDoc = parser.parseDocument("PO_4550711151.pdf", [{ words: splitGlyphs }]);
+const glyphItem = glyphDoc.items[0];
+if (glyphDoc.header.poNumber !== "4550711151" || glyphDoc.header.documentDate !== "2026/06/12") {
+  console.error("split header", glyphDoc.header);
+  process.exit(1);
+}
+if (!glyphItem || glyphItem.description !== "Edge light灯组件" || glyphItem.unit !== "件" || glyphItem.qty !== "1") {
+  console.error("split item", glyphItem);
+  process.exit(1);
+}
+if (glyphItem.extras["合同号"] !== "JST0011921906") {
+  console.error("contract extra", glyphItem.extras);
+  process.exit(1);
+}
+console.log("OK parser two-line + split unit/price + comma amount + review warnings + two-page + split glyphs");

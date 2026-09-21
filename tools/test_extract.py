@@ -171,6 +171,63 @@ EXPECTED = {
             },
         ],
     },
+    "PO_4550711151.pdf": {
+        "poNumber": "4550711151",
+        "documentDate": "2026/06/12",
+        "purchaseGroup": "T0M",
+        "supplierName": "Suzhou Shijia Elevator Decoration F",
+        "supplierCode": "1204937",
+        "deliveryDate": "2026/07/01",
+        "companyCode": "3260",
+        "vatTotal": "459.77",
+        "items": [
+            {
+                "lineNo": "00010",
+                "materialNo": "57866241",
+                "description": "Edge light灯组件",
+                "qty": "1",
+                "unit": "件",
+                "unitPrice": "388.54/1",
+                "amount": "388.54",
+            },
+            {
+                "lineNo": "00020",
+                "materialNo": "57886831",
+                "description": "装饰吊顶固定支架组件",
+                "qty": "1",
+                "amount": "50.91",
+            },
+            {
+                "lineNo": "00030",
+                "materialNo": "57886847",
+                "description": "平头套管",
+                "qty": "4",
+                "amount": "20.32",
+            },
+        ],
+    },
+    "PO_4551384625.pdf": {
+        "poNumber": "4551384625",
+        "documentDate": "2026/08/01",
+        "deliveryDate": "2026/08/06",
+        "vatTotal": "459.77",
+        "items": [
+            {"lineNo": "00010", "materialNo": "57866241", "qty": "1", "amount": "388.54"},
+            {"lineNo": "00020", "materialNo": "57886831", "qty": "1", "amount": "50.91"},
+            {"lineNo": "00030", "materialNo": "57886847", "qty": "4", "amount": "20.32"},
+        ],
+    },
+    "PO_4551985957.pdf": {
+        "poNumber": "4551985957",
+        "documentDate": "2026/09/17",
+        "deliveryDate": "2026/09/22",
+        "vatTotal": "447.52",
+        "items": [
+            {"lineNo": "00010", "materialNo": "57866241", "qty": "1", "unitPrice": "376.29/1", "amount": "376.29"},
+            {"lineNo": "00020", "materialNo": "57886831", "qty": "1", "amount": "50.91"},
+            {"lineNo": "00030", "materialNo": "57886847", "qty": "4", "amount": "20.32"},
+        ],
+    },
 }
 
 
@@ -200,7 +257,7 @@ def main() -> int:
         doc = parse_pdf(path)
         merged = {"header": doc["header"], "items": doc["items"], **doc["header"]}
         errors.extend(check_subset(merged, expected, name))
-        amount_sum = sum(float(i["amount"]) for i in doc["items"])
+        amount_sum = sum(float(i["amount"]) for i in doc["items"] if i.get("amount"))
         total = float(doc["header"]["vatTotal"])
         if abs(amount_sum - total) > 0.001:
             errors.append(f"{name} amount sum {amount_sum} != vatTotal {total}")
@@ -228,6 +285,16 @@ def main() -> int:
         for item in doc["items"]:
             if item.get("reviewFlags"):
                 errors.append(f"{name} unexpected reviewFlags {item.get('lineNo')} {item.get('reviewFlags')}")
+        if name == "PO_4550711151.pdf":
+            extras0 = doc["items"][0].get("extras") or {}
+            if extras0.get("合同号") != "JST0011921906":
+                errors.append(f"{name} 合同号 {extras0.get('合同号')!r}")
+            if extras0.get("Equipment") != "000000000011921906":
+                errors.append(f"{name} Equipment {extras0.get('Equipment')!r}")
+            if extras0.get("轿厢宽度") != "1,600 mm":
+                errors.append(f"{name} 轿厢宽度 {extras0.get('轿厢宽度')!r}")
+            if extras0.get("轿厢深度") != "1,500 mm":
+                errors.append(f"{name} 轿厢深度 {extras0.get('轿厢深度')!r}")
         if name == "PO_two_lines.pdf":
             extras0 = doc["items"][0].get("extras") or {}
             extras1 = doc["items"][1].get("extras") or {}

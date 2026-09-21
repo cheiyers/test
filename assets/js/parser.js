@@ -60,6 +60,7 @@
       row.spans.sort(function (a, b) {
         return a.x - b.x;
       });
+      row.spans = coalesceSpans(row.spans);
       row.text = row.spans
         .map(function (s) {
           return s.text;
@@ -71,6 +72,66 @@
       return a.y - b.y;
     });
     return rows;
+  }
+
+  function spanX1(span) {
+    if (span.x1 != null) return span.x1;
+    return span.x + String(span.text || "").length * 5;
+  }
+
+  function isCjkText(text) {
+    return /[\u4e00-\u9fff]/.test(String(text || ""));
+  }
+
+  function shouldMergeSpans(prev, next) {
+    const gap = next.x - prev.x1;
+    if (gap > 2.2) return false;
+    const a = String(prev.text || "");
+    const b = String(next.text || "");
+    if (LINE_NO_RE.test(a) || LINE_NO_RE.test(b)) return false;
+    if (/^\d{6,}$/.test(a) || /^\d{6,}$/.test(b)) return false;
+    if (isMoney(a) || isMoney(b) || PRICE_ONLY_RE.test(a) || PRICE_ONLY_RE.test(b)) return false;
+    if (UNIT_PRICE_RE.test(a) || UNIT_PRICE_RE.test(b)) return false;
+    if (isCjkText(a) || isCjkText(b)) return true;
+    if (/^[:：./]$/.test(b) || /[:：./]$/.test(a)) return true;
+    if (a.length <= 2 && b.length <= 2) return true;
+    return false;
+  }
+
+  function coalesceSpans(spans) {
+    const out = [];
+    (spans || []).forEach(function (s) {
+      const x1 = spanX1(s);
+      const cur = { text: s.text, x: s.x, y: s.y, x1: x1 };
+      if (!out.length) {
+        out.push(cur);
+        return;
+      }
+      const prev = out[out.length - 1];
+      if (shouldMergeSpans(prev, cur)) {
+        prev.text += cur.text;
+        prev.x1 = Math.max(prev.x1, cur.x1);
+      } else {
+        out.push(cur);
+      }
+    });
+    return out;
+  }
+
+  function compactRow(row) {
+    return (row.spans || [])
+      .map(function (s) {
+        return s.text;
+      })
+      .join("")
+      .replace(/\s+/g, "");
+  }
+
+  function isTableHeaderRow(row) {
+    const t = compactRow(row);
+    if (t.indexOf("行项目") >= 0 && t.indexOf("物料") >= 0) return true;
+    if (t.indexOf("订单数量") >= 0 && t.indexOf("未税") >= 0) return true;
+    return false;
   }
 
   function spanLabel(text) {
@@ -149,7 +210,7 @@
 
   function fillQtyUnitPrice(item, spans) {
     const qtySpan = spans.filter(function (s) {
-      return QTY_RE.test(s.text) && s.x >= 160 && s.x < 220;
+      return QTY_RE.test(s.text) && s.x >= 160 && s.x < 235;
     })[0];
     const amountSpan = findAmountSpan(spans);
     if (!qtySpan || !amountSpan) return false;
@@ -169,7 +230,7 @@
       return s.x >= 200 && s.x < 280 && (UNIT_LIKE_RE.test(s.text) || (!PRICE_ONLY_RE.test(s.text) && !QTY_RE.test(s.text)));
     })[0];
     const priceSpan = spans.filter(function (s) {
-      return PRICE_ONLY_RE.test(s.text) && s.x >= 250 && s.x < 360;
+      return PRICE_ONLY_RE.test(s.text) && s.x >= 250 && s.x < 420;
     })[0];
     if (unitSpan) item.unit = unitSpan.text;
     if (priceSpan) item.unitPrice = priceSpan.text;
@@ -193,11 +254,38 @@
         if (key && nxt) val = nxt.text.trim();
       }
       if (!key || !val) return;
+      key = key.replace(/[.。]+$/g, "").trim();
+      if (!key && i > 0) key = String(spans[i - 1].text || "").replace(/[.。:：]+$/g, "").trim();
+      if (!key || !val) return;
       found = true;
       item.extras[key] = val;
       if (KEYWORD_MAP[key]) item[KEYWORD_MAP[key]] = val;
     });
     return found;
+  }
+
+  function fillSpecFields(item, spans) {
+    const compact = (spans || [])
+      .map(function (s) {
+        return s.text;
+      })
+      .join("")
+      .replace(/\s+/g, "");
+    const mmSpan = (spans || [])
+      .filter(function (s) {
+        return /[\d,]+\s*mm/i.test(String(s.text || "").trim());
+      })
+      .pop();
+    if (!mmSpan) return false;
+    if (/轿厢宽度/.test(compact)) {
+      item.extras["轿厢宽度"] = mmSpan.text.trim();
+      return true;
+    }
+    if (/轿厢深度/.test(compact)) {
+      item.extras["轿厢深度"] = mmSpan.text.trim();
+      return true;
+    }
+    return false;
   }
 
   function parseHeader(rows) {
@@ -214,10 +302,20 @@
       poNumber = (parts[0] || "").trim();
       purchaseGroup = (parts[1] || "").trim();
     }
+    if (!poNumber) {
+      rows.forEach(function (row) {
+        if (row.y > 160 || poNumber) return;
+        const m = compactRow(row).match(/(\d{10})\/([A-Za-z0-9]+)/);
+        if (m) {
+          poNumber = m[1];
+          purchaseGroup = m[2];
+        }
+      });
+    }
 
     const supplierLines = [];
     rows.forEach(function (row) {
-      if (row.y >= 160 && row.y <= 200) {
+      if (row.y >= 148 && row.y <= 215) {
         const right = columnTexts(row, 300, 9999);
         if (right.length) supplierLines.push(right.join(" "));
       }
@@ -238,8 +336,17 @@
         inDelivery = true;
         rightT = "";
       }
-      if (leftT.indexOf("你们的参考号") === 0 || leftT === "行项目" || row.y >= 430) inBilling = false;
-      if (rightT.indexOf("工厂") === 0) inDelivery = false;
+      if (leftT.indexOf("你们的参考号") === 0 || compactRow(row).indexOf("行项目") >= 0 || row.y >= 430) {
+        inBilling = false;
+      }
+      if (
+        rightT.indexOf("工厂") === 0 ||
+        rightT.indexOf("贸易条款") === 0 ||
+        rightT.indexOf("付款条件") === 0 ||
+        rightT.indexOf("我们的增值税号") === 0
+      ) {
+        inDelivery = false;
+      }
       if (inBilling && leftT) billing.push(leftT);
       if (inDelivery && rightT) delivery.push(rightT);
     });
@@ -253,16 +360,32 @@
       });
     });
 
+    const contacts = [];
+    rows.forEach(function (row) {
+      row.spans.forEach(function (s, j) {
+        if (s.x >= 280 || s.y > 240) return;
+        if (spanLabel(s.text) !== "联系人") return;
+        const m = String(s.text).match(KV_RE);
+        if (m && m[2] && m[2].trim()) contacts.push(m[2].trim());
+        else {
+          const later = row.spans.slice(j + 1).filter(function (t) {
+            return t.x < 280;
+          })[0];
+          if (later) contacts.push(later.text.trim());
+        }
+      });
+    });
+
     const header = {
       buyer: "迅达(中国）电梯有限公司",
       docType: "采购订单",
       poNumber: poNumber,
       purchaseGroup: purchaseGroup,
-      documentDate: valueAfterLabel(rows, "凭证日期", 0, 280),
-      buyerContact: valueAfterLabel(rows, "联系人", 0, 280),
+      documentDate: valueAfterLabel(rows, "凭证日期", 0, 280) || valueAfterLabel(rows, "日期", 0, 220),
+      buyerContact: contacts[0] || valueAfterLabel(rows, "联系人", 0, 280),
       buyerPhone: valueAfterLabel(rows, "电话/传真", 0, 280).replace(/\s*\/\s*$/, ""),
       buyerEmail: valueAfterLabel(rows, "邮箱", 0, 280),
-      supplierContact: valueAfterLabel(rows, "供应商联系人", 0, 280),
+      supplierContact: valueAfterLabel(rows, "供应商联系人", 0, 280) || contacts[1] || "",
       supplierCode: valueAfterLabel(rows, "供应商", 0, 280),
       supplierPhone: valueAfterLabel(rows, "电话", 0, 280),
       supplierName: supplierLines[0] || "",
@@ -282,31 +405,38 @@
     };
 
     rows.forEach(function (row) {
+      const joined = compactRow(row);
       row.spans.forEach(function (s) {
         const t = s.text;
         if (t.indexOf("迅达") >= 0 && s.y < 50) header.buyer = t;
-        if (t === "采购订单") header.docType = t;
+        if (t === "采购订单" || (s.y < 120 && t.indexOf("采购订单") === 0 && t.indexOf("采购订单号") < 0)) {
+          header.docType = "采购订单";
+        }
         if (t.indexOf("工厂:") === 0) header.plant = t.split(":").slice(1).join(":").trim();
         else if (t.indexOf("公司代码:") === 0 && s.x >= 270) header.companyCode = t.split(":").slice(1).join(":").trim();
         else if (t.indexOf("打印日期:") === 0) header.printDate = t.split(":").slice(1).join(":").trim();
         else if (t.indexOf("文件编号:") === 0) header.fileNo = t.split(":").slice(1).join(":").trim();
         else if (t.indexOf("贸易条款:") === 0) header.incoterms = t.split(":").slice(1).join(":").trim();
       });
-      const right = columnTexts(row, 280, 9999).join(" ").trim();
-      if (/\d+\s*天之内/.test(right) || right.indexOf("到期净值") >= 0) {
-        header.paymentTerms = right.replace("付款条件:", "").trim();
+      if (!header.companyCode) {
+        const cc = joined.match(/公司代码(\d{4})/);
+        if (cc) header.companyCode = cc[1];
       }
-      if (row.text.indexOf("不含增值税总价") >= 0) {
+      const right = columnTexts(row, 280, 9999).join(" ").trim();
+      if (/\d+\s*天之内/.test(right) || /到期\s*净值/.test(right)) {
+        header.paymentTerms = right.replace("付款条件:", "").replace(/\s+/g, " ").trim();
+      }
+      if (joined.indexOf("不含增值税总价") >= 0) {
         const money = row.spans.filter(function (s) {
           return isMoney(s.text);
         });
         if (money.length) header.vatTotal = normalizeMoney(money[money.length - 1].text);
         else if (!header.vatTotal) {
-          const joined = columnTexts(row, 340, 9999).join("").replace(/\s/g, "");
-          if (isMoney(joined)) header.vatTotal = normalizeMoney(joined);
+          const amt = columnTexts(row, 340, 9999).join("").replace(/\s/g, "");
+          if (isMoney(amt)) header.vatTotal = normalizeMoney(amt);
         }
       }
-      if (row.text.indexOf("此文档已电子签名") >= 0) header.electronicallySigned = true;
+      if (joined.indexOf("此文档已电子签名") >= 0) header.electronicallySigned = true;
     });
 
     if (header.supplierPhone && !/^\d{11}$/.test(header.supplierPhone)) {
@@ -407,8 +537,9 @@
     let startI = -1;
     let endI = rows.length;
     rows.forEach(function (row, i) {
-      if (startI < 0 && row.spans.some(function (s) { return s.text === "行项目"; })) startI = i;
-      if (startI >= 0 && row.spans.some(function (s) { return s.text.indexOf("不含增值税总价") >= 0; })) {
+      const joined = compactRow(row);
+      if (startI < 0 && joined.indexOf("行项目") >= 0) startI = i;
+      if (startI >= 0 && joined.indexOf("不含增值税总价") >= 0) {
         endI = Math.min(endI, i);
       }
     });
@@ -451,7 +582,7 @@
         return !SKIP[s.text];
       });
       if (!spans.length) return;
-      if (isIgnorableItemRow(row, spans)) return;
+      if (isTableHeaderRow(row) || isIgnorableItemRow(row, spans)) return;
       let first = spans[0].text;
       const merged = first.match(/^(\d{5})(\d{6,})$/);
       if (merged && spans[0].x < 80) {
@@ -466,14 +597,14 @@
         current = newItem(first);
         spans.slice(1).forEach(function (s) {
           if (s.x >= 80 && s.x < 160) current.materialNo = s.text;
-          else if (s.x >= 160 && s.x < 230) current.materialGroup = s.text;
+          else if (s.x >= 160 && s.x < 230 && !QTY_RE.test(s.text)) current.materialGroup = s.text;
           else if (s.x >= 230) current.description = (current.description + " " + s.text).trim();
         });
         return;
       }
       if (!current) {
         const qtyLike = spans.some(function (s) {
-          return QTY_RE.test(s.text) && s.x >= 160 && s.x < 220;
+          return QTY_RE.test(s.text) && s.x >= 160 && s.x < 235;
         });
         if (qtyLike || findAmountSpan(spans) || (spans[0].x >= 200 && spans[0].text)) {
           orphanContinuation = true;
@@ -483,6 +614,7 @@
 
       if (fillQtyUnitPrice(current, spans)) return;
       if (fillKvFields(current, spans)) return;
+      if (fillSpecFields(current, spans)) return;
       if (spans[0].x >= 200) {
         const extra = spans
           .map(function (s) {
