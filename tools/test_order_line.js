@@ -21,6 +21,9 @@ const zh = parser.extractOrderIds(
 );
 assert.strictEqual(zh.poNumber, "4801154682");
 assert.strictEqual(zh.purchaseOrderNo, "PO202624V35");
+const pdfjsSplit = parser.extractOrderIds("采购单号 : 4801154682\n采购订单号 :PO202624V35");
+assert.strictEqual(pdfjsSplit.poNumber, "4801154682");
+assert.strictEqual(pdfjsSplit.purchaseOrderNo, "PO202624V35");
 assert.strictEqual(parser.extractOrderIds("No. 4801006558").poNumber, "4801006558");
 
 console.log("ok order line and PO ids");

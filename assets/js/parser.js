@@ -52,7 +52,7 @@
     for (const ln of lines) {
       if (
         (ln.text.startsWith("Pos.") && ln.text.includes("Material")) ||
-        ln.text.includes("\u9879\u76ee.\u7269\u6599")
+        compactText(ln.text).includes("\u9879\u76ee.\u7269\u6599")
       ) {
         headerY = ln.y;
       }
@@ -113,21 +113,27 @@
     for (const ln of lines) {
       let left = columnText(ln, 0, 280);
       const right = columnText(ln, 280, 9999);
-      if (left.includes("Seller/Vendor") || left.includes("\u5356\u65b9(\u4e59\u65b9)") || left.includes("\u5356\u65b9\uff08\u4e59\u65b9\uff09")) {
+      const leftKey = compactText(left);
+      const lineKey = compactText(ln.text);
+      if (left.includes("Seller/Vendor") || leftKey.includes("\u5356\u65b9(\u4e59\u65b9)")) {
         mode = "vendor";
         continue;
       }
-      if (left === "Buyer" || left.startsWith("Buyer") || left.includes("\u4e70\u65b9(\u7532\u65b9)") || left.includes("\u4e70\u65b9\uff08\u7532\u65b9\uff09")) {
+      if (left === "Buyer" || left.startsWith("Buyer") || leftKey.includes("\u4e70\u65b9(\u7532\u65b9)")) {
         mode = "buyer";
         continue;
       }
-      if (left.startsWith("Delivery address") || left.startsWith("\u4ea4\u8d27/\u9879\u76ee\u5730\u5740") || left.startsWith("\u4ea4\u8d27\u5730\u5740")) {
+      if (
+        left.startsWith("Delivery address") ||
+        leftKey.startsWith("\u4ea4\u8d27/\u9879\u76ee\u5730\u5740") ||
+        leftKey.startsWith("\u4ea4\u8d27\u5730\u5740")
+      ) {
         mode = "delivery";
         continue;
       }
       if (
         (left.startsWith("Pos.") && ln.text.includes("Material")) ||
-        ln.text.includes("\u9879\u76ee.\u7269\u6599")
+        lineKey.includes("\u9879\u76ee.\u7269\u6599")
       ) {
         break;
       }
@@ -192,6 +198,13 @@
     return header;
   }
 
+  function compactText(s) {
+    return String(s || "")
+      .replace(/[（]/g, "(")
+      .replace(/[）]/g, ")")
+      .replace(/\s+/g, "");
+  }
+
   function extractOrderIds(full) {
     const ids = {
       poNumber: "",
@@ -199,18 +212,19 @@
       quotationNo: "",
       serviceOrderNo: "",
     };
-    const customerPo = String(full).match(/\u91c7\u8d2d\u8ba2\u5355\u53f7[:\uff1a]\s*(\S+)/);
-    if (customerPo) ids.purchaseOrderNo = customerPo[1].replace(/[,;].*$/, "");
-    const poZh = String(full).match(/\u91c7\u8d2d\u5355\u53f7[:\uff1a]\s*(\d{7,})/);
-    if (poZh) ids.poNumber = poZh[1];
-    if (!ids.poNumber) {
-      const poEn = String(full).match(/No\.\s+(\d{7,})/);
-      if (poEn) ids.poNumber = poEn[1];
-    }
-    const quo = String(full).match(/\u62a5\u4ef7\u5355\u53f7[:\uff1a]\s*(\S+)/);
-    if (quo) ids.quotationNo = quo[1];
-    const so = String(full).match(/\u670d\u52a1\u8ba2\u5355\u53f7[:\uff1a]\s*(\S+)/);
-    if (so) ids.serviceOrderNo = so[1];
+    const texts = [String(full || ""), compactText(full)];
+    texts.forEach((t) => {
+      const customerPo = t.match(/\u91c7\u8d2d\u8ba2\u5355\u53f7\s*[:\uff1a]\s*([A-Za-z0-9_-]+)/);
+      if (customerPo && !ids.purchaseOrderNo) ids.purchaseOrderNo = customerPo[1];
+      const poZh = t.match(/\u91c7\u8d2d\u5355\u53f7\s*[:\uff1a]\s*(\d{7,})/);
+      if (poZh && !ids.poNumber) ids.poNumber = poZh[1];
+      const poEn = t.match(/No\.\s*(\d{7,})/);
+      if (poEn && !ids.poNumber) ids.poNumber = poEn[1];
+      const quo = t.match(/\u62a5\u4ef7\u5355\u53f7\s*[:\uff1a]\s*([A-Za-z0-9_-]+)/);
+      if (quo && !ids.quotationNo) ids.quotationNo = quo[1];
+      const so = t.match(/\u670d\u52a1\u8ba2\u5355\u53f7\s*[:\uff1a]\s*(\d+)/);
+      if (so && !ids.serviceOrderNo) ids.serviceOrderNo = so[1];
+    });
     return ids;
   }
 

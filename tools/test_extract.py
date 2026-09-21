@@ -24,6 +24,9 @@ assert ids["purchaseOrderNo"] == "PO202624V35"
 assert ids["quotationNo"] == "QUO-HF-2026-04653"
 assert ids["serviceOrderNo"] == "100040903"
 assert extract_order_ids("Purchase order\nNo. 4801006558")["poNumber"] == "4801006558"
+split_ids = extract_order_ids("采购单号 : 4801154682\n采购订单号 :PO202624V35")
+assert split_ids["poNumber"] == "4801154682"
+assert split_ids["purchaseOrderNo"] == "PO202624V35"
 
 out = ROOT / "data" / "_test_extract.json"
 pdfs = sorted((ROOT / "samples").glob("*.pdf"))

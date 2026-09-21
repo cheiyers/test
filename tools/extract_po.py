@@ -71,7 +71,7 @@ def content_band(lines):
     footer_y = 690.0
     for ln in lines:
         if (ln["text"].startswith("Pos.") and "Material" in ln["text"]) or (
-            "\u9879\u76ee.\u7269\u6599" in ln["text"]
+            "项目.物料" in re.sub(r"\s+", "", ln["text"])
         ):
             header_y = ln["y"]
         if (
@@ -136,20 +136,22 @@ def parse_header(doc) -> dict:
     for ln in lines:
         left = column_text(ln, 0, 280)
         right = column_text(ln, 280, 9999)
-        if "Seller/Vendor" in left or "卖方(乙方)" in left or "卖方（乙方）" in left:
+        left_key = compact_text(left)
+        line_key = compact_text(ln["text"])
+        if "Seller/Vendor" in left or "卖方(乙方)" in left_key:
             mode = "vendor"
             continue
-        if left == "Buyer" or left.startswith("Buyer") or "买方(甲方)" in left or "买方（甲方）" in left:
+        if left == "Buyer" or left.startswith("Buyer") or "买方(甲方)" in left_key:
             mode = "buyer"
             continue
         if (
             left.startswith("Delivery address")
-            or left.startswith("交货/项目地址")
-            or left.startswith("交货地址")
+            or left_key.startswith("交货/项目地址")
+            or left_key.startswith("交货地址")
         ):
             mode = "delivery"
             continue
-        if (left.startswith("Pos.") and "Material" in ln["text"]) or "项目.物料" in ln["text"]:
+        if (left.startswith("Pos.") and "Material" in ln["text"]) or "项目.物料" in line_key:
             break
         if (
             left.startswith("Quotation")
@@ -209,6 +211,10 @@ def parse_header(doc) -> dict:
     return header
 
 
+def compact_text(s: str) -> str:
+    return re.sub(r"\s+", "", (s or "").replace("（", "(").replace("）", ")"))
+
+
 def extract_order_ids(full: str) -> dict:
     ids = {
         "poNumber": "",
@@ -216,22 +222,22 @@ def extract_order_ids(full: str) -> dict:
         "quotationNo": "",
         "serviceOrderNo": "",
     }
-    m = re.search(r"采购订单号[:：]\s*(\S+)", full)
-    if m:
-        ids["purchaseOrderNo"] = re.sub(r"[,;].*$", "", m.group(1))
-    m = re.search(r"采购单号[:：]\s*(\d{7,})", full)
-    if m:
-        ids["poNumber"] = m.group(1)
-    if not ids["poNumber"]:
-        m = re.search(r"No\.\s+(\d{7,})", full)
-        if m:
+    for t in (full or "", compact_text(full)):
+        m = re.search(r"采购订单号\s*[:：]\s*([A-Za-z0-9_-]+)", t)
+        if m and not ids["purchaseOrderNo"]:
+            ids["purchaseOrderNo"] = m.group(1)
+        m = re.search(r"采购单号\s*[:：]\s*(\d{7,})", t)
+        if m and not ids["poNumber"]:
             ids["poNumber"] = m.group(1)
-    m = re.search(r"报价单号[:：]\s*(\S+)", full)
-    if m:
-        ids["quotationNo"] = m.group(1)
-    m = re.search(r"服务订单号[:：]\s*(\S+)", full)
-    if m:
-        ids["serviceOrderNo"] = m.group(1)
+        m = re.search(r"No\.\s*(\d{7,})", t)
+        if m and not ids["poNumber"]:
+            ids["poNumber"] = m.group(1)
+        m = re.search(r"报价单号\s*[:：]\s*([A-Za-z0-9_-]+)", t)
+        if m and not ids["quotationNo"]:
+            ids["quotationNo"] = m.group(1)
+        m = re.search(r"服务订单号\s*[:：]\s*(\d+)", t)
+        if m and not ids["serviceOrderNo"]:
+            ids["serviceOrderNo"] = m.group(1)
     return ids
 
 
