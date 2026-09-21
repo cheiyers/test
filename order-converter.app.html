@@ -361,11 +361,12 @@ tr:hover td { background: #f7fbf9; }
         <div class="row">
           <label class="btn">
             选择订单
-            <input type="file" id="orderFile" accept=".xlsx,.xls" class="hidden" />
+            <input type="file" id="orderFile" accept=".xlsx,.xls,.pdf" class="hidden" />
           </label>
           <button class="btn secondary sm" id="btnDlOrderTpl">下载订单模板</button>
           <button class="btn secondary sm" id="btnClearOrder">清除</button>
         </div>
+        <div class="muted" style="margin-top:8px">支持 Excel / PDF（如通力 KONE 采购订单）。有行号但物料号为空的行也会保留；采购单号/PO 号会写入单据编号。</div>
       </div>
       <div class="upload-box">
         <h3>BOM 文件 / BOM 库</h3>
@@ -614,6 +615,9 @@ tr:hover td { background: #f7fbf9; }
 </div>
 
 <!-- XLSX_LIB_PLACEHOLDER -->
+<!-- PDFJS_LIB_PLACEHOLDER -->
+<!-- PDF_CMAPS_PLACEHOLDER -->
+<!-- PDF_WORKER_PLACEHOLDER -->
 
 <script>
 (function () {
@@ -1045,6 +1049,259 @@ tr:hover td { background: #f7fbf9; }
       rows.push(obj);
     }
     return { headers, rows };
+  }
+
+  /** Normalize order table: keep empty-material rows; promote 采购单号/PO → 单据编号. */
+  function normalizeOrderTable(table) {
+    if (!table || !table.headers) return table;
+    const headers = table.headers.slice();
+    const rows = (table.rows || []).map(r => Object.assign({}, r));
+    const ensureCol = (name) => {
+      if (!headers.includes(name)) headers.push(name);
+    };
+    // Detect doc/PO-like columns
+    const pick = (cands) => findCol(headers, cands);
+    const poCol = pick(['采购单号', 'PO号', 'PO Number', 'PO No', 'PO', 'Purchase Order', 'Purchase Order No']);
+    const poRefCol = pick(['采购订单号', 'PO参考号', 'PO Ref']);
+    let docCol = pick(['单据编号', '订单号', '销售订单号', '订单编号', '单号', '单据号']);
+    if (!docCol) {
+      ensureCol('单据编号');
+      docCol = '单据编号';
+    }
+    // Fill 单据编号 from 采购单号 / PO when empty
+    const globalPo = rows.map(r => poCol && str(r[poCol])).find(Boolean)
+      || rows.map(r => str(r[docCol])).find(Boolean)
+      || rows.map(r => poRefCol && str(r[poRefCol])).find(Boolean)
+      || '';
+    rows.forEach(row => {
+      if (str(row[docCol]) === '' && globalPo) row[docCol] = globalPo;
+      if (poCol && str(row[poCol]) === '' && globalPo) {
+        // Prefer numeric purchase no for 采购单号 column when available
+        const numeric = rows.map(r => poCol && str(r[poCol])).find(v => /^\d{6,}$/.test(v));
+        row[poCol] = numeric || globalPo;
+      }
+    });
+    // Keep rows that have 行号/项目 even if 物料代码 empty (do not drop)
+    const lineCol = pick(['行号', '项目', '项目号', 'Item', 'Line', '项次']);
+    const codeCol = pick(['物料代码', '物料号', '物料', '料号', '产品代码', '存货编码', '代码', 'Material', 'Material No']);
+    const kept = rows.filter(r => {
+      const hasLine = lineCol && str(r[lineCol]) !== '';
+      const hasCode = codeCol && str(r[codeCol]) !== '';
+      const hasAny = Object.keys(r).some(k => str(r[k]) !== '');
+      // keep if has line no (even empty material), or has material, or any other data
+      return hasLine || hasCode || hasAny;
+    });
+    return { headers, rows: kept };
+  }
+
+  function b64ToUint8Array(b64) {
+    const bin = atob(b64);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  function getPdfJsLib() {
+    if (typeof pdfjsLib !== 'undefined') return pdfjsLib;
+    if (typeof window !== 'undefined' && window.pdfjsLib) return window.pdfjsLib;
+    if (typeof pdfjsDist !== 'undefined') return pdfjsDist;
+    return null;
+  }
+
+  async function extractPdfTextLines(arrayBuffer) {
+    const pdfjs = getPdfJsLib();
+    if (!pdfjs) throw new Error('PDF 解析库未加载');
+    try {
+      if (pdfjs.GlobalWorkerOptions && !pdfjs.GlobalWorkerOptions.workerSrc) {
+        const b64 = (typeof window !== 'undefined' && window.__OC_PDF_WORKER_B64) || '';
+        if (b64) {
+          const bin = atob(b64);
+          const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          pdfjs.GlobalWorkerOptions.workerSrc = URL.createObjectURL(new Blob([bytes], { type: 'application/javascript' }));
+        } else {
+          pdfjs.GlobalWorkerOptions.workerSrc = 'data:application/javascript,';
+        }
+      }
+    } catch (e) {}
+    const cmaps = (typeof window !== 'undefined' && window.__OC_PDF_CMAPS) || {};
+    class InlineCMapReaderFactory {
+      constructor(opts) { this.isCompressed = !!(opts && opts.isCompressed); }
+      async fetch({ name }) {
+        const b64 = cmaps[name];
+        if (!b64) throw new Error('缺少 CMap: ' + name);
+        return { cMapData: b64ToUint8Array(b64), compressionType: this.isCompressed ? 1 : 0 };
+      }
+    }
+    const data = new Uint8Array(arrayBuffer);
+    const doc = await pdfjs.getDocument({
+      data,
+      useSystemFonts: true,
+      disableFontFace: true,
+      cMapPacked: true,
+      CMapReaderFactory: InlineCMapReaderFactory,
+      cMapUrl: 'inline://cmaps/'
+    }).promise;
+    const lines = [];
+    for (let p = 1; p <= doc.numPages; p++) {
+      const page = await doc.getPage(p);
+      const tc = await page.getTextContent();
+      const byY = {};
+      (tc.items || []).forEach(it => {
+        const s = str(it.str);
+        if (!s) return;
+        const y = Math.round((it.transform && it.transform[5]) || 0);
+        const x = (it.transform && it.transform[4]) || 0;
+        (byY[y] = byY[y] || []).push({ x, s });
+      });
+      Object.keys(byY).map(Number).sort((a, b) => b - a).forEach(y => {
+        const line = byY[y].sort((a, b) => a.x - b.x).map(z => z.s).join(' ').replace(/\s+/g, ' ').trim();
+        if (line) lines.push(line);
+      });
+    }
+    return lines;
+  }
+
+  function matchFirst(text, patterns) {
+    for (const re of patterns) {
+      const m = text.match(re);
+      if (m && m[1]) return str(m[1]).trim();
+    }
+    return '';
+  }
+
+  /** Parse KONE/SAP style purchase order text lines into order table. */
+  function parsePurchaseOrderFromLines(lines, fileName) {
+    const text = (lines || []).join('\n');
+    const purchaseNo = matchFirst(text, [
+      /采购单号\s*[:：]\s*([0-9A-Za-z_-]+)/,
+      /Purchase\s*Order\s*No\.?\s*[:：]?\s*([0-9]{6,})/i,
+      /\bPO\s*[#.:：]?\s*([0-9]{8,})/i
+    ]);
+    const poRef = matchFirst(text, [
+      /采购订单号\s*[:：]\s*([0-9A-Za-z_-]+)/,
+      /PO\s*Number\s*[:：]?\s*([0-9A-Za-z_-]+)/i
+    ]);
+    const quoteNo = matchFirst(text, [/报价单号\s*[:：]\s*([0-9A-Za-z_-]+)/, /Quotation\s*Number\s*[:：]?\s*([0-9A-Za-z_-]+)/i]);
+    const serviceNo = matchFirst(text, [/服务订单号\s*[:：]\s*([0-9A-Za-z_-]+)/]);
+    const orderDate = matchFirst(text, [/(?:^|\n)日期\s*\n?\s*(\d{2}\.\d{2}\.\d{4})/, /(\d{2}\.\d{2}\.\d{4})/]);
+    const docNo = purchaseNo || poRef || '';
+
+    const headers = ['单据编号', '采购单号', '采购订单号', 'PO号', '行号', '物料代码', '物料名称', '交货期', '数量', '单位', '价格', '金额', '报价单号', '服务订单号', '日期', '备注'];
+    const rows = [];
+    let i = 0;
+    while (i < lines.length && !/项目\s*\.?\s*物料|Item\s*\.?\s*Material/i.test(lines[i])) i++;
+    if (i < lines.length) i++; // skip header line
+    // skip leftover header fragments like 交货期 数量
+    while (i < lines.length && /^(交货期|数量|价格|金额|Delivery|Qty|Price|Amount)/i.test(lines[i]) && !/^\d/.test(lines[i])) i++;
+
+    const isFooter = (s) => /总金额|批准\s*:|币别|For and on behalf|页\s*\d/.test(s);
+    const isUnitOnly = (s) => /^\d+(?:\.\d+)?\s*(PC|PCS|EA|SET|个|套|台|件)?$/i.test(str(s).trim());
+    const isItemLine = (s) => {
+      const t = str(s).trim();
+      if (!t) return false;
+      if (/^Shipping instruction|^REV#|^地址\s*:|^紧急/i.test(t)) return false;
+      if (isUnitOnly(t)) return false;
+      if (/^\/\s*/.test(t)) return false;
+      // "10 KM52261092 ..." material present
+      if (/^\d{1,4}\s+[A-Za-z][A-Za-z0-9_-]{2,}/.test(t)) return true;
+      // "10 02.09.2026 ..." empty material but has delivery date
+      if (/^\d{1,4}\s+\d{2}\.\d{2}\.\d{4}/.test(t)) return true;
+      // bare line number
+      if (/^\d{1,4}$/.test(t)) return true;
+      return false;
+    };
+
+    while (i < lines.length) {
+      const line = lines[i];
+      if (isFooter(line) && rows.length) break;
+      if (!isItemLine(line)) {
+        // description / qty continuation for last row
+        if (rows.length && !isFooter(line)) {
+          const last = rows[rows.length - 1];
+          if (/^Shipping instruction|^REV#/i.test(line)) {
+            last['备注'] = (last['备注'] ? last['备注'] + '；' : '') + line;
+          } else if (/^\/\s*/.test(line) || isUnitOnly(line)) {
+            const qm = line.match(/(\d+(?:\.\d+)?)\s*([A-Za-z\u4e00-\u9fa5]+)?/);
+            if (qm && !str(last['数量'])) {
+              last['数量'] = qm[1];
+              if (qm[2]) last['单位'] = qm[2];
+            } else {
+              last['备注'] = (last['备注'] ? last['备注'] + '；' : '') + line;
+            }
+          } else if (!/^(交货期|数量|价格|金额)$/.test(line)) {
+            const pure = line.replace(/\/\s*\d+\s*PC/ig, '').trim();
+            if (!pure) { /* skip */ }
+            else if (/^紧急|^地址\s*:|^备注/i.test(pure)) {
+              last['备注'] = (last['备注'] ? last['备注'] + '；' : '') + pure;
+            } else {
+              last['物料名称'] = (last['物料名称'] ? last['物料名称'] + ' ' : '') + pure;
+            }
+          }
+        }
+        i++;
+        continue;
+      }
+
+      // Item line: "10 KM52261092 02.09.2026 1 PC 20.15 20.15" or "20 02.09.2026 1 PC" (empty material)
+      const itemRe = /^(\d{1,4})(?:\s+([A-Za-z][A-Za-z0-9_-]*))?(?:\s+(\d{2}\.\d{2}\.\d{4}))?(?:\s+(\d+(?:\.\d+)?))?(?:\s*(PC|PCS|EA|SET|个|套|台|件))?(?:\s+(\d+(?:\.\d+)?))?(?:\s+(\d+(?:\.\d+)?))?/i;
+      const m = line.match(itemRe);
+      if (m) {
+        let material = str(m[2] || '');
+        // guard: unit mistaken as material
+        if (/^(PC|PCS|EA|SET)$/i.test(material)) material = '';
+        rows.push({
+          '单据编号': docNo,
+          '采购单号': purchaseNo || docNo,
+          '采购订单号': poRef,
+          'PO号': purchaseNo || poRef || docNo,
+          '行号': m[1],
+          '物料代码': material,
+          '物料名称': '',
+          '交货期': str(m[3] || ''),
+          '数量': str(m[4] || ''),
+          '单位': str(m[5] || ''),
+          '价格': str(m[6] || ''),
+          '金额': str(m[7] || ''),
+          '报价单号': quoteNo,
+          '服务订单号': serviceNo,
+          '日期': orderDate,
+          '备注': ''
+        });
+      }
+      i++;
+    }
+
+    // If no item lines matched but text has "10 KM..." fallback scan
+    if (!rows.length) {
+      const re = /(\d{1,4})\s+([A-Za-z][A-Za-z0-9_-]+)?\s+(\d{2}\.\d{2}\.\d{4})?/g;
+      let mm;
+      const blob = text.replace(/\s+/g, ' ');
+      while ((mm = re.exec(blob))) {
+        rows.push({
+          '单据编号': docNo, '采购单号': purchaseNo || docNo, '采购订单号': poRef, 'PO号': purchaseNo || poRef,
+          '行号': mm[1], '物料代码': str(mm[2] || ''), '物料名称': '', '交货期': str(mm[3] || ''),
+          '数量': '', '单位': '', '价格': '', '金额': '', '报价单号': quoteNo, '服务订单号': serviceNo, '日期': orderDate, '备注': ''
+        });
+      }
+    }
+
+    return {
+      name: fileName || 'PDF订单',
+      headers,
+      rows,
+      meta: { purchaseNo, poRef, quoteNo, serviceNo, docNo, orderDate }
+    };
+  }
+
+  async function parseOrderPdfFile(file) {
+    const buf = await readFileAsArrayBuffer(file);
+    const lines = await extractPdfTextLines(buf);
+    const parsed = parsePurchaseOrderFromLines(lines, file.name);
+    if (!parsed.rows.length) {
+      throw new Error('未识别到订单行（项目/物料）。请确认是通力等采购订单 PDF，或先另存为 Excel');
+    }
+    return parsed;
   }
 
   function looksLikeFormulaText(v) {
@@ -2131,8 +2388,9 @@ tr:hover td { background: #f7fbf9; }
   // ===================== Upload Templates =====================
   function downloadOrderTemplate() {
     const aoa = [
-      ['单据编号','日期','物料代码','规格型号','客户物料号','数量','轿厢宽度BB','轿厢深度DD','类别LHLB'],
-      ['SO001','2026-08-01','HL0230002C','A型','CUST-A',1,1200,1900,'LF18']
+      ['单据编号','采购单号','采购订单号','行号','日期','物料代码','物料名称','规格型号','客户物料号','数量','轿厢宽度BB','轿厢深度DD','类别LHLB'],
+      ['4801154712','4801154712','PO202624V3A','10','2026-08-26','KM52261092','示例物料','A型','CUST-A',1,1200,1900,'LF18'],
+      ['4801154712','4801154712','PO202624V3A','20','2026-08-26','','物料号为空但保留行号','','',1,'','','']
     ];
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     const wb = XLSX.utils.book_new();
@@ -2507,14 +2765,15 @@ tr:hover td { background: #f7fbf9; }
 
   function findDocNoColumn() {
     return findCol(state.order.headers || [], [
-      '单据编号', '订单号', '销售订单号', '订单编号', '单号', '单据号', 'OrderNo', 'order_no', 'SO'
+      '单据编号', '采购单号', 'PO号', 'PO Number', 'PO No', 'Purchase Order',
+      '采购订单号', '订单号', '销售订单号', '订单编号', '单号', '单据号', 'OrderNo', 'order_no', 'SO', 'PO'
     ]);
   }
 
   function isDocNoTemplateCol(col) {
     const n = str(col.name);
     const s = str(col.source);
-    return /单据编号|订单号|销售订单号|订单编号|单号|单据号/i.test(n + s);
+    return /单据编号|采购单号|采购订单号|PO号|订单号|销售订单号|订单编号|单号|单据号|PO\b/i.test(n + ' ' + s);
   }
 
   function getRowDocNo(orderRow, headerVals) {
@@ -2524,13 +2783,17 @@ tr:hover td { background: #f7fbf9; }
       const v = headerVals[col.name];
       if (v != null && str(v) !== '') return str(v);
     }
-    // 2) direct order column
+    // 2) direct order column (采购单号 / PO号 / 单据编号 ...)
     const docCol = findDocNoColumn();
     const fromOrder = getOrderValue(orderRow, docCol);
     if (fromOrder) return fromOrder;
-    // 3) any header value named like doc no
+    // 3) explicit PO-like fields on the row
+    for (const k of ['单据编号', '采购单号', 'PO号', '采购订单号', '订单号']) {
+      if (orderRow && str(orderRow[k]) !== '') return str(orderRow[k]);
+    }
+    // 4) any header value named like doc no
     for (const k of Object.keys(headerVals || {})) {
-      if (/单据编号|订单号|单号/i.test(k) && str(headerVals[k]) !== '') return str(headerVals[k]);
+      if (/单据编号|采购单号|采购订单号|PO号|订单号|单号/i.test(k) && str(headerVals[k]) !== '') return str(headerVals[k]);
     }
     return '';
   }
@@ -2622,16 +2885,29 @@ tr:hover td { background: #f7fbf9; }
   async function handleOrderFile(file) {
     if (!file) return;
     try {
-      const buf = await readFileAsArrayBuffer(file);
-      const wb = XLSX.read(buf, { type: 'array', cellFormula: true, cellText: true });
-      const matrix = sheetToMatrix(wb);
-      const headerRow = detectHeaderRow(matrix);
-      const table = matrixToTable(matrix, headerRow);
+      const nameLower = String(file.name || '').toLowerCase();
+      let table;
+      let matrix = null;
+      let headerRow = 0;
+      if (nameLower.endsWith('.pdf')) {
+        const parsed = await parseOrderPdfFile(file);
+        table = normalizeOrderTable({ headers: parsed.headers, rows: parsed.rows });
+        const metaBits = [];
+        if (parsed.meta && parsed.meta.purchaseNo) metaBits.push('采购单号 ' + parsed.meta.purchaseNo);
+        if (parsed.meta && parsed.meta.poRef) metaBits.push('采购订单号 ' + parsed.meta.poRef);
+        $('orderMeta').textContent = `${file.name} · ${table.rows.length} 行` +
+          (metaBits.length ? (' · ' + metaBits.join(' · ')) : '');
+      } else {
+        const buf = await readFileAsArrayBuffer(file);
+        const wb = XLSX.read(buf, { type: 'array', cellFormula: true, cellText: true });
+        matrix = sheetToMatrix(wb);
+        headerRow = detectHeaderRow(matrix);
+        table = normalizeOrderTable(matrixToTable(matrix, headerRow));
+        $('orderMeta').textContent = `${file.name} · ${table.rows.length} 行 · ${table.headers.length} 列`;
+      }
       state.order = { name: file.name, headers: table.headers, rows: table.rows, raw: matrix, headerRow };
-      $('orderMeta').textContent = `${file.name} · ${table.rows.length} 行 · ${table.headers.length} 列`;
       autoGuessOrderCols();
       updateUploadSummary();
-      // refresh dependent UIs immediately (each step isolated)
       try { fillOrderSelects(); } catch (e) { console.warn(e); }
       try {
         extractAliases();
@@ -2641,7 +2917,11 @@ tr:hover td { background: #f7fbf9; }
       } catch (e) { console.warn(e); }
       try { renderVarChips(); } catch (e) { console.warn(e); }
       try { renderTemplateEditor(); } catch (e) { console.warn(e); }
-      toast('订单已加载', 'ok');
+      const emptyMat = table.rows.filter(r => {
+        const codeCol = findCol(table.headers, ['物料代码', '物料号', '料号', 'Material']);
+        return codeCol && str(r[codeCol]) === '';
+      }).length;
+      toast('订单已加载' + (emptyMat ? `（含 ${emptyMat} 行物料号为空）` : ''), 'ok');
     } catch (e) {
       console.error(e);
       toast('订单解析失败: ' + (e.message || e), 'err');
@@ -2785,10 +3065,10 @@ tr:hover td { background: #f7fbf9; }
 
   function autoGuessOrderCols() {
     const h = state.order.headers;
-    state.matchCfg.orderMatchCol = findCol(h, ['物料代码', '产品代码', '存货编码', '料号', '代码']);
-    state.matchCfg.orderSpecCol = findCol(h, ['规格型号', '规格', '型号']);
+    state.matchCfg.orderMatchCol = findCol(h, ['物料代码', '物料号', '产品代码', '存货编码', '料号', '代码', 'Material', 'Material No']);
+    state.matchCfg.orderSpecCol = findCol(h, ['规格型号', '规格', '型号', '物料名称']);
     state.matchCfg.orderCustCol = findCol(h, ['客户物料号', '客户料号', '客户型号']);
-    state.matchCfg.orderQtyCol = findCol(h, ['数量', '订单数量', '台数', 'QTY']);
+    state.matchCfg.orderQtyCol = findCol(h, ['数量', '订单数量', '台数', 'QTY', 'Qty']);
   }
   function autoGuessBomCols() {
     state.matchCfg.bomParentCodeCol = state.bom.codeCol || findCol(state.bom.headers, ['物料代码', '母件物料代码', '料号']);
