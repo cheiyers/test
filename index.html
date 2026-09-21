@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>迅达采购订单批量识别</title>
+  <link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>迅达采购订单批量识别</h1>
+    <p>勾选字段并保存方案 → 点击列头改格式、拖动调整顺序 → 导出表格</p>
+  </header>
+  <main>
+    <div class="banner">
+      同一张 PO 里多条行项目（00010、00020…）会各成一行；描述换行会拼进同一行。
+      行下新出现的「字段: 值」会自动发现为关键字。空附加字段仍可勾选导出。
+      <strong>供应商、交货地址、付款条件</strong>勾选才导出。
+      若出现<strong>跨页续行、无物料号文本行、服务类行</strong>，识别区会提示人工核对。
+    </div>
+
+    <section class="panel">
+      <h2>1. 导入识别</h2>
+      <div class="dropzone" id="dropzone">
+        <strong>拖入多个迅达采购订单 PDF，或点击选择</strong>
+        <span>浏览器本地识别，文件不会上传到服务器</span>
+      </div>
+      <input id="fileInput" type="file" accept="application/pdf" multiple hidden>
+      <div class="actions" style="margin-top:10px">
+        <button type="button" id="btnDemo">加载三份样张</button>
+        <button type="button" class="ghost" id="btnTwoLines">加载双行+新字段样张</button>
+        <button type="button" class="ghost" id="btnReview">加载需核对样张</button>
+        <button type="button" class="ghost" id="btnToggleDocs">显示/隐藏原件对照</button>
+      </div>
+      <div class="hint" id="sourceHint" style="margin-top:8px"></div>
+      <div class="warn-box" id="parseWarnings" hidden></div>
+    </section>
+
+    <section class="panel">
+      <h2>2. 导出字段与关键字</h2>
+      <p class="hint">核心订单行默认导出。选配抬头（含公司代码、工厂）默认关闭。抬头关键字如「公司代码」会对应识别值。文档里新出现的「颜色」等会自动列入关键字。</p>
+      <div class="choose-grid">
+        <div class="field-block">
+          <h3>订单行字段</h3>
+          <div class="field-list" id="coreFields"></div>
+        </div>
+        <div class="field-block">
+          <h3>选配抬头</h3>
+          <p class="opt-note">勾选才导出，不勾选不出现在输出表</p>
+          <div class="field-list" id="optionalFields"></div>
+        </div>
+        <div class="field-block">
+          <h3>可配置关键字</h3>
+          <div class="field-list" id="keywordFields"></div>
+          <div class="keyword-add">
+            <input id="keywordInput" type="text" placeholder="添加关键字，例如 公司代码">
+            <button type="button" class="ghost" id="btnAddKeyword">添加</button>
+          </div>
+          <div class="chips" id="customChips"></div>
+        </div>
+      </div>
+      <div class="scheme-bar">
+        <h3>导出方案</h3>
+        <p class="hint">保存当前勾选的字段、自定义关键字、列顺序、列名与格式，下次直接应用。</p>
+        <div class="actions">
+          <input id="schemeName" type="text" placeholder="方案名称，例如 物料对账">
+          <button type="button" id="btnSaveScheme">保存方案</button>
+          <select id="schemeSelect" aria-label="已存方案"></select>
+          <button type="button" class="ghost" id="btnApplyScheme">应用方案</button>
+          <button type="button" class="ghost" id="btnDeleteScheme">删除方案</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="toolbar">
+        <h2 style="margin:0">3. 识别结果 · 勾选要输出的行</h2>
+        <div class="actions">
+          <button type="button" class="ghost" id="btnSelAll">全选行</button>
+          <button type="button" class="ghost" id="btnSelNone">全不选</button>
+          <span class="meta" id="rowCount"></span>
+        </div>
+      </div>
+      <div class="table-wrap" id="resultTable"></div>
+    </section>
+
+    <section class="panel">
+      <h2>4. 输出表格 · 点击列设置格式</h2>
+      <p class="hint">
+        只输出上方勾选的行。<strong>点击表头</strong>改列名和格式，<strong>拖动左侧手柄</strong>或用左移 / 右移调整列顺序。格式用 <code>{字段名}</code>，以 <code>=</code> 开头计算，例如
+        <code>={数量}*2</code>、<code>=IF({数量}&gt;3,"大","小")</code>、<code>=TEXT({凭证日期},"yyyy-mm-dd")</code>、<code>=TEXT({凭证日期},"yyyy/m/d")</code>、<code>{物料描述}&amp;" / "&amp;{图号/版本}</code>。
+      </p>
+      <div class="col-format-bar" id="colFormatBar" hidden>
+        <strong>列格式</strong>
+        <span class="meta" id="colFormatWhich"></span>
+        <label>列名 <input id="colFormatHeader" type="text"></label>
+        <label>输出格式 <input id="colFormatFormula" class="formula" type="text" placeholder='=TEXT({凭证日期},"yyyy/m/d") 或 =TEXT({凭证日期},"yyyy-mm-dd")'></label>
+        <button type="button" class="ghost" id="btnColMoveLeft">左移</button>
+        <button type="button" class="ghost" id="btnColMoveRight">右移</button>
+        <button type="button" id="btnColFormatDone">完成</button>
+        <button type="button" class="ghost" id="btnColFormatDel">删除此列</button>
+      </div>
+      <div class="actions" style="margin:12px 0">
+        <button type="button" class="ghost" id="btnAddCol">增加公式列</button>
+        <button type="button" class="ghost" id="btnResetCols">按勾选字段重建列</button>
+        <button type="button" id="btnXlsx">导出 Excel</button>
+        <button type="button" class="secondary" id="btnCsv">导出 CSV</button>
+      </div>
+      <div class="table-wrap" id="outputTable"></div>
+    </section>
+
+    <section class="panel" id="docsPanel" hidden>
+      <h2>原件对照</h2>
+      <div class="docs" id="docs"></div>
+    </section>
+  </main>
+  <div class="toast" id="toast"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="assets/js/demo-data.js"></script>
+  <script src="assets/js/formula.js"></script>
+  <script src="assets/js/fields.js"></script>
+  <script src="assets/js/parser.js"></script>
+  <script src="assets/js/app.js"></script>
+</body>
+</html>
