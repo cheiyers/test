@@ -74,6 +74,7 @@
     activeCol: "p:material",
     displayPresets: [],
     activePresetId: "",
+    exportMap: window.ExportMap ? ExportMap.normalize({}) : { enabled: false, fileName: "kone-po-selected", columns: [] },
   };
 
   const $ = (sel) => document.querySelector(sel);
@@ -94,6 +95,7 @@
       if (p.activeCol) state.activeCol = p.activeCol;
       if (Array.isArray(p.displayPresets)) state.displayPresets = p.displayPresets;
       if (typeof p.activePresetId === "string") state.activePresetId = p.activePresetId;
+      if (p.exportMap && window.ExportMap) state.exportMap = ExportMap.normalize(p.exportMap);
     } catch (e) {}
   }
 
@@ -110,6 +112,7 @@
         activeCol: state.activeCol,
         displayPresets: state.displayPresets,
         activePresetId: state.activePresetId,
+        exportMap: state.exportMap,
       })
     );
   }
@@ -985,6 +988,201 @@
     return row;
   }
 
+  function mappedGetValue(row, src) {
+    return processValue(src, rawFromRow(row, src));
+  }
+
+  function aoaToCsv(aoa) {
+    const lines = (aoa || []).map((row) =>
+      (row || [])
+        .map((cell) => {
+          const v = String(cell ?? "");
+          return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+        })
+        .join(",")
+    );
+    return "\ufeff" + lines.join("\n");
+  }
+
+  function exportMappedAoa() {
+    return ExportMap.exportAoa(
+      state.exportMap.columns,
+      displayRows(),
+      mappedGetValue,
+      state.exportMap.prefixRows
+    );
+  }
+
+  function exportFileName(ext) {
+    return ExportMap.ensureExt(state.exportMap.fileName || "kone-po-selected", ext);
+  }
+
+  function sourceOptionsHtml(selected) {
+    const opts = [`<option value="">（空）</option>`];
+    opts.push(`<option value="const"${selected === "const" ? " selected" : ""}>固定值</option>`);
+    columnOptions().forEach((o) => {
+      opts.push(
+        `<option value="${escapeHtml(o.key)}"${o.key === selected ? " selected" : ""}>${escapeHtml(o.label)}</option>`
+      );
+    });
+    return opts.join("");
+  }
+
+  function findMapCol(id) {
+    return state.exportMap.columns.find((c) => c.id === id);
+  }
+
+  function renderMapPreview() {
+    const box = $("#mapPreview");
+    if (!box) return;
+    const cols = state.exportMap.columns || [];
+    if (!cols.length) {
+      box.innerHTML = "<tbody><tr><td class='muted'>添加列后这里预览导出样子</td></tr></tbody>";
+      return;
+    }
+    const rows = displayRows().slice(0, 4);
+    const { header, body } = ExportMap.mappedMatrix(rows, cols, mappedGetValue);
+    box.innerHTML =
+      "<thead><tr>" +
+      header.map((h) => `<th>${escapeHtml(h)}</th>`).join("") +
+      "</tr></thead><tbody>" +
+      (body.length
+        ? body
+            .map((r) => "<tr>" + r.map((c) => `<td>${escapeHtml(c)}</td>`).join("") + "</tr>")
+            .join("")
+        : "<tr><td class='muted' colspan='" + header.length + "'>当前没有可见订单行</td></tr>") +
+      "</tbody>";
+  }
+
+  function renderExportMap() {
+    if (!window.ExportMap) return;
+    const map = state.exportMap;
+    const en = $("#mapEnabled");
+    if (en) en.checked = !!map.enabled;
+    const fn = $("#mapFileName");
+    if (fn && document.activeElement !== fn) fn.value = map.fileName || "";
+    const hint = $("#mapTemplateHint");
+    if (hint) {
+      if (map.templateName) {
+        hint.textContent =
+          "已读取模板「" +
+          map.templateName +
+          "」· 表头第 " +
+          map.headerRow +
+          " 行 · " +
+          map.columns.length +
+          " 列。可改列名和映射。";
+      } else if (map.columns.length) {
+        hint.textContent = "手输 " + map.columns.length + " 列。上传模板可按表头覆盖。";
+      } else {
+        hint.textContent = "还没有模板。手输列名，或从当前识别列生成。";
+      }
+    }
+    const body = $("#mapBody");
+    if (!body) return;
+    if (!map.columns.length) {
+      body.innerHTML =
+        '<tr><td colspan="5" class="empty">还没有映射列。添加一列，或从当前识别列生成。</td></tr>';
+    } else {
+      body.innerHTML = map.columns
+        .map((col, i) => {
+          const fillOff = col.source && col.source !== "const" ? "disabled" : "";
+          return `<tr data-id="${escapeHtml(col.id)}">
+          <td class="letter">${ExportMap.colLetter(i)}</td>
+          <td><input data-map-name="${escapeHtml(col.id)}" value="${escapeHtml(col.name)}" placeholder="列名" /></td>
+          <td><select data-map-source="${escapeHtml(col.id)}">${sourceOptionsHtml(col.source)}</select></td>
+          <td><input data-map-fill="${escapeHtml(col.id)}" value="${escapeHtml(col.fill)}" placeholder="可选" ${fillOff} /></td>
+          <td><div class="map-row-actions">
+            <button type="button" data-map-up="${escapeHtml(col.id)}" title="上移">↑</button>
+            <button type="button" data-map-down="${escapeHtml(col.id)}" title="下移">↓</button>
+            <button type="button" data-map-del="${escapeHtml(col.id)}" title="删除">×</button>
+          </div></td>
+        </tr>`;
+        })
+        .join("");
+      body.querySelectorAll("[data-map-name]").forEach((el) => {
+        el.addEventListener("input", () => {
+          const col = findMapCol(el.dataset.mapName);
+          if (col) col.name = el.value;
+          savePrefs();
+          renderMapPreview();
+        });
+      });
+      body.querySelectorAll("[data-map-source]").forEach((el) => {
+        el.addEventListener("change", () => {
+          const col = findMapCol(el.dataset.mapSource);
+          if (!col) return;
+          col.source = el.value;
+          savePrefs();
+          renderExportMap();
+        });
+      });
+      body.querySelectorAll("[data-map-fill]").forEach((el) => {
+        el.addEventListener("input", () => {
+          const col = findMapCol(el.dataset.mapFill);
+          if (col) col.fill = el.value;
+          savePrefs();
+          renderMapPreview();
+        });
+      });
+      body.querySelectorAll("[data-map-up]").forEach((el) => {
+        el.addEventListener("click", () => {
+          state.exportMap.columns = ExportMap.moveColumn(state.exportMap.columns, el.dataset.mapUp, -1);
+          savePrefs();
+          renderExportMap();
+        });
+      });
+      body.querySelectorAll("[data-map-down]").forEach((el) => {
+        el.addEventListener("click", () => {
+          state.exportMap.columns = ExportMap.moveColumn(state.exportMap.columns, el.dataset.mapDown, 1);
+          savePrefs();
+          renderExportMap();
+        });
+      });
+      body.querySelectorAll("[data-map-del]").forEach((el) => {
+        el.addEventListener("click", () => {
+          state.exportMap.columns = ExportMap.removeColumn(state.exportMap.columns, el.dataset.mapDel);
+          savePrefs();
+          renderExportMap();
+        });
+      });
+    }
+    renderMapPreview();
+  }
+
+  function applyTemplateAoa(name, aoa) {
+    const parsed = ExportMap.parseTemplateAoa(aoa);
+    if (!parsed.headers.length) return toast("模板里没有读到表头");
+    state.exportMap.columns = ExportMap.columnsFromHeaders(parsed.headers, columnOptions());
+    state.exportMap.prefixRows = parsed.prefixRows;
+    state.exportMap.headerRow = parsed.headerRow;
+    state.exportMap.templateName = name;
+    state.exportMap.fileName = ExportMap.baseName(name) || state.exportMap.fileName;
+    state.exportMap.enabled = true;
+    savePrefs();
+    renderExportMap();
+    toast("已按模板「" + name + "」生成映射列");
+  }
+
+  function readTemplateFile(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("无法读取模板"));
+      reader.onload = () => {
+        try {
+          if (!window.XLSX) throw new Error("Excel 库未加载");
+          const wb = XLSX.read(new Uint8Array(reader.result), { type: "array" });
+          const sheet = wb.Sheets[wb.SheetNames[0]];
+          const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: "" });
+          resolve({ name: file.name, aoa });
+        } catch (err) {
+          reject(err);
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
   function exportDisplayedObjects() {
     return displayRows().map((row) => {
       const o = parentExportObject(row.doc, row.item);
@@ -1023,15 +1221,27 @@
   }
 
   function exportCsv() {
+    if (window.ExportMap && ExportMap.hasMapping(state.exportMap)) {
+      if (!displayRows().length) return toast("\u6ca1\u6709\u53ef\u5bfc\u51fa\u7684\u884c");
+      downloadBlob(new Blob([aoaToCsv(exportMappedAoa())], { type: "text/csv;charset=utf-8" }), exportFileName("csv"));
+      return;
+    }
     const rows = exportDisplayedObjects();
     if (!rows.length) return toast("\u6ca1\u6709\u53ef\u5bfc\u51fa\u7684\u884c");
-    downloadBlob(new Blob([toCsv(rows)], { type: "text/csv;charset=utf-8" }), "kone-po-selected.csv");
+    downloadBlob(new Blob([toCsv(rows)], { type: "text/csv;charset=utf-8" }), exportFileName("csv"));
   }
 
   function exportXlsx() {
+    if (!window.XLSX) return toast("Excel \u5e93\u672a\u52a0\u8f7d\uff0c\u8bf7\u6539\u7528 CSV");
+    if (window.ExportMap && ExportMap.hasMapping(state.exportMap)) {
+      if (!displayRows().length) return toast("\u6ca1\u6709\u53ef\u5bfc\u51fa\u7684\u884c");
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(exportMappedAoa()), "\u8ba2\u5355\u884c");
+      XLSX.writeFile(wb, exportFileName("xlsx"));
+      return;
+    }
     const vis = visibleParents();
     if (!vis.length) return toast("\u6ca1\u6709\u53ef\u5bfc\u51fa\u7684\u884c");
-    if (!window.XLSX) return toast("Excel \u5e93\u672a\u52a0\u8f7d\uff0c\u8bf7\u6539\u7528 CSV");
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(
       wb,
@@ -1047,20 +1257,24 @@
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(bomRows), "BOM\u5b50\u4ef6");
       }
     }
-    XLSX.writeFile(wb, "kone-po-selected.xlsx");
+    XLSX.writeFile(wb, exportFileName("xlsx"));
   }
 
   function exportJson() {
     const vis = visibleParents();
     const payload = {
       processed: exportDisplayedObjects(),
+      mapped:
+        window.ExportMap && ExportMap.hasMapping(state.exportMap)
+          ? ExportMap.mappedObjects(displayRows(), state.exportMap.columns, mappedGetValue)
+          : null,
       raw: vis.map(({ doc, item }) => ({
         file: doc.file,
         header: doc.header,
         item,
       })),
     };
-    downloadBlob(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }), "kone-po-selected.json");
+    downloadBlob(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }), exportFileName("json"));
   }
 
   function render() {
@@ -1074,6 +1288,7 @@
     renderSummary();
     renderColumnProcessor();
     renderTable();
+    renderExportMap();
   }
 
   function bind() {
@@ -1232,6 +1447,62 @@
       state.columnRules = {};
       savePrefs();
       render();
+    });
+
+    $("#mapEnabled").addEventListener("change", (e) => {
+      state.exportMap.enabled = e.target.checked;
+      savePrefs();
+      renderExportMap();
+    });
+    $("#mapFileName").addEventListener("input", (e) => {
+      state.exportMap.fileName = e.target.value;
+      savePrefs();
+    });
+    const mapDz = $("#mapDrop");
+    const mapFile = $("#mapFile");
+    ["dragenter", "dragover"].forEach((ev) =>
+      mapDz.addEventListener(ev, (e) => {
+        e.preventDefault();
+        mapDz.classList.add("over");
+      })
+    );
+    ["dragleave", "drop"].forEach((ev) =>
+      mapDz.addEventListener(ev, (e) => {
+        e.preventDefault();
+        mapDz.classList.remove("over");
+      })
+    );
+    mapDz.addEventListener("click", () => mapFile.click());
+    mapDz.addEventListener("drop", (e) => {
+      const file = e.dataTransfer.files && e.dataTransfer.files[0];
+      if (file) readTemplateFile(file).then((t) => applyTemplateAoa(t.name, t.aoa)).catch((err) => toast(err.message || String(err)));
+    });
+    mapFile.addEventListener("change", (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (file) readTemplateFile(file).then((t) => applyTemplateAoa(t.name, t.aoa)).catch((err) => toast(err.message || String(err)));
+      e.target.value = "";
+    });
+    $("#mapAddCol").addEventListener("click", () => {
+      state.exportMap.columns.push(ExportMap.emptyColumn("新列"));
+      state.exportMap.enabled = true;
+      savePrefs();
+      renderExportMap();
+    });
+    $("#mapFromCurrent").addEventListener("click", () => {
+      state.exportMap.columns = ExportMap.columnsFromSources(columnOptions());
+      state.exportMap.prefixRows = [];
+      state.exportMap.templateName = "";
+      state.exportMap.headerRow = 1;
+      state.exportMap.enabled = true;
+      savePrefs();
+      renderExportMap();
+      toast("已按当前识别列生成映射");
+    });
+    $("#mapClear").addEventListener("click", () => {
+      state.exportMap = ExportMap.normalize({ fileName: state.exportMap.fileName });
+      savePrefs();
+      renderExportMap();
+      toast("已清空映射");
     });
   }
 

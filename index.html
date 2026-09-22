@@ -79,7 +79,7 @@
           </div>
         </div>
         <div>
-          <p class="hint" style="margin-top:0">导入后会识别全部类别。可在下方勾选要保留的类别与字段。过滤框只影响当前显示。</p>
+          <p class="hint" style="margin-top:0">导入后会识别全部类别。可在下方勾选要保留的类别与字段。过滤框只影响当前显示。若已启用结果映射，Excel / CSV 按映射列和文件名导出。</p>
           <div class="actions" style="margin-top:10px">
             <input id="filterInput" type="text" placeholder="过滤：物料 / 项目号 / 描述 / 子件…" />
           </div>
@@ -95,8 +95,9 @@
 
     <section class="panel">
       <div class="panel-head"><h2>选择类别与字段</h2>
-        <span class="hint">先全量识别，再由你决定要哪些类、哪些列</span>
+        <span class="hint">先全量识别，再由你决定要哪些类、哪些列。类别或字段过多时在框内滚动</span>
       </div>
+      <div class="choose-scroll">
       <div class="choose-grid">
         <div>
           <div class="panel-head" style="margin-bottom:8px">
@@ -154,6 +155,7 @@
           </div>
         </div>
       </div>
+      </div>
     </section>
     <section class="panel">
       <div class="panel-head"><h2>列内容处理</h2>
@@ -184,9 +186,58 @@
       </div>
     </section>
     <section class="panel">
-      <div class="panel-head"><h2>识别结果 · 请核对订单行</h2></div>
+      <div class="panel-head">
+        <h2>订单结果映射</h2>
+        <span class="hint">按上传表格的列名导出，或不上传模板、自己手输列名和映射</span>
+      </div>
+      <div class="map-box">
+        <div class="map-toolbar">
+          <label class="map-enable"><input type="checkbox" id="mapEnabled" /> 按此映射导出 Excel / CSV</label>
+          <label class="map-filename">导出文件名
+            <input id="mapFileName" type="text" placeholder="例如：出货清单，可与模板同名" />
+          </label>
+        </div>
+        <div class="dropzone map-drop" id="mapDrop">
+          <strong>拖入 Excel / CSV 模板，或点击选择</strong>
+          <span>读取表头作为列，并带上文件名。也可以不上传，下面手动加列。</span>
+        </div>
+        <input id="mapFile" type="file" accept=".xlsx,.xls,.csv,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden />
+        <p class="hint" id="mapTemplateHint">还没有模板。手输列名，或从当前识别列生成。</p>
+        <div class="actions" style="margin-top:8px">
+          <button class="secondary" id="mapAddCol" type="button">添加一列</button>
+          <button class="ghost" id="mapFromCurrent" type="button">从当前识别列生成</button>
+          <button class="ghost" id="mapClear" type="button">清空映射</button>
+        </div>
+        <div class="map-table-wrap">
+          <table class="map-table">
+            <thead>
+              <tr>
+                <th>列</th>
+                <th>导出列名</th>
+                <th>映射识别字段</th>
+                <th>固定值（不映射时）</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="mapBody"></tbody>
+          </table>
+        </div>
+        <div class="preview-box">
+          <p class="hint" style="margin:0 0 6px">映射预览（当前可见行的前几条）</p>
+          <div class="map-preview-scroll">
+            <table class="mini" id="mapPreview"></table>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>识别结果 · 请核对订单行</h2>
+        <span class="hint">订单多时在框内滚动查看</span>
+      </div>
       <div class="stats" id="summaryCards"></div>
-      <div class="po-grid" id="poCards"></div>
+      <div class="po-review-scroll">
+        <div class="po-grid" id="poCards"></div>
+      </div>
     </section>
 
     <section class="panel">
@@ -206,6 +257,7 @@
   <script src="assets/js/transforms.js"></script>
   <script src="assets/js/parser.js"></script>
   <script src="assets/js/display-presets.js"></script>
+  <script src="assets/js/export-map.js"></script>
   <script src="assets/js/app.js"></script>
 </body>
 </html>
