@@ -72,6 +72,8 @@
     viewMode: "nested",
     columnRules: {},
     activeCol: "p:material",
+    displayPresets: [],
+    activePresetId: "",
   };
 
   const $ = (sel) => document.querySelector(sel);
@@ -90,6 +92,8 @@
       if (p.viewMode) state.viewMode = p.viewMode;
       if (p.columnRules && typeof p.columnRules === "object") state.columnRules = p.columnRules;
       if (p.activeCol) state.activeCol = p.activeCol;
+      if (Array.isArray(p.displayPresets)) state.displayPresets = p.displayPresets;
+      if (typeof p.activePresetId === "string") state.activePresetId = p.activePresetId;
     } catch (e) {}
   }
 
@@ -104,6 +108,8 @@
         viewMode: state.viewMode,
         columnRules: state.columnRules,
         activeCol: state.activeCol,
+        displayPresets: state.displayPresets,
+        activePresetId: state.activePresetId,
       })
     );
   }
@@ -612,6 +618,59 @@
     });
 
     renderBomDescs();
+    renderPresets();
+  }
+
+  function currentSnapshot() {
+    return DisplayPresets.snapshot(state);
+  }
+
+  function applyPreset(id) {
+    const preset = state.displayPresets.find((p) => p.id === id);
+    if (!preset) return;
+    DisplayPresets.apply(state, preset, state.knownCategories);
+    state.activePresetId = id;
+    savePrefs();
+    render();
+    toast("\u5df2\u5207\u6362\u5230\u300c" + preset.name + "\u300d");
+  }
+
+  function renderPresets() {
+    const box = $("#presetList");
+    if (!box) return;
+    if (!state.displayPresets.length) {
+      box.innerHTML = '<p class="muted">\u8fd8\u6ca1\u6709\u4fdd\u5b58\u7684\u65b9\u5f0f\u3002\u4e0b\u9762\u8f93\u5165\u540d\u79f0\u540e\u70b9\u300c\u6dfb\u52a0\u300d\u3002</p>';
+      return;
+    }
+    const now = currentSnapshot();
+    box.innerHTML = state.displayPresets
+      .map((p) => {
+        const on = state.activePresetId === p.id;
+        const dirty = on && !DisplayPresets.sameSnapshot(now, p);
+        return `<div class="preset-row ${on ? "on" : ""}" data-preset="${escapeHtml(p.id)}">
+          <span class="name">${escapeHtml(p.name)}</span>
+          ${dirty ? '<em class="dirty">\u5df2\u6539\u52a8</em>' : ""}
+          <button type="button" data-del-preset="${escapeHtml(p.id)}" title="\u5220\u9664">\u00d7</button>
+        </div>`;
+      })
+      .join("");
+    box.querySelectorAll(".preset-row").forEach((row) => {
+      row.addEventListener("click", (e) => {
+        if (e.target.closest("[data-del-preset]")) return;
+        applyPreset(row.dataset.preset);
+      });
+    });
+    box.querySelectorAll("[data-del-preset]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.delPreset;
+        state.displayPresets = DisplayPresets.removeById(state.displayPresets, id);
+        if (state.activePresetId === id) state.activePresetId = "";
+        savePrefs();
+        render();
+        toast("\u5df2\u5220\u9664\u8be5\u663e\u793a\u65b9\u5f0f");
+      });
+    });
   }
 
   function setBomDescSelected(desc, on) {
@@ -1110,6 +1169,31 @@
         savePrefs();
         render();
       });
+    });
+    $("#presetAdd").addEventListener("click", () => {
+      const name = ($("#presetName").value || "").trim();
+      const result = DisplayPresets.addOrUpdate(state.displayPresets, name, currentSnapshot());
+      if (result.error === "empty") return toast("\u8bf7\u5148\u8f93\u5165\u65b9\u5f0f\u540d\u79f0");
+      state.activePresetId = result.id;
+      $("#presetName").value = "";
+      savePrefs();
+      render();
+      toast(result.updated ? "\u5df2\u66f4\u65b0\u300c" + name + "\u300d" : "\u5df2\u6dfb\u52a0\u300c" + name + "\u300d");
+    });
+    $("#presetName").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        $("#presetAdd").click();
+      }
+    });
+    $("#presetUpdate").addEventListener("click", () => {
+      if (!state.activePresetId) return toast("\u8bf7\u5148\u70b9\u9009\u4e00\u4e2a\u5df2\u4fdd\u5b58\u7684\u65b9\u5f0f\uff0c\u6216\u5148\u6dfb\u52a0");
+      const result = DisplayPresets.updateById(state.displayPresets, state.activePresetId, currentSnapshot());
+      if (result.error) return toast("\u6ca1\u6709\u5f53\u524d\u65b9\u5f0f\u53ef\u66f4\u65b0");
+      savePrefs();
+      render();
+      const name = (state.displayPresets.find((p) => p.id === state.activePresetId) || {}).name || "";
+      toast("\u5df2\u66f4\u65b0\u300c" + name + "\u300d");
     });
     $("#colSelect").addEventListener("change", (e) => {
       state.activeCol = e.target.value;
