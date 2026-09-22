@@ -227,6 +227,27 @@
     return sanitizeFileName(baseName(name) || name, "kone-po-selected") + "." + e;
   }
 
+  function looksMojibake(s) {
+    return /[\uFFFD]|Ã.|Â.|å.|æ.|ç.|ä¸|è´|ï¿½/.test(String(s || ""));
+  }
+
+  function decodeCsvBytes(bytes) {
+    const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []);
+    if (!u8.length) return "";
+    let start = 0;
+    if (u8[0] === 0xef && u8[1] === 0xbb && u8[2] === 0xbf) start = 3;
+    const utf8 = new TextDecoder("utf-8").decode(start ? u8.slice(start) : u8);
+    if (start || !looksMojibake(utf8)) return utf8;
+    const encodings = ["gb18030", "gbk"];
+    for (let i = 0; i < encodings.length; i++) {
+      try {
+        const text = new TextDecoder(encodings[i]).decode(u8);
+        if (text && !looksMojibake(text)) return text;
+      } catch (e) {}
+    }
+    return utf8;
+  }
+
   function hasMapping(map) {
     return !!(map && map.enabled && map.columns && map.columns.length);
   }
@@ -251,6 +272,8 @@
     baseName,
     ensureExt,
     hasMapping,
+    decodeCsvBytes,
+    looksMojibake,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.ExportMap = api;

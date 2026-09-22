@@ -82,4 +82,9 @@ assert.ok(M.hasMapping(map));
 assert.strictEqual(map.fileName, "清单");
 assert.ok(!M.hasMapping({ enabled: true, columns: [] }));
 
+const utf8csv = Buffer.from("物料编码,品名\nKM1,灯", "utf8");
+assert.ok(M.decodeCsvBytes(utf8csv).includes("物料编码"));
+const bom = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), utf8csv]);
+assert.ok(M.decodeCsvBytes(bom).startsWith("物料编码"));
+
 console.log("ok export map");

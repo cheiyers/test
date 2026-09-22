@@ -1171,7 +1171,11 @@
       reader.onload = () => {
         try {
           if (!window.XLSX) throw new Error("Excel 库未加载");
-          const wb = XLSX.read(new Uint8Array(reader.result), { type: "array" });
+          const buf = new Uint8Array(reader.result);
+          const isCsv = /\.csv$/i.test(file.name) || file.type === "text/csv";
+          const wb = isCsv
+            ? XLSX.read(ExportMap.decodeCsvBytes(buf), { type: "string", raw: false })
+            : XLSX.read(buf, { type: "array" });
           const sheet = wb.Sheets[wb.SheetNames[0]];
           const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: "" });
           resolve({ name: file.name, aoa });
