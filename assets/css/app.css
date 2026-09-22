@@ -210,6 +210,21 @@ table.mini th, table.mini td { border-bottom: 1px solid #eee; padding: 4px 6px; 
 .view-modes {
   display: flex; flex-wrap: wrap; gap: 12px; padding: 8px 0 4px;
 }
+.preset-box {
+  border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: #fff;
+}
+.preset-list { display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow: auto; }
+.preset-row {
+  display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 8px;
+  cursor: pointer; font-size: 13px;
+}
+.preset-row:hover { background: #fff8ea; }
+.preset-row.on { background: #f6e7c3; }
+.preset-row .name { flex: 1; }
+.preset-row .dirty { color: var(--signal); font-size: 11px; }
+.preset-row button {
+  border: 0; background: transparent; color: var(--signal); cursor: pointer; font-size: 13px;
+}
 tr.item.bom-line { background: #fbfaf4; }
 tr.item.bom-line td:first-child { border-left: 3px solid var(--gold); }
 .bom-desc-list {

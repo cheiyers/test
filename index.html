@@ -116,6 +116,15 @@
               <label><input type="radio" name="viewMode" value="nested" checked /> 订单行 + 展开子件</label>
               <label><input type="radio" name="viewMode" value="flat" /> 子件展开为独立行</label>
             </div>
+            <div class="preset-box">
+              <p class="hint" style="margin:8px 0 6px">已保存的方式：点选切换。会记住字段、规格列、子件描述列、列处理和当前类别。</p>
+              <div class="preset-list" id="presetList"></div>
+              <div class="actions" style="margin-top:8px">
+                <input id="presetName" type="text" placeholder="例如：主开关 + 子件描述列" />
+                <button class="secondary" id="presetAdd" type="button">添加</button>
+                <button class="ghost" id="presetUpdate" type="button">更新当前</button>
+              </div>
+            </div>
           </div>
           <div class="field-block">
             <h3>订单行字段</h3>
@@ -196,6 +205,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="assets/js/transforms.js"></script>
   <script src="assets/js/parser.js"></script>
+  <script src="assets/js/display-presets.js"></script>
   <script src="assets/js/app.js"></script>
 </body>
 </html>
