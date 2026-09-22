@@ -14,6 +14,9 @@ assert.strictEqual(blank.arrDate, "02.09.2026");
 assert.strictEqual(blank.amount, "21.50");
 
 assert.ok(parser.matchOrderLine("10 KM52343954V000 18.08.2026 8 PC 12.53 100.27").material.startsWith("KM"));
+const gk = parser.matchOrderLine("10 GKGGC2298C 14.09.2026 1 PC 12.60 12.60");
+assert.strictEqual(gk.material, "GKGGC2298C");
+assert.strictEqual(gk.amount, "12.60");
 assert.strictEqual(parser.matchOrderLine("hello"), null);
 
 const zh = parser.extractOrderIds(

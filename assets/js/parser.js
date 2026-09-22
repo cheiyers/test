@@ -1,7 +1,7 @@
 /* KONE Purchase Order parser (coordinate-aware, browser-side). */
 (function (global) {
   const LINE_RE =
-    /^(\d+)\s+(?:(KM[A-Z0-9]+)\s+)?(\d{2}\.\d{2}\.\d{4})(?:\s+(\d{2}\.\d{2}\.\d{4}))?\s+(\d+)\s*PC\s+([\d,.]+)\s+([\d,.]+)$/;
+    /^(\d+)\s+(?:([A-Z][A-Z0-9._-]{3,})\s+)?(\d{2}\.\d{2}\.\d{4})(?:\s+(\d{2}\.\d{2}\.\d{4}))?\s+(\d+)\s*PC\s+([\d,.]+)\s+([\d,.]+)$/;
   const BOM_RE = /^\.1\s+(\d{4})\s+(KM[A-Z0-9]+)\s+([\d,.]+)\s+PC$/;
   const DATE_RE = /\d{2}\.\d{2}\.\d{4}/g;
   const CONTACT_RE = /([A-Za-z]+,[A-Za-z]+)/;
@@ -52,7 +52,8 @@
     for (const ln of lines) {
       if (
         (ln.text.startsWith("Pos.") && ln.text.includes("Material")) ||
-        compactText(ln.text).includes("\u9879\u76ee.\u7269\u6599")
+        compactText(ln.text).includes("\u9879\u76ee.\u7269\u6599") ||
+        compactText(ln.text).includes("\u9879\u76ee\u7269\u6599")
       ) {
         headerY = ln.y;
       }
@@ -133,7 +134,8 @@
       }
       if (
         (left.startsWith("Pos.") && ln.text.includes("Material")) ||
-        lineKey.includes("\u9879\u76ee.\u7269\u6599")
+        lineKey.includes("\u9879\u76ee.\u7269\u6599") ||
+        lineKey.includes("\u9879\u76ee\u7269\u6599")
       ) {
         break;
       }
@@ -315,6 +317,8 @@
       return { id: "main-switch", name: "MR \u4e3b\u5f00\u5173" };
     if (/\u7ebf\u7f06|\u4e95\u9053\u7167\u660e/.test(d))
       return { id: "shaft-cable", name: "\u4e95\u9053\u7167\u660e\u7535\u7f06" };
+    if (/\u88c5\u7bb1\u8f66\u95f4/.test(d))
+      return { id: "packing-parts", name: "\u88c5\u7bb1\u8f66\u95f4\u90e8\u4ef6" };
     return { id: "other", name: "\u5176\u4ed6\u7269\u6599" };
   }
 

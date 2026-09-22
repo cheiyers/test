@@ -1044,6 +1044,7 @@
         "samples/KONE_PO_4801007230__Please_Acknowledge_Receipt_5025.pdf",
         "samples/KONE_PO_4801169630__Please_Acknowledge_Receipt_659c.pdf",
         "samples/KONE_PO_4801154682__Please_Acknowledge_Receipt_e3cd.pdf",
+        "samples/PO_Number_4801355407_21a2.pdf",
       ];
       try {
         $("#progressWrap").hidden = false;
