@@ -66,6 +66,7 @@ npm start
 | 双击提示找不到 Node | 安装 Node 22.5+；脚本会优先使用 `C:\Program Files\nodejs\node.exe` |
 | 在用户目录执行 npm 报没有 package.json | 必须进入**项目文件夹**再操作 |
 | 配置失败 | 查看 `setup-log.txt`；换热点 / 勿放 OneDrive、U 盘 |
+| 有的电脑二维码不显示 | 旧版依赖外网 CDN。更新最新代码后二维码库已内置在 `public/vendor` |
 | 端口被占用 | 关掉已打开的「2-启动系统」窗口 |
 
 更多见 **`使用说明.txt`**。
