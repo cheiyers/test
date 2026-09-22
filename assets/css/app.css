@@ -188,7 +188,67 @@ table.mini th, table.mini td { border-bottom: 1px solid #eee; padding: 4px 6px; 
 }
 .toast.show { opacity: 1; transform: none; }
 
-.choose-grid { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 18px; }
+.choose-scroll {
+  height: 440px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #fff;
+}
+.choose-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 18px;
+  height: 100%;
+}
+.choose-grid > div {
+  min-height: 0;
+  height: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding-right: 6px;
+}
+.po-review-scroll {
+  max-height: 380px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px;
+  background: #fff;
+}
+.map-box { display: flex; flex-direction: column; gap: 8px; }
+.map-toolbar {
+  display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: center;
+}
+.map-enable { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; }
+.map-filename { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.map-filename input { min-width: 260px; }
+.map-drop { padding: 14px; }
+.map-table-wrap {
+  max-height: 280px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+table.map-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.map-table th {
+  position: sticky; top: 0; background: var(--navy); color: #f7f1e4;
+  text-align: left; padding: 7px 8px; font-weight: 600; z-index: 1;
+}
+table.map-table td { padding: 6px 8px; border-bottom: 1px solid #eee8dc; vertical-align: middle; }
+table.map-table input, table.map-table select {
+  border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font: inherit; background: #fff; width: 100%;
+}
+table.map-table .letter { font-family: "IBM Plex Mono", ui-monospace, monospace; color: var(--muted); }
+.map-row-actions { display: flex; gap: 4px; }
+.map-row-actions button {
+  border: 1px solid var(--line); background: #fff; border-radius: 6px; width: 28px; height: 28px; cursor: pointer;
+}
+.map-preview-scroll { overflow: auto; max-height: 160px; }
 .family {
   border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; background: #fff;
 }
@@ -271,5 +331,7 @@ td.changed { background: #fff6d9; }
 }
 @media (max-width: 1100px) {
   .choose-grid { grid-template-columns: 1fr; }
+  .choose-scroll { height: auto; max-height: 520px; overflow: auto; }
+  .choose-grid > div { height: auto; max-height: none; }
 }
 
