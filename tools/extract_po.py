@@ -11,7 +11,7 @@ from pathlib import Path
 import pymupdf
 
 LINE_RE = re.compile(
-    r"^(\d+)\s+(?:(KM[A-Z0-9]+)\s+)?"
+    r"^(\d+)\s+(?:([A-Z][A-Z0-9._-]{3,})\s+)?"
     r"(\d{2}\.\d{2}\.\d{4})"
     r"(?:\s+(\d{2}\.\d{2}\.\d{4}))?\s+(\d+)\s*PC\s+([\d,.]+)\s+([\d,.]+)$"
 )
@@ -72,6 +72,7 @@ def content_band(lines):
     for ln in lines:
         if (ln["text"].startswith("Pos.") and "Material" in ln["text"]) or (
             "项目.物料" in re.sub(r"\s+", "", ln["text"])
+            or "项目物料" in re.sub(r"\s+", "", ln["text"])
         ):
             header_y = ln["y"]
         if (
@@ -151,7 +152,7 @@ def parse_header(doc) -> dict:
         ):
             mode = "delivery"
             continue
-        if (left.startswith("Pos.") and "Material" in ln["text"]) or "项目.物料" in line_key:
+        if (left.startswith("Pos.") and "Material" in ln["text"]) or "项目.物料" in line_key or "项目物料" in line_key:
             break
         if (
             left.startswith("Quotation")
