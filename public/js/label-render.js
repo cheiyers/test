@@ -55,7 +55,13 @@
       host.textContent = '';
       return;
     }
-    if (contentType === 'barcode' && global.JsBarcode) {
+    if (contentType === 'barcode') {
+      if (!global.JsBarcode) {
+        host.textContent = value || '[条码库未加载]';
+        host.style.fontSize = '10px';
+        host.style.color = '#c00';
+        return;
+      }
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       host.appendChild(svg);
       try {
@@ -73,23 +79,25 @@
       }
       return;
     }
-    if (global.QRCode) {
-      const box = document.createElement('div');
-      box.style.width = '100%';
-      box.style.height = '100%';
-      host.appendChild(box);
-      const size = Math.max(48, Math.min(widthPx || 80, heightPx || 80));
-      // eslint-disable-next-line no-new
-      new global.QRCode(box, {
-        text: value,
-        width: size,
-        height: size,
-        correctLevel: global.QRCode.CorrectLevel.M
-      });
-      fitGraphicToHost(host);
+    if (!global.QRCode) {
+      host.textContent = value || '[二维码库未加载]';
+      host.style.fontSize = '10px';
+      host.style.color = '#c00';
       return;
     }
-    host.textContent = value;
+    const box = document.createElement('div');
+    box.style.width = '100%';
+    box.style.height = '100%';
+    host.appendChild(box);
+    const size = Math.max(48, Math.min(widthPx || 80, heightPx || 80));
+    // eslint-disable-next-line no-new
+    new global.QRCode(box, {
+      text: value,
+      width: size,
+      height: size,
+      correctLevel: global.QRCode.CorrectLevel.M
+    });
+    fitGraphicToHost(host);
   }
 
   function formatCodeCaption(text, opts = {}) {

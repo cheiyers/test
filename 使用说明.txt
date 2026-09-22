@@ -34,6 +34,8 @@ BOM 扫码质量监管系统 - 使用说明（Windows）
   C:\Program Files\nodejs\node.exe
 - 配置失败：看项目里的 setup-log.txt；可换手机热点再点「1-配置环境.bat」
 - 不要把项目放在 U 盘 / OneDrive 同步目录，建议放 D:\ 本地文件夹
+- 有的电脑二维码不显示：旧版依赖外网 CDN。请更新到最新代码
+  （库已内置在 public\vendor，局域网无网也能显示）
 
 五、局域网访问
 其他电脑浏览器打开：http://这台电脑的IP:3789
