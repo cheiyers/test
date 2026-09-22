@@ -252,6 +252,76 @@
     return !!(map && map.enabled && map.columns && map.columns.length);
   }
 
+  function snapshot(map) {
+    const n = normalize(map);
+    return {
+      enabled: n.enabled,
+      fileName: n.fileName,
+      templateName: n.templateName,
+      headerRow: n.headerRow,
+      prefixRows: clone(n.prefixRows),
+      columns: n.columns.map((c) => ({
+        id: c.id,
+        name: c.name,
+        source: c.source,
+        fill: c.fill,
+      })),
+    };
+  }
+
+  function apply(target, scheme) {
+    const next = normalize(scheme);
+    if (!target || typeof target !== "object") return next;
+    target.enabled = next.enabled;
+    target.fileName = next.fileName;
+    target.templateName = next.templateName;
+    target.headerRow = next.headerRow;
+    target.prefixRows = next.prefixRows;
+    target.columns = next.columns;
+    return target;
+  }
+
+  function pickCompare(map) {
+    const n = normalize(map);
+    return {
+      enabled: n.enabled,
+      fileName: n.fileName,
+      templateName: n.templateName,
+      headerRow: n.headerRow,
+      prefixRows: n.prefixRows,
+      columns: n.columns.map((c) => ({ name: c.name, source: c.source, fill: c.fill })),
+    };
+  }
+
+  function sameSnapshot(a, b) {
+    if (!a || !b) return false;
+    return JSON.stringify(pickCompare(a)) === JSON.stringify(pickCompare(b));
+  }
+
+  function addOrUpdate(list, name, snap) {
+    const trimmed = String(name || "").trim();
+    if (!trimmed) return { list, error: "empty" };
+    const existing = list.find((p) => p.name === trimmed);
+    if (existing) {
+      Object.assign(existing, snapshot(snap), { name: trimmed });
+      return { list, id: existing.id, updated: true };
+    }
+    const item = Object.assign({ id: uid(), name: trimmed }, snapshot(snap));
+    list.push(item);
+    return { list, id: item.id, updated: false };
+  }
+
+  function updateById(list, id, snap) {
+    const item = list.find((p) => p.id === id);
+    if (!item) return { list, error: "missing" };
+    Object.assign(item, snapshot(snap), { name: item.name, id: item.id });
+    return { list, id: item.id, updated: true };
+  }
+
+  function removeById(list, id) {
+    return (list || []).filter((p) => p.id !== id);
+  }
+
   const api = {
     uid,
     emptyColumn,
@@ -274,6 +344,12 @@
     hasMapping,
     decodeCsvBytes,
     looksMojibake,
+    snapshot,
+    apply,
+    sameSnapshot,
+    addOrUpdate,
+    updateById,
+    removeById,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.ExportMap = api;

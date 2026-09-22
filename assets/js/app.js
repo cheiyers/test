@@ -75,6 +75,8 @@
     displayPresets: [],
     activePresetId: "",
     exportMap: window.ExportMap ? ExportMap.normalize({}) : { enabled: false, fileName: "kone-po-selected", columns: [] },
+    exportMapPresets: [],
+    activeExportMapId: "",
   };
 
   const $ = (sel) => document.querySelector(sel);
@@ -96,6 +98,8 @@
       if (Array.isArray(p.displayPresets)) state.displayPresets = p.displayPresets;
       if (typeof p.activePresetId === "string") state.activePresetId = p.activePresetId;
       if (p.exportMap && window.ExportMap) state.exportMap = ExportMap.normalize(p.exportMap);
+      if (Array.isArray(p.exportMapPresets)) state.exportMapPresets = p.exportMapPresets;
+      if (typeof p.activeExportMapId === "string") state.activeExportMapId = p.activeExportMapId;
     } catch (e) {}
   }
 
@@ -113,6 +117,8 @@
         displayPresets: state.displayPresets,
         activePresetId: state.activePresetId,
         exportMap: state.exportMap,
+        exportMapPresets: state.exportMapPresets,
+        activeExportMapId: state.activeExportMapId,
       })
     );
   }
@@ -1054,6 +1060,54 @@
       "</tbody>";
   }
 
+  function applyMapScheme(id) {
+    const scheme = state.exportMapPresets.find((p) => p.id === id);
+    if (!scheme) return;
+    ExportMap.apply(state.exportMap, scheme);
+    state.activeExportMapId = id;
+    savePrefs();
+    renderExportMap();
+    toast("已切换到映射方案「" + scheme.name + "」");
+  }
+
+  function renderMapSchemes() {
+    const box = $("#mapSchemeList");
+    if (!box || !window.ExportMap) return;
+    if (!state.exportMapPresets.length) {
+      box.innerHTML = '<p class="muted">还没有保存的映射方案。下面输入名称后点「添加」。</p>';
+      return;
+    }
+    const now = ExportMap.snapshot(state.exportMap);
+    box.innerHTML = state.exportMapPresets
+      .map((p) => {
+        const on = state.activeExportMapId === p.id;
+        const dirty = on && !ExportMap.sameSnapshot(now, p);
+        return `<div class="preset-row ${on ? "on" : ""}" data-map-scheme="${escapeHtml(p.id)}">
+          <span class="name">${escapeHtml(p.name)}</span>
+          ${dirty ? '<em class="dirty">已改动</em>' : ""}
+          <button type="button" data-del-map-scheme="${escapeHtml(p.id)}" title="删除">×</button>
+        </div>`;
+      })
+      .join("");
+    box.querySelectorAll(".preset-row").forEach((row) => {
+      row.addEventListener("click", (e) => {
+        if (e.target.closest("[data-del-map-scheme]")) return;
+        applyMapScheme(row.dataset.mapScheme);
+      });
+    });
+    box.querySelectorAll("[data-del-map-scheme]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.delMapScheme;
+        state.exportMapPresets = ExportMap.removeById(state.exportMapPresets, id);
+        if (state.activeExportMapId === id) state.activeExportMapId = "";
+        savePrefs();
+        renderMapSchemes();
+        toast("已删除该映射方案");
+      });
+    });
+  }
+
   function renderExportMap() {
     if (!window.ExportMap) return;
     const map = state.exportMap;
@@ -1106,6 +1160,7 @@
           if (col) col.name = el.value;
           savePrefs();
           renderMapPreview();
+          renderMapSchemes();
         });
       });
       body.querySelectorAll("[data-map-source]").forEach((el) => {
@@ -1123,6 +1178,7 @@
           if (col) col.fill = el.value;
           savePrefs();
           renderMapPreview();
+          renderMapSchemes();
         });
       });
       body.querySelectorAll("[data-map-up]").forEach((el) => {
@@ -1148,6 +1204,7 @@
       });
     }
     renderMapPreview();
+    renderMapSchemes();
   }
 
   function applyTemplateAoa(name, aoa) {
@@ -1461,6 +1518,32 @@
     $("#mapFileName").addEventListener("input", (e) => {
       state.exportMap.fileName = e.target.value;
       savePrefs();
+      renderMapSchemes();
+    });
+    $("#mapSchemeAdd").addEventListener("click", () => {
+      const name = ($("#mapSchemeName").value || "").trim();
+      const result = ExportMap.addOrUpdate(state.exportMapPresets, name, state.exportMap);
+      if (result.error === "empty") return toast("请先输入方案名称");
+      state.activeExportMapId = result.id;
+      $("#mapSchemeName").value = "";
+      savePrefs();
+      renderMapSchemes();
+      toast(result.updated ? "已更新「" + name + "」" : "已添加「" + name + "」");
+    });
+    $("#mapSchemeName").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        $("#mapSchemeAdd").click();
+      }
+    });
+    $("#mapSchemeUpdate").addEventListener("click", () => {
+      if (!state.activeExportMapId) return toast("请先点选一个已保存的方案，或先添加");
+      const result = ExportMap.updateById(state.exportMapPresets, state.activeExportMapId, state.exportMap);
+      if (result.error) return toast("没有当前方案可更新");
+      savePrefs();
+      renderMapSchemes();
+      const name = (state.exportMapPresets.find((p) => p.id === state.activeExportMapId) || {}).name || "";
+      toast("已更新「" + name + "」");
     });
     const mapDz = $("#mapDrop");
     const mapFile = $("#mapFile");

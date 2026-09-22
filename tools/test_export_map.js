@@ -87,4 +87,24 @@ assert.ok(M.decodeCsvBytes(utf8csv).includes("物料编码"));
 const bom = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), utf8csv]);
 assert.ok(M.decodeCsvBytes(bom).startsWith("物料编码"));
 
+const schemes = [];
+const added = M.addOrUpdate(schemes, "  出货  ", map);
+assert.strictEqual(added.updated, false);
+assert.strictEqual(schemes[0].name, "出货");
+assert.strictEqual(schemes[0].fileName, "清单");
+const other = M.normalize({});
+M.apply(other, schemes[0]);
+assert.strictEqual(other.fileName, "清单");
+assert.ok(M.sameSnapshot(other, schemes[0]));
+other.columns[0].name = "改名";
+assert.ok(!M.sameSnapshot(other, schemes[0]));
+const upd = M.updateById(schemes, schemes[0].id, other);
+assert.strictEqual(upd.updated, true);
+assert.strictEqual(schemes[0].columns[0].name, "改名");
+assert.strictEqual(M.addOrUpdate(schemes, "  ", map).error, "empty");
+const again = M.addOrUpdate(schemes, "出货", map);
+assert.strictEqual(again.updated, true);
+assert.strictEqual(schemes.length, 1);
+assert.strictEqual(M.removeById(schemes, schemes[0].id).length, 0);
+
 console.log("ok export map");

@@ -191,6 +191,15 @@
         <span class="hint">按上传表格的列名导出，或不上传模板、自己手输列名和映射</span>
       </div>
       <div class="map-box">
+        <div class="preset-box">
+          <p class="hint" style="margin:8px 0 6px">已保存的映射方案：点选切换。会记住文件名、列名、字段映射和模板表头。</p>
+          <div class="preset-list" id="mapSchemeList"></div>
+          <div class="actions" style="margin-top:8px">
+            <input id="mapSchemeName" type="text" placeholder="例如：出货清单 · 物料数量" />
+            <button class="secondary" id="mapSchemeAdd" type="button">添加</button>
+            <button class="ghost" id="mapSchemeUpdate" type="button">更新当前</button>
+          </div>
+        </div>
         <div class="map-toolbar">
           <label class="map-enable"><input type="checkbox" id="mapEnabled" /> 按此映射导出 Excel / CSV</label>
           <label class="map-filename">导出文件名
