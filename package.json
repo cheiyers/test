@@ -1,0 +1,23 @@
+{
+  "name": "bom-scan-qc",
+  "version": "1.0.0",
+  "description": "基于 BOM 与订单的扫码质量监管系统",
+  "main": "server/index.js",
+  "scripts": {
+    "prestart": "node scripts/ensure-deps.js",
+    "start": "node server/index.js",
+    "dev": "node scripts/ensure-deps.js && node server/index.js",
+    "check": "node scripts/ensure-deps.js"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "multer": "^2.2.0",
+    "uuid": "^11.0.5",
+    "xlsx": "^0.18.5"
+  }
+}
