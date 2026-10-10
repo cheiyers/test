@@ -524,7 +524,14 @@
       toast("没有找到该订单的识别内容");
       return;
     }
-    card.scrollIntoView({ behavior: "smooth", block: "center" });
+    const scroller = $("docsScroll");
+    if (scroller && scroller.contains(card)) {
+      const sRect = scroller.getBoundingClientRect();
+      const cRect = card.getBoundingClientRect();
+      scroller.scrollBy({ top: cRect.top - sRect.top - 10, behavior: "smooth" });
+    } else {
+      card.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
     card.classList.add("flash");
     setTimeout(function () {
       card.classList.remove("flash");
