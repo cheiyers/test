@@ -24,11 +24,21 @@
     dragStartX: 0,
     dropBeforeId: undefined,
     suppressHeadClick: false,
+    pdfBuffers: {},
+    pdfPaintToken: 0,
   };
 
   const $ = function (id) {
     return document.getElementById(id);
   };
+
+  function escapeHtml(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
 
   function toast(msg, ms) {
     const el = $("toast");
@@ -154,11 +164,13 @@
     applyNormalized(F.normalizeKeywordsAndSelection(kept, Array.from(state.selectedFields)));
   }
 
-  function setDocs(docs, source) {
+  function setDocs(docs, source, pdfBuffers) {
     const sourceChanged = Boolean(state.source) && state.source !== source;
     state.docs = ensureDocWarnings(docs || []);
     state.rows = F.flattenDocs(state.docs);
     state.source = source;
+    if (pdfBuffers) state.pdfBuffers = pdfBuffers;
+    else if (source !== "upload") state.pdfBuffers = {};
     state.selectedRows = new Set(
       state.rows.map(function (r) {
         return r.id;
@@ -167,6 +179,8 @@
     mergeDiscoveredKeywords(true);
     const keep = sourceChanged ? [] : state.columns;
     state.columns = F.syncOutputColumns(keep, Array.from(state.selectedFields), state.extraKeywords);
+    const panel = $("docsPanel");
+    if (panel) panel.hidden = false;
   }
 
   function selectedRowObjects() {
@@ -317,6 +331,14 @@
           td.textContent = v;
         }
         tr.appendChild(td);
+      });
+      tr.classList.add("result-row");
+      tr.dataset.po = row.poNumber || "";
+      tr.dataset.line = row.lineNo || "";
+      tr.title = (tr.title ? tr.title + " · " : "") + "点击查看该订单识别内容";
+      tr.addEventListener("click", function (ev) {
+        if (ev.target && ev.target.closest && ev.target.closest("input")) return;
+        jumpToPo(row.poNumber, row.lineNo);
       });
       tbody.appendChild(tr);
     });
@@ -470,52 +492,234 @@
     syncFormatBar();
   }
 
+  function extraPairs(item) {
+    const extras = (item && item.extras) || {};
+    return Object.keys(extras)
+      .filter(function (k) {
+        return extras[k];
+      })
+      .map(function (k) {
+        return k + " " + extras[k];
+      });
+  }
+
+  function sumAmounts(doc) {
+    return (doc.items || []).reduce(function (s, it) {
+      const n = parseFloat(String(it.amount || "").replace(/,/g, ""));
+      return s + (isFinite(n) ? n : 0);
+    }, 0);
+  }
+
+  function fmtMoney(n) {
+    if (!isFinite(n)) return "";
+    return n.toFixed(2);
+  }
+
+  function jumpToPo(poNumber, lineNo) {
+    const panel = $("docsPanel");
+    if (panel) panel.hidden = false;
+    const id = "po-" + String(poNumber || "").replace(/[^\w-]/g, "");
+    const card = document.getElementById(id);
+    if (!card) {
+      toast("没有找到该订单的识别内容");
+      return;
+    }
+    card.scrollIntoView({ behavior: "smooth", block: "center" });
+    card.classList.add("flash");
+    setTimeout(function () {
+      card.classList.remove("flash");
+    }, 1600);
+    if (lineNo) {
+      const row = card.querySelector('tr[data-line="' + lineNo + '"]');
+      if (row) row.classList.add("flash");
+    }
+  }
+
+  function renderSummary() {
+    const box = $("summaryCards");
+    if (!box) return;
+    const docs = state.docs || [];
+    const items = docs.reduce(function (s, d) {
+      return s + ((d.items && d.items.length) || 0);
+    }, 0);
+    const amount = docs.reduce(function (s, d) {
+      return s + sumAmounts(d);
+    }, 0);
+    const missing = docs.reduce(function (s, d) {
+      return (
+        s +
+        (d.items || []).filter(function (it) {
+          return !it.qty || !it.unit;
+        }).length
+      );
+    }, 0);
+    box.innerHTML =
+      '<article class="stat"><label>采购订单</label><strong>' +
+      docs.length +
+      "</strong><span>份 PDF</span></article>" +
+      '<article class="stat"><label>行项目</label><strong>' +
+      items +
+      "</strong><span>已识别</span></article>" +
+      '<article class="stat"><label>未税合计</label><strong>' +
+      (amount ? fmtMoney(amount) : "—") +
+      "</strong><span>CNY</span></article>" +
+      '<article class="stat"><label>缺数量/单位</label><strong>' +
+      missing +
+      "</strong><span>" +
+      (missing ? "请对照原件" : "均已识别") +
+      "</span></article>";
+  }
+
+  function kvHtml(pairs) {
+    return pairs
+      .map(function (pair) {
+        return "<dt>" + escapeHtml(pair[0]) + "</dt><dd>" + escapeHtml(pair[1] || "—") + "</dd>";
+      })
+      .join("");
+  }
+
   function renderDocs() {
     const root = $("docs");
     if (!root) return;
+    renderSummary();
     root.innerHTML = "";
+    const token = ++state.pdfPaintToken;
     state.docs.forEach(function (doc) {
       const el = document.createElement("article");
-      el.className = "doc";
-      const item = (doc.items && doc.items[0]) || {};
-      const file = doc.file || "";
-      const preview = "assets/previews/" + file.replace(/\.pdf$/i, ".png");
+      el.className = "po-card";
+      const po = (doc.header && doc.header.poNumber) || "";
+      el.id = "po-" + String(po || doc.file || "").replace(/[^\w-]/g, "");
+      const items = doc.items || [];
+      const missing = items.filter(function (it) {
+        return !it.qty || !it.unit;
+      }).length;
+      const lineRows = items
+        .map(function (it) {
+          const missQty = !it.qty;
+          const missUnit = !it.unit;
+          const extra = extraPairs(it).join("；");
+          return (
+            '<tr data-line="' +
+            escapeHtml(it.lineNo || "") +
+            '">' +
+            "<td>" +
+            escapeHtml(it.lineNo || "") +
+            "</td>" +
+            "<td>" +
+            escapeHtml(it.materialNo || "—") +
+            "</td>" +
+            '<td class="wrap">' +
+            escapeHtml(it.description || "—") +
+            "</td>" +
+            '<td class="num' +
+            (missQty ? " miss" : "") +
+            '">' +
+            escapeHtml(it.qty || "—") +
+            "</td>" +
+            "<td" +
+            (missUnit ? ' class="miss"' : "") +
+            ">" +
+            escapeHtml(it.unit || "—") +
+            "</td>" +
+            '<td class="num">' +
+            escapeHtml(it.unitPrice || "—") +
+            "</td>" +
+            '<td class="num">' +
+            escapeHtml(it.amount || "—") +
+            "</td>" +
+            '<td class="wrap">' +
+            escapeHtml(extra || "—") +
+            "</td></tr>"
+          );
+        })
+        .join("");
       el.innerHTML =
-        '<div class="doc-head"><div><h3>' +
-        (doc.header.docType || "采购订单") +
-        ' <span class="po">' +
-        (doc.header.poNumber || "") +
+        "<header><div><p class='kicker'>Purchase order</p><h3>No. <span class='po'>" +
+        escapeHtml(po || "—") +
         "</span></h3><div class='meta' style='color:#57534e;font-size:13px'>" +
-        file +
+        escapeHtml(doc.file || "") +
         " · " +
-        (doc.items || []).length +
-        " 条行项目</div></div>" +
-        '<span class="pill">金额 ' +
-        (item.amount || "") +
-        " / 抬头 " +
-        (doc.header.vatTotal || "") +
-        "</span></div>" +
-        '<div class="doc-body"><img alt="" src="' +
-        preview +
-        '"><div><dl class="kv"></dl></div></div>';
-      const dl = el.querySelector(".kv");
-      [
-        ["供应商", doc.header.supplierName],
-        ["交货地址", doc.header.deliveryAddress],
-        ["付款条件", doc.header.paymentTerms],
-        ["交货日期", doc.header.deliveryDate],
-        ["公司代码", doc.header.companyCode],
-        ["工厂", doc.header.plant],
-      ].forEach(function (pair) {
-        const dt = document.createElement("dt");
-        dt.textContent = pair[0];
-        const dd = document.createElement("dd");
-        dd.textContent = pair[1] || "—";
-        dl.appendChild(dt);
-        dl.appendChild(dd);
-      });
+        items.length +
+        " 条行项目 · " +
+        (doc.pageCount || 1) +
+        " 页</div></div>" +
+        '<div class="po-total">未税 ' +
+        escapeHtml((doc.header && doc.header.vatTotal) || fmtMoney(sumAmounts(doc)) || "—") +
+        (missing ? ' <span class="pill warn">缺数量/单位 ' + missing + "</span>" : ' <span class="pill">数量单位已识别</span>') +
+        "</div></header>" +
+        '<div class="po-layout"><div class="po-preview" data-file="' +
+        escapeHtml(doc.file || "") +
+        '"></div><div>' +
+        '<dl class="kv">' +
+        kvHtml([
+          ["供应商", doc.header.supplierName],
+          ["供应商代码", doc.header.supplierCode],
+          ["联系人", doc.header.supplierContact],
+          ["凭证日期", doc.header.documentDate],
+          ["交货日期", doc.header.deliveryDate],
+          ["交货地址", doc.header.deliveryAddress],
+          ["付款条件", doc.header.paymentTerms],
+          ["贸易条款", doc.header.incoterms],
+          ["公司代码", doc.header.companyCode],
+          ["采购组", doc.header.purchaseGroup],
+        ]) +
+        "</dl>" +
+        '<div class="item-block"><table class="mini"><thead><tr>' +
+        "<th>行项目</th><th>物料号</th><th>物料描述</th><th>数量</th><th>单位</th><th>未税单价</th><th>未税金额</th><th>行下字段</th>" +
+        "</tr></thead><tbody>" +
+        (lineRows || '<tr><td colspan="8" class="empty">没有行项目</td></tr>') +
+        "</tbody></table>" +
+        (missing ? '<p class="miss-hint">有 ' + missing + " 行缺少数量或单位，请对照左侧原件纠错。</p>" : "") +
+        "</div></div></div>";
       root.appendChild(el);
+      fillPreview(el.querySelector(".po-preview"), doc.file, token);
     });
+  }
+
+  function fillPreview(box, fileName, token) {
+    if (!box) return;
+    const buffer = state.pdfBuffers && state.pdfBuffers[fileName];
+    if (buffer && pdfjsLib) {
+      paintPdfPreview(box, buffer, token);
+      return;
+    }
+    const preview = "assets/previews/" + String(fileName || "").replace(/\.pdf$/i, ".png");
+    const img = document.createElement("img");
+    img.alt = fileName || "";
+    img.src = preview;
+    img.addEventListener("error", function () {
+      box.innerHTML = '<p class="muted">没有原件预览。上传 PDF 后可在此对照。</p>';
+    });
+    box.innerHTML = "";
+    box.appendChild(img);
+  }
+
+  async function paintPdfPreview(box, buffer, token) {
+    try {
+      const pdf = await pdfjsLib.getDocument({
+        data: buffer.slice(0),
+        cMapUrl: PDFJS_BASE + "cmaps/",
+        cMapPacked: true,
+        standardFontDataUrl: PDFJS_BASE + "standard_fonts/",
+      }).promise;
+      if (token !== state.pdfPaintToken) return;
+      box.innerHTML = "";
+      const max = Math.min(pdf.numPages, 2);
+      for (let i = 1; i <= max; i++) {
+        const page = await pdf.getPage(i);
+        if (token !== state.pdfPaintToken) return;
+        const unscaled = page.getViewport({ scale: 1 });
+        const scale = Math.min(1.2, 280 / unscaled.width);
+        const viewport = page.getViewport({ scale: scale });
+        const canvas = document.createElement("canvas");
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        await page.render({ canvasContext: canvas.getContext("2d"), viewport: viewport }).promise;
+        box.appendChild(canvas);
+      }
+    } catch (err) {
+      box.innerHTML = '<p class="muted">原件预览失败</p>';
+    }
   }
 
   function render() {
@@ -645,11 +849,10 @@
     URL.revokeObjectURL(a.href);
   }
 
-  async function pdfToWords(file) {
+  async function pdfToWordsFromBuffer(buf) {
     if (!pdfjsLib) throw new Error("未加载 PDF 组件");
-    const buf = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({
-      data: buf,
+      data: buf.slice ? buf.slice(0) : buf,
       cMapUrl: PDFJS_BASE + "cmaps/",
       cMapPacked: true,
       standardFontDataUrl: PDFJS_BASE + "standard_fonts/",
@@ -686,11 +889,14 @@
       return;
     }
     const docs = [];
+    const buffers = {};
     for (let i = 0; i < files.length; i++) {
-      const pages = await pdfToWords(files[i]);
+      const buf = await files[i].arrayBuffer();
+      buffers[files[i].name] = buf;
+      const pages = await pdfToWordsFromBuffer(buf);
       docs.push(window.SchindlerPoParser.parseDocument(files[i].name, pages));
     }
-    setDocs(docs, "upload");
+    setDocs(docs, "upload", buffers);
     render();
     notifyWarnings("已识别 " + docs.length + " 份，共 " + state.rows.length + " 行");
   }

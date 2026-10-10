@@ -92,6 +92,8 @@
     if (/^\d{6,}$/.test(a) || /^\d{6,}$/.test(b)) return false;
     if (isMoney(a) || isMoney(b) || PRICE_ONLY_RE.test(a) || PRICE_ONLY_RE.test(b)) return false;
     if (UNIT_PRICE_RE.test(a) || UNIT_PRICE_RE.test(b)) return false;
+    if (UNIT_LIKE_RE.test(b) && a.length > 1 && next.x < 280) return false;
+    if (UNIT_LIKE_RE.test(a) && b.length > 1 && prev.x < 280) return false;
     if (isCjkText(a) || isCjkText(b)) return true;
     if (/^[:：./]$/.test(b) || /[:：./]$/.test(a)) return true;
     if (a.length <= 2 && b.length <= 2) return true;
@@ -208,33 +210,69 @@
     return { unit: "", price: "" };
   }
 
+  function isQtyLikeSpan(span) {
+    return QTY_RE.test(span.text) && span.x >= 160 && span.x < 235;
+  }
+
+  function isUnitLikeSpan(span) {
+    return UNIT_LIKE_RE.test(span.text) && span.x >= 200 && span.x < 300;
+  }
+
+  function isPriceLikeSpan(span) {
+    return PRICE_ONLY_RE.test(span.text) && span.x >= 250 && span.x < 420;
+  }
+
+  function isAmountLikeSpan(span) {
+    return isMoney(span.text) && span.x >= 340;
+  }
+
+  function isLineNumericSpan(span) {
+    return (
+      isQtyLikeSpan(span) ||
+      isUnitLikeSpan(span) ||
+      isPriceLikeSpan(span) ||
+      isAmountLikeSpan(span) ||
+      UNIT_PRICE_RE.test(span.text)
+    );
+  }
+
   function fillQtyUnitPrice(item, spans) {
-    const qtySpan = spans.filter(function (s) {
-      return QTY_RE.test(s.text) && s.x >= 160 && s.x < 235;
-    })[0];
+    let filled = false;
+    const qtySpan = (spans || []).filter(isQtyLikeSpan)[0];
     const amountSpan = findAmountSpan(spans);
-    if (!qtySpan || !amountSpan) return false;
-    if (item.qty) return true;
-    item.qty = qtySpan.text;
-    item.amount = amountSpan.text;
-    const combined = spans.filter(function (s) {
+    if (qtySpan && !item.qty) {
+      item.qty = qtySpan.text;
+      filled = true;
+    }
+    if (amountSpan && !item.amount) {
+      item.amount = amountSpan.text;
+      filled = true;
+    }
+    const combined = (spans || []).filter(function (s) {
       return UNIT_PRICE_RE.test(s.text);
     })[0];
     if (combined) {
       const up = parseUnitPrice(combined.text);
-      item.unit = up.unit;
-      item.unitPrice = up.price;
-      return true;
+      if (up.unit && !item.unit) {
+        item.unit = up.unit;
+        filled = true;
+      }
+      if (up.price && !item.unitPrice) {
+        item.unitPrice = up.price;
+        filled = true;
+      }
     }
-    const unitSpan = spans.filter(function (s) {
-      return s.x >= 200 && s.x < 280 && (UNIT_LIKE_RE.test(s.text) || (!PRICE_ONLY_RE.test(s.text) && !QTY_RE.test(s.text)));
-    })[0];
-    const priceSpan = spans.filter(function (s) {
-      return PRICE_ONLY_RE.test(s.text) && s.x >= 250 && s.x < 420;
-    })[0];
-    if (unitSpan) item.unit = unitSpan.text;
-    if (priceSpan) item.unitPrice = priceSpan.text;
-    return true;
+    const unitSpan = (spans || []).filter(isUnitLikeSpan)[0];
+    const priceSpan = (spans || []).filter(isPriceLikeSpan)[0];
+    if (unitSpan && !item.unit) {
+      item.unit = unitSpan.text;
+      filled = true;
+    }
+    if (priceSpan && !item.unitPrice) {
+      item.unitPrice = priceSpan.text;
+      filled = true;
+    }
+    return filled;
   }
 
   function fillKvFields(item, spans) {
@@ -597,9 +635,13 @@
         current = newItem(first);
         spans.slice(1).forEach(function (s) {
           if (s.x >= 80 && s.x < 160) current.materialNo = s.text;
-          else if (s.x >= 160 && s.x < 230 && !QTY_RE.test(s.text)) current.materialGroup = s.text;
-          else if (s.x >= 230) current.description = (current.description + " " + s.text).trim();
+          else if (s.x >= 160 && s.x < 230 && !QTY_RE.test(s.text) && !isLineNumericSpan(s)) {
+            current.materialGroup = s.text;
+          } else if (s.x >= 230 && !isLineNumericSpan(s)) {
+            current.description = (current.description + " " + s.text).trim();
+          }
         });
+        fillQtyUnitPrice(current, spans);
         return;
       }
       if (!current) {

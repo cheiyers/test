@@ -16,6 +16,7 @@
       同一张 PO 里多条行项目（00010、00020…）会各成一行；描述换行会拼进同一行。
       行下新出现的「字段: 值」会自动发现为关键字。空附加字段仍可勾选导出。
       <strong>供应商、交货地址、付款条件</strong>勾选才导出。
+      导入后可在「识别内容」里按订单核对数量、单位和原件。
       若出现<strong>跨页续行、无物料号文本行、服务类行</strong>，识别区会提示人工核对。
     </div>
 
@@ -30,14 +31,23 @@
         <button type="button" id="btnDemo">加载三份样张</button>
         <button type="button" class="ghost" id="btnTwoLines">加载双行+新字段样张</button>
         <button type="button" class="ghost" id="btnReview">加载需核对样张</button>
-        <button type="button" class="ghost" id="btnToggleDocs">显示/隐藏原件对照</button>
+        <button type="button" class="ghost" id="btnToggleDocs">显示/隐藏识别内容</button>
       </div>
       <div class="hint" id="sourceHint" style="margin-top:8px"></div>
       <div class="warn-box" id="parseWarnings" hidden></div>
     </section>
 
+    <section class="panel" id="docsPanel">
+      <div class="toolbar">
+        <h2 style="margin:0">2. 识别内容 · 对照原件核对</h2>
+        <span class="hint" style="margin:0">每张订单的抬头、行项目、数量和单位都列在这里；缺项会标红，方便纠错。点识别结果行可跳到对应订单。</span>
+      </div>
+      <div class="stats" id="summaryCards"></div>
+      <div class="docs" id="docs"></div>
+    </section>
+
     <section class="panel">
-      <h2>2. 导出字段与关键字</h2>
+      <h2>3. 导出字段与关键字</h2>
       <p class="hint">核心订单行默认导出。选配抬头（含公司代码、工厂）默认关闭。抬头关键字如「公司代码」会对应识别值。文档里新出现的「颜色」等会自动列入关键字。</p>
       <div class="choose-grid">
         <div class="field-block">
@@ -74,7 +84,7 @@
 
     <section class="panel">
       <div class="toolbar">
-        <h2 style="margin:0">3. 识别结果 · 勾选要输出的行</h2>
+        <h2 style="margin:0">4. 识别结果 · 勾选要输出的行</h2>
         <div class="actions">
           <button type="button" class="ghost" id="btnSelAll">全选行</button>
           <button type="button" class="ghost" id="btnSelNone">全不选</button>
@@ -85,7 +95,7 @@
     </section>
 
     <section class="panel">
-      <h2>4. 输出表格 · 点击列设置格式</h2>
+      <h2>5. 输出表格 · 点击列设置格式</h2>
       <p class="hint">
         只输出上方勾选的行。<strong>点击表头</strong>改列名和格式，<strong>拖动左侧手柄</strong>或用左移 / 右移调整列顺序。格式用 <code>{字段名}</code>，以 <code>=</code> 开头计算，例如
         <code>={数量}*2</code>、<code>=IF({数量}&gt;3,"大","小")</code>、<code>=TEXT({凭证日期},"yyyy-mm-dd")</code>、<code>=TEXT({凭证日期},"yyyy/m/d")</code>、<code>{物料描述}&amp;" / "&amp;{图号/版本}</code>。
@@ -109,10 +119,6 @@
       <div class="table-wrap" id="outputTable"></div>
     </section>
 
-    <section class="panel" id="docsPanel" hidden>
-      <h2>原件对照</h2>
-      <div class="docs" id="docs"></div>
-    </section>
   </main>
   <div class="toast" id="toast"></div>
 

@@ -332,6 +332,17 @@ def main() -> int:
     )
     if comma_item["qty"] != "15" or comma_item["amount"] != "1402.50" or comma_item["unit"] != "件":
         errors.append(f"comma amount {comma_item}")
+    qty_only = {"qty": "", "unit": "", "unitPrice": "", "amount": ""}
+    fill_qty_unit_price(
+        qty_only,
+        [
+            {"text": "1", "x": 207.1},
+            {"text": "件", "x": 240.9},
+            {"text": "388.54/1", "x": 351.9},
+        ],
+    )
+    if qty_only["qty"] != "1" or qty_only["unit"] != "件" or qty_only["unitPrice"] != "388.54/1":
+        errors.append(f"qty without amount {qty_only}")
 
     if errors:
         print("FAIL")

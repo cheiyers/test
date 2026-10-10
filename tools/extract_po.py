@@ -124,6 +124,10 @@ def should_merge_spans(prev: dict, nxt: dict) -> bool:
         return False
     if UNIT_PRICE_RE.match(a) or UNIT_PRICE_RE.match(b):
         return False
+    if UNIT_LIKE_RE.match(b) and len(a) > 1 and nxt["x"] < 280:
+        return False
+    if UNIT_LIKE_RE.match(a) and len(b) > 1 and prev["x"] < 280:
+        return False
     if is_cjk_text(a) or is_cjk_text(b):
         return True
     if re.fullmatch(r"[:：./]", b) or re.search(r"[:：./]$", a):
@@ -229,42 +233,63 @@ def parse_unit_price(text: str) -> tuple[str, str]:
     return "", ""
 
 
+def is_qty_like_span(span: dict) -> bool:
+    return bool(QTY_RE.match(span["text"]) and 160 <= span["x"] < 235)
+
+
+def is_unit_like_span(span: dict) -> bool:
+    return bool(UNIT_LIKE_RE.match(span["text"]) and 200 <= span["x"] < 300)
+
+
+def is_price_like_span(span: dict) -> bool:
+    return bool(PRICE_ONLY_RE.match(span["text"]) and 250 <= span["x"] < 420)
+
+
+def is_amount_like_span(span: dict) -> bool:
+    return is_money(span["text"]) and span["x"] >= 340
+
+
+def is_line_numeric_span(span: dict) -> bool:
+    return (
+        is_qty_like_span(span)
+        or is_unit_like_span(span)
+        or is_price_like_span(span)
+        or is_amount_like_span(span)
+        or bool(UNIT_PRICE_RE.match(span["text"]))
+    )
+
+
 def fill_qty_unit_price(item: dict, spans: list[dict]) -> bool:
-    """Fill qty / unit / unitPrice / amount. Handles '件 93.50/1' in one span or split words."""
-    qty_span = next((s for s in spans if QTY_RE.match(s["text"]) and 160 <= s["x"] < 235), None)
+    """Fill qty / unit / unitPrice / amount even when they land on different rows."""
+    filled = False
+    qty_span = next((s for s in spans if is_qty_like_span(s)), None)
     amount_span = find_amount_span(spans)
-    if not qty_span or not amount_span:
-        return False
-    if item.get("qty"):
-        return True
-    item["qty"] = qty_span["text"]
-    item["amount"] = amount_span["text"]
+    if qty_span and not item.get("qty"):
+        item["qty"] = qty_span["text"]
+        filled = True
+    if amount_span and not item.get("amount"):
+        item["amount"] = amount_span["text"]
+        filled = True
 
     combined = next((s for s in spans if UNIT_PRICE_RE.match(s["text"])), None)
     if combined:
         unit, price = parse_unit_price(combined["text"])
-        item["unit"] = unit
-        item["unitPrice"] = price
-        return True
+        if unit and not item.get("unit"):
+            item["unit"] = unit
+            filled = True
+        if price and not item.get("unitPrice"):
+            item["unitPrice"] = price
+            filled = True
 
-    unit_span = next(
-        (
-            s
-            for s in spans
-            if 200 <= s["x"] < 280
-            and (UNIT_LIKE_RE.match(s["text"]) or (not PRICE_ONLY_RE.match(s["text"]) and not QTY_RE.match(s["text"])))
-        ),
-        None,
-    )
-    price_span = next(
-        (s for s in spans if PRICE_ONLY_RE.match(s["text"]) and 250 <= s["x"] < 420),
-        None,
-    )
-    if unit_span:
+    unit_span = next((s for s in spans if is_unit_like_span(s)), None)
+    price_span = next((s for s in spans if is_price_like_span(s)), None)
+    if unit_span and not item.get("unit"):
         item["unit"] = unit_span["text"]
-    if price_span:
+        filled = True
+    if price_span and not item.get("unitPrice"):
         item["unitPrice"] = price_span["text"]
-    return True
+        filled = True
+    return filled
 
 
 def fill_kv_fields(item: dict, spans: list[dict]) -> bool:
@@ -620,10 +645,11 @@ def analyze_line_items(rows: list[dict], header: dict) -> dict:
             for s in spans[1:]:
                 if 80 <= s["x"] < 160:
                     current["materialNo"] = s["text"]
-                elif 160 <= s["x"] < 230 and not QTY_RE.match(s["text"]):
+                elif 160 <= s["x"] < 230 and not QTY_RE.match(s["text"]) and not is_line_numeric_span(s):
                     current["materialGroup"] = s["text"]
-                elif s["x"] >= 230:
+                elif s["x"] >= 230 and not is_line_numeric_span(s):
                     current["description"] = (current["description"] + " " + s["text"]).strip()
+            fill_qty_unit_price(current, spans)
             continue
 
         if current is None:

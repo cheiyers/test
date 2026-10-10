@@ -324,4 +324,63 @@ if (glyphItem.extras["合同号"] !== "JST0011921906") {
   console.error("contract extra", glyphItem.extras);
   process.exit(1);
 }
-console.log("OK parser two-line + split unit/price + comma amount + review warnings + two-page + split glyphs");
+
+const sameRowWords = [
+  w1(42.5, 126.7, "采购订单号/采购组:", 125.2),
+  w1(136.1, 126.7, "4550711151/T0M", 214.1),
+  w1(42.5, 141.1, "日期", 62.5),
+  w1(136.1, 141.1, "2026/06/12", 185.9),
+  w1(42.5, 483.8, "行项目", 72.5),
+  w1(85.0, 483.8, "物料号", 115.0),
+  w1(42.5, 513.8, "00010", 70.2),
+  w1(85.0, 513.8, "57866241", 129.3),
+  w1(207.1, 513.8, "1", 212.6),
+  w1(240.9, 513.8, "Edge light灯组件", 341.0),
+  w1(240.9, 513.8, "件", 250.9),
+  w1(351.9, 513.8, "388.54/1", 390.6),
+  w1(451.0, 513.8, "388.54", 481.5),
+  w1(179.3, 639.8, "不含增值税总价 CNY", 273.1),
+  w1(451.0, 639.8, "388.54", 481.5),
+];
+const sameRowDoc = parser.parseDocument("PO_same_row.pdf", [{ words: sameRowWords }]);
+const sameRowItem = sameRowDoc.items[0];
+if (
+  !sameRowItem ||
+  sameRowItem.qty !== "1" ||
+  sameRowItem.unit !== "件" ||
+  sameRowItem.unitPrice !== "388.54/1" ||
+  sameRowItem.amount !== "388.54" ||
+  sameRowItem.description !== "Edge light灯组件"
+) {
+  console.error("same-row qty/unit", sameRowItem);
+  process.exit(1);
+}
+
+const splitQtyWords = [
+  w1(42.5, 126.7, "采购订单号/采购组:", 125.2),
+  w1(136.1, 126.7, "4550711151/T0M", 214.1),
+  w1(42.5, 483.8, "行项目", 72.5),
+  w1(42.5, 501.5, "00010", 70.2),
+  w1(85.0, 501.5, "57866241", 129.3),
+  w1(240.9, 501.5, "Edge light灯组件", 341.0),
+  w1(451.0, 501.5, "388.54", 481.5),
+  w1(207.1, 513.8, "1", 212.6),
+  w1(240.9, 513.8, "件", 250.9),
+  w1(351.9, 513.8, "388.54/1", 390.6),
+  w1(179.3, 639.8, "不含增值税总价 CNY", 273.1),
+  w1(451.0, 639.8, "388.54", 481.5),
+];
+const splitQtyDoc = parser.parseDocument("PO_split_qty.pdf", [{ words: splitQtyWords }]);
+const splitQtyItem = splitQtyDoc.items[0];
+if (
+  !splitQtyItem ||
+  splitQtyItem.qty !== "1" ||
+  splitQtyItem.unit !== "件" ||
+  splitQtyItem.unitPrice !== "388.54/1" ||
+  splitQtyItem.amount !== "388.54"
+) {
+  console.error("split qty/unit from amount row", splitQtyItem);
+  process.exit(1);
+}
+
+console.log("OK parser two-line + split unit/price + comma amount + review warnings + two-page + split glyphs + same-row qty");
