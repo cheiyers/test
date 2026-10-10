@@ -38,7 +38,8 @@
 
     <section class="panel">
       <h2>2. 导出字段与关键字</h2>
-      <p class="hint">核心订单行默认导出。选配抬头（含公司代码、工厂）默认关闭。抬头关键字如「公司代码」会对应识别值。文档里新出现的「颜色」等会自动列入关键字。</p>
+      <p class="hint">核心订单行默认导出。选配抬头默认关闭。字段过多时在框内滚动。抬头关键字如「公司代码」会对应识别值。</p>
+      <div class="choose-scroll">
       <div class="choose-grid">
         <div class="field-block">
           <h3>订单行字段</h3>
@@ -59,15 +60,16 @@
           <div class="chips" id="customChips"></div>
         </div>
       </div>
+      </div>
       <div class="scheme-bar">
         <h3>导出方案</h3>
-        <p class="hint">保存当前勾选的字段、自定义关键字、列顺序、列名与格式，下次直接应用。</p>
+        <p class="hint">点选切换。会记住字段、关键字、列顺序、列名、公式和导出文件名。改过后点「更新当前」。</p>
+        <div class="scheme-list" id="schemeList"></div>
         <div class="actions">
           <input id="schemeName" type="text" placeholder="方案名称，例如 物料对账">
-          <button type="button" id="btnSaveScheme">保存方案</button>
-          <select id="schemeSelect" aria-label="已存方案"></select>
-          <button type="button" class="ghost" id="btnApplyScheme">应用方案</button>
-          <button type="button" class="ghost" id="btnDeleteScheme">删除方案</button>
+          <button type="button" id="btnSaveScheme">添加</button>
+          <button type="button" class="ghost" id="btnUpdateScheme">更新当前</button>
+          <button type="button" class="ghost" id="btnDeleteScheme">删除</button>
         </div>
       </div>
     </section>
@@ -75,6 +77,7 @@
     <section class="panel">
       <div class="toolbar">
         <h2 style="margin:0">3. 识别结果 · 勾选要输出的行</h2>
+        <span class="hint" style="margin:0">订单多时在框内滚动查看</span>
         <div class="actions">
           <button type="button" class="ghost" id="btnSelAll">全选行</button>
           <button type="button" class="ghost" id="btnSelNone">全不选</button>
@@ -87,24 +90,35 @@
     <section class="panel">
       <h2>4. 输出表格 · 点击列设置格式</h2>
       <p class="hint">
-        只输出上方勾选的行。<strong>点击表头</strong>改列名和格式，<strong>拖动左侧手柄</strong>或用左移 / 右移调整列顺序。格式用 <code>{字段名}</code>，以 <code>=</code> 开头计算，例如
-        <code>={数量}*2</code>、<code>=IF({数量}&gt;3,"大","小")</code>、<code>=TEXT({凭证日期},"yyyy-mm-dd")</code>、<code>=TEXT({凭证日期},"yyyy/m/d")</code>、<code>{物料描述}&amp;" / "&amp;{图号/版本}</code>。
+        只输出上方勾选的行。<strong>点击表头</strong>改列名和格式。公式可用 <code>{字段名}</code>、列字母 <code>A</code>/<code>B</code>、<code>THIS()</code>，函数可嵌套，例如
+        <code>=IF(AND({数量}&gt;0,{物料号}&lt;&gt;""),CONCAT({物料号}," · ",{物料描述}),IFEMPTY(B,"—"))</code>。
+        也可上传 Excel/CSV 模板按表头映射列和文件名。
       </p>
+      <div class="actions" style="margin:0 0 10px">
+        <label class="meta">导出文件名 <input id="exportFileName" type="text" placeholder="例如：迅达出货清单"></label>
+      </div>
+      <div class="dropzone map-drop" id="tplDrop">
+        <strong>拖入 Excel / CSV 模板，或点击选择</strong>
+        <span>读取表头作为输出列名，能对上的字段会自动映射。也可不上传，继续手改列。</span>
+      </div>
+      <input id="tplFile" type="file" accept=".xlsx,.xls,.csv,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
       <div class="col-format-bar" id="colFormatBar" hidden>
         <strong>列格式</strong>
         <span class="meta" id="colFormatWhich"></span>
         <label>列名 <input id="colFormatHeader" type="text"></label>
-        <label>输出格式 <input id="colFormatFormula" class="formula" type="text" placeholder='=TEXT({凭证日期},"yyyy/m/d") 或 =TEXT({凭证日期},"yyyy-mm-dd")'></label>
+        <label>输出格式 <input id="colFormatFormula" class="formula" type="text" placeholder='=IF(AND(A&lt;&gt;"",{数量}&gt;0),A,THIS())'></label>
         <button type="button" class="ghost" id="btnColMoveLeft">左移</button>
         <button type="button" class="ghost" id="btnColMoveRight">右移</button>
         <button type="button" id="btnColFormatDone">完成</button>
         <button type="button" class="ghost" id="btnColFormatDel">删除此列</button>
+        <div class="formula-bar" id="formulaBar"></div>
       </div>
       <div class="actions" style="margin:12px 0">
         <button type="button" class="ghost" id="btnAddCol">增加公式列</button>
         <button type="button" class="ghost" id="btnResetCols">按勾选字段重建列</button>
         <button type="button" id="btnXlsx">导出 Excel</button>
         <button type="button" class="secondary" id="btnCsv">导出 CSV</button>
+        <button type="button" class="ghost" id="btnJson">导出 JSON</button>
       </div>
       <div class="table-wrap" id="outputTable"></div>
     </section>
