@@ -1,4 +1,11 @@
 (function (root) {
+  var Formula = root.MapFormula;
+  if (!Formula && typeof require !== "undefined") {
+    try {
+      Formula = require("./map-formula.js");
+    } catch (e) {}
+  }
+
   function uid() {
     return "m" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   }
@@ -7,12 +14,13 @@
     return JSON.parse(JSON.stringify(v == null ? null : v));
   }
 
-  function emptyColumn(name, source, fill) {
+  function emptyColumn(name, source, fill, formula) {
     return {
       id: uid(),
       name: String(name || "").trim(),
       source: String(source || ""),
       fill: fill == null ? "" : String(fill),
+      formula: formula == null ? "" : String(formula),
     };
   }
 
@@ -23,6 +31,7 @@
       name: String(col.name || "").trim(),
       source: String(col.source || ""),
       fill: col.fill == null ? "" : String(col.fill),
+      formula: col.formula == null ? "" : String(col.formula),
     };
   }
 
@@ -175,7 +184,13 @@
   function mappedMatrix(rows, columns, getValue) {
     const cols = columns || [];
     const header = cols.map((c, i) => c.name || "列" + (i + 1));
-    const body = (rows || []).map((row) => cols.map((col) => cellValue(col, (src) => getValue(row, src))));
+    const body = (rows || []).map((row) => {
+      const getter = (src) => getValue(row, src);
+      if (Formula && Formula.evalRow) {
+        return Formula.evalRow(cols, (i) => cellValue(cols[i], getter));
+      }
+      return cols.map((col) => cellValue(col, getter));
+    });
     return { header, body };
   }
 
@@ -265,6 +280,7 @@
         name: c.name,
         source: c.source,
         fill: c.fill,
+        formula: c.formula,
       })),
     };
   }
@@ -289,7 +305,7 @@
       templateName: n.templateName,
       headerRow: n.headerRow,
       prefixRows: n.prefixRows,
-      columns: n.columns.map((c) => ({ name: c.name, source: c.source, fill: c.fill })),
+      columns: n.columns.map((c) => ({ name: c.name, source: c.source, fill: c.fill, formula: c.formula })),
     };
   }
 

@@ -188,11 +188,11 @@
     <section class="panel">
       <div class="panel-head">
         <h2>订单结果映射</h2>
-        <span class="hint">按上传表格的列名导出，或不上传模板、自己手输列名和映射</span>
+        <span class="hint">按上传表格的列名导出；可用公式引用 A、B 等列，IF 等可嵌套</span>
       </div>
       <div class="map-box">
         <div class="preset-box">
-          <p class="hint" style="margin:8px 0 6px">已保存的映射方案：点选切换。会记住文件名、列名、字段映射和模板表头。</p>
+          <p class="hint" style="margin:8px 0 6px">已保存的映射方案：点选切换。会记住文件名、列名、字段映射、公式和模板表头。</p>
           <div class="preset-list" id="mapSchemeList"></div>
           <div class="actions" style="margin-top:8px">
             <input id="mapSchemeName" type="text" placeholder="例如：出货清单 · 物料数量" />
@@ -217,6 +217,8 @@
           <button class="ghost" id="mapFromCurrent" type="button">从当前识别列生成</button>
           <button class="ghost" id="mapClear" type="button">清空映射</button>
         </div>
+        <p class="hint" style="margin:8px 0 4px">公式用 A、B、C 或 [列名] 引用本表其他列，THIS() 是本列映射值。函数可嵌套，例如 IF(AND(A&lt;&gt;&quot;&quot;,NUM(C)&gt;0),CONCAT(A,&quot;×&quot;,C),IFEMPTY(B,&quot;—&quot;))。先点公式框，再点下面的函数或列。</p>
+        <div class="formula-bar" id="formulaBar"></div>
         <div class="map-table-wrap">
           <table class="map-table">
             <thead>
@@ -225,6 +227,7 @@
                 <th>导出列名</th>
                 <th>映射识别字段</th>
                 <th>固定值（不映射时）</th>
+                <th>公式</th>
                 <th></th>
               </tr>
             </thead>
@@ -266,6 +269,7 @@
   <script src="assets/js/transforms.js"></script>
   <script src="assets/js/parser.js"></script>
   <script src="assets/js/display-presets.js"></script>
+  <script src="assets/js/map-formula.js"></script>
   <script src="assets/js/export-map.js"></script>
   <script src="assets/js/app.js"></script>
 </body>

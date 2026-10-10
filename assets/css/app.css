@@ -240,9 +240,14 @@ table.map-table th {
   text-align: left; padding: 7px 8px; font-weight: 600; z-index: 1;
 }
 table.map-table td { padding: 6px 8px; border-bottom: 1px solid #eee8dc; vertical-align: middle; }
-table.map-table input, table.map-table select {
+table.map-table input, table.map-table select, table.map-table textarea {
   border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font: inherit; background: #fff; width: 100%;
 }
+table.map-table textarea {
+  min-width: 220px; min-height: 52px; resize: vertical; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12px;
+}
+.formula-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 8px; }
+.formula-bar .suggest { font-family: "IBM Plex Mono", ui-monospace, monospace; }
 table.map-table .letter { font-family: "IBM Plex Mono", ui-monospace, monospace; color: var(--muted); }
 .map-row-actions { display: flex; gap: 4px; }
 .map-row-actions button {

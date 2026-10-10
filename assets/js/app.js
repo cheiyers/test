@@ -77,6 +77,7 @@
     exportMap: window.ExportMap ? ExportMap.normalize({}) : { enabled: false, fileName: "kone-po-selected", columns: [] },
     exportMapPresets: [],
     activeExportMapId: "",
+    lastFormulaId: "",
   };
 
   const $ = (sel) => document.querySelector(sel);
@@ -1136,7 +1137,7 @@
     if (!body) return;
     if (!map.columns.length) {
       body.innerHTML =
-        '<tr><td colspan="5" class="empty">还没有映射列。添加一列，或从当前识别列生成。</td></tr>';
+        '<tr><td colspan="6" class="empty">还没有映射列。添加一列，或从当前识别列生成。</td></tr>';
     } else {
       body.innerHTML = map.columns
         .map((col, i) => {
@@ -1146,6 +1147,9 @@
           <td><input data-map-name="${escapeHtml(col.id)}" value="${escapeHtml(col.name)}" placeholder="列名" /></td>
           <td><select data-map-source="${escapeHtml(col.id)}">${sourceOptionsHtml(col.source)}</select></td>
           <td><input data-map-fill="${escapeHtml(col.id)}" value="${escapeHtml(col.fill)}" placeholder="可选" ${fillOff} /></td>
+          <td><textarea data-map-formula="${escapeHtml(col.id)}" placeholder="例如 IF(A=&quot;&quot;,B,A)" rows="2">${escapeHtml(
+            col.formula || ""
+          )}</textarea></td>
           <td><div class="map-row-actions">
             <button type="button" data-map-up="${escapeHtml(col.id)}" title="上移">↑</button>
             <button type="button" data-map-down="${escapeHtml(col.id)}" title="下移">↓</button>
@@ -1181,6 +1185,18 @@
           renderMapSchemes();
         });
       });
+      body.querySelectorAll("[data-map-formula]").forEach((el) => {
+        el.addEventListener("focus", () => {
+          state.lastFormulaId = el.dataset.mapFormula;
+        });
+        el.addEventListener("input", () => {
+          const col = findMapCol(el.dataset.mapFormula);
+          if (col) col.formula = el.value;
+          savePrefs();
+          renderMapPreview();
+          renderMapSchemes();
+        });
+      });
       body.querySelectorAll("[data-map-up]").forEach((el) => {
         el.addEventListener("click", () => {
           state.exportMap.columns = ExportMap.moveColumn(state.exportMap.columns, el.dataset.mapUp, -1);
@@ -1205,6 +1221,64 @@
     }
     renderMapPreview();
     renderMapSchemes();
+    renderFormulaBar();
+  }
+
+  function insertAtCursor(el, text) {
+    if (!el) return;
+    const start = el.selectionStart == null ? el.value.length : el.selectionStart;
+    const end = el.selectionEnd == null ? el.value.length : el.selectionEnd;
+    el.value = el.value.slice(0, start) + text + el.value.slice(end);
+    const pos = start + text.length;
+    el.selectionStart = el.selectionEnd = pos;
+    el.dispatchEvent(new Event("input"));
+    el.focus();
+  }
+
+  function renderFormulaBar() {
+    const bar = $("#formulaBar");
+    if (!bar || !window.MapFormula) return;
+    const cols = state.exportMap.columns || [];
+    const colBtns = cols
+      .map((c, i) => {
+        const letter = ExportMap.colLetter(i);
+        return `<button class="suggest" type="button" data-insert="${escapeHtml(letter)}" title="${escapeHtml(
+          c.name || letter
+        )}">${letter}</button>`;
+      })
+      .join("");
+    const fnBtns = MapFormula.HELP.map(
+      (h) =>
+        `<button class="suggest" type="button" data-snippet="${escapeHtml(h.snippet)}" title="${escapeHtml(
+          h.hint
+        )}">${escapeHtml(h.id)}</button>`
+    ).join("");
+    bar.innerHTML =
+      (cols.length ? `<span class="hint">插入列</span>${colBtns}` : "") +
+      `<span class="hint">插入函数</span>${fnBtns}`;
+    bar.querySelectorAll("[data-insert]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const el = formulaTarget();
+        if (!el) return toast("请先点选某一列的公式框");
+        insertAtCursor(el, btn.dataset.insert);
+      });
+    });
+    bar.querySelectorAll("[data-snippet]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const el = formulaTarget();
+        if (!el) return toast("请先点选某一列的公式框");
+        insertAtCursor(el, btn.dataset.snippet);
+      });
+    });
+  }
+
+  function formulaTarget() {
+    const id = state.lastFormulaId;
+    if (id) {
+      const el = document.querySelector('[data-map-formula="' + id + '"]');
+      if (el) return el;
+    }
+    return document.querySelector("[data-map-formula]");
   }
 
   function applyTemplateAoa(name, aoa) {
