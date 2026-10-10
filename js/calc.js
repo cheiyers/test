@@ -169,12 +169,14 @@
     var errors = [];
     bomParams(bom).forEach(function (name) {
       var spec = profile && profile.params ? profile.params[name] : null;
-      if (!spec || (spec.mode === "formula" && !text(spec.formula)) || (spec.mode !== "formula" && !text(spec.column))) {
+      if (!spec || (spec.mode === "formula" && !text(spec.formula)) || (spec.mode === "fixed" ? false : spec.mode !== "formula" && !text(spec.column))) {
         missing.push(name);
         return;
       }
       try {
-        if (spec.mode === "formula") {
+        if (spec.mode === "fixed") {
+          scope[name] = cellValue(spec.value);
+        } else if (spec.mode === "formula") {
           var columnScope = Object.create(null);
           Object.keys(row).forEach(function (key) {
             if (key.charAt(0) === "_") return;
@@ -303,9 +305,15 @@
           });
           return;
         }
+        var orderValues = {};
+        Object.keys(row).forEach(function (key) {
+          if (key.charAt(0) === "_") return;
+          orderValues[key] = row[key] == null ? "" : row[key];
+        });
         lines.push({
           sourceRow: sourceRow,
           orderNo: orderNo,
+          orderValues: orderValues,
           parentCode: bom.parent.code || "",
           parentName: bom.parent.name || "",
           parentSpec: bom.parent.spec || "",
@@ -361,6 +369,7 @@
           orderNos: {},
           parents: {},
           parentLines: {},
+          members: [],
           qty: null,
           level: line.level,
           materialCode: line.materialCode,
@@ -375,6 +384,7 @@
       var group = groups[key];
       group.orderNos[line.orderNo || ""] = true;
       group.parents[line.parentCode || ""] = true;
+      group.members.push(line);
       if (!group.parentLines[line.parentCode || ""]) group.parentLines[line.parentCode || ""] = line;
       group.qty = addQty(group.qty, line.qty);
     });
@@ -399,7 +409,8 @@
         unit: group.unit,
         qty: group.qty,
         price: "",
-        amount: null
+        amount: null,
+        orderValues: consensusOrderValues(group.members)
       };
       if (parentKeys.length === 1) {
         var parent = group.parentLines[parentKeys[0]];
@@ -412,6 +423,25 @@
       }
       return row;
     });
+  }
+
+  function consensusOrderValues(lines) {
+    var keys = {};
+    lines.forEach(function (line) {
+      Object.keys(line.orderValues || {}).forEach(function (key) { keys[key] = true; });
+    });
+    var out = {};
+    Object.keys(keys).forEach(function (key) {
+      var same = true;
+      var value = "";
+      lines.forEach(function (line, index) {
+        var current = line.orderValues && line.orderValues[key] != null ? line.orderValues[key] : "";
+        if (index === 0) value = current;
+        else if (String(value) !== String(current)) same = false;
+      });
+      out[key] = same ? value : "";
+    });
+    return out;
   }
 
   function applyMaterials(rows, materials, calcAmount) {
@@ -440,6 +470,83 @@
 
   function isParentField(field) {
     return PARENT_FIELDS.indexOf(field) >= 0;
+  }
+
+  function fieldValue(row, source, key) {
+    if (!key) return "";
+    if (source === "order") {
+      var bag = row.orderValues || {};
+      return bag[key] == null ? "" : bag[key];
+    }
+    var value = row[key];
+    return value == null ? "" : value;
+  }
+
+  function projectMapped(rows, columns, parentFields) {
+    var allowed = parentFields || PARENT_FIELDS;
+    return (rows || []).map(function (row) {
+      return (columns || []).map(function (column) {
+        var source = column.source || "child";
+        var key = column.key || column.field;
+        if (source !== "order" && isParentField(key) && allowed.indexOf(key) < 0) return "";
+        return fieldValue(row, source, key);
+      });
+    });
+  }
+
+  function buildDocument(lines, template, calcAmount) {
+    var headerColumns = template.headerColumns || [];
+    var bodyColumns = template.bodyColumns || [];
+    var mergeSame = template.mergeSame !== false;
+    var groups = [];
+    var index = {};
+    (lines || []).forEach(function (line) {
+      var headerKey = headerColumns.map(function (column) {
+        return String(fieldValue(line, column.source, column.key));
+      }).join("\0") + "\0" + (line.bomId || line.parentCode || "");
+      if (!mergeSame) headerKey = "row\0" + line.sourceRow + "\0" + headerKey;
+      if (!index[headerKey]) {
+        index[headerKey] = { keys: [], items: {} };
+        groups.push(index[headerKey]);
+      }
+      var group = index[headerKey];
+      var code = mergeSame ? line.materialCode : line.materialCode + "#" + group.keys.length;
+      if (!group.items[code]) {
+        group.items[code] = Object.assign({}, line, { qty: null, amount: null });
+        group.keys.push(code);
+      }
+      var item = group.items[code];
+      item.qty = addQty(item.qty, line.qty);
+      var price = parseQty(item.price);
+      if (calcAmount && item.qty != null && price !== "") item.amount = cleanNumber(item.qty * Number(price));
+      else item.amount = null;
+    });
+    var rows = [];
+    var merges = [];
+    groups.forEach(function (group) {
+      var start = rows.length;
+      group.keys.forEach(function (code, rowIndex) {
+        var line = group.items[code];
+        var cells = [];
+        headerColumns.forEach(function (column) {
+          cells.push(rowIndex === 0 ? fieldValue(line, column.source, column.key) : "");
+        });
+        bodyColumns.forEach(function (column) {
+          cells.push(fieldValue(line, column.source === "order" ? "order" : "child", column.key));
+        });
+        rows.push(cells);
+      });
+      if (group.keys.length > 1) {
+        headerColumns.forEach(function (_, columnIndex) {
+          merges.push({ r: start, c: columnIndex, rowspan: group.keys.length });
+        });
+      }
+    });
+    return {
+      headers: headerColumns.map(function (column) { return column.header; }).concat(bodyColumns.map(function (column) { return column.header; })),
+      rows: rows,
+      merges: merges
+    };
   }
 
   function projectRows(rows, columns, parentFields) {
@@ -480,6 +587,8 @@
     applyMaterials: applyMaterials,
     filterRows: filterRows,
     projectRows: projectRows,
+    projectMapped: projectMapped,
+    buildDocument: buildDocument,
     defaultColumns: defaultColumns,
     cleanNumber: cleanNumber
   };

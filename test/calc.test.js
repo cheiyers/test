@@ -226,6 +226,63 @@ test("parameter formula can read other columns on the same order row", () => {
   assert.strictEqual(line.qty, 6);
 });
 
+test("a parameter can be a fixed value", () => {
+  const custom = JSON.parse(JSON.stringify(profile));
+  custom.params.N1LF18 = { mode: "fixed", value: "4" };
+  const rows = [{ __row: 2, 订单号: "SO7", 母件料号: "HL0230002C", 系列: "LF18", 长度: 900, LF71S数量: 0, BB: 0 }];
+  const result = Calc.calculate({ boms: [light], rows, profile: custom, resolution: {} });
+  const line = result.lines.find((item) => item.materialCode === "HL3120179B");
+  assert.strictEqual(line.qty, 4);
+  assert.strictEqual(line.orderValues["系列"], "LF18");
+});
+
+test("column format reads an order column or a child field", () => {
+  const projected = Calc.projectMapped([
+    { orderValues: { 系列: "LF18" }, materialCode: "HL1", qty: 2, parentCode: "P" }
+  ], [
+    { header: "系列", source: "order", key: "系列" },
+    { header: "物料", source: "child", key: "materialCode" }
+  ], []);
+  assert.deepStrictEqual(projected, [["LF18", "HL1"]]);
+});
+
+test("header-body export sums the same child and stacks different children under one header", () => {
+  const lines = [
+    { sourceRow: 2, bomId: "b", parentCode: "P", materialCode: "A", qty: 1, price: 2, orderValues: { 订单号: "SO1" } },
+    { sourceRow: 3, bomId: "b", parentCode: "P", materialCode: "A", qty: 2, price: 2, orderValues: { 订单号: "SO1" } },
+    { sourceRow: 3, bomId: "b", parentCode: "P", materialCode: "B", qty: 5, price: "", orderValues: { 订单号: "SO1" } },
+    { sourceRow: 4, bomId: "b", parentCode: "P", materialCode: "A", qty: 1, price: 2, orderValues: { 订单号: "SO2" } }
+  ];
+  const template = {
+    mergeSame: true,
+    headerColumns: [
+      { header: "订单号", source: "order", key: "订单号" },
+      { header: "母件", source: "parent", key: "parentCode" }
+    ],
+    bodyColumns: [
+      { header: "物料", source: "child", key: "materialCode" },
+      { header: "数量", source: "child", key: "qty" }
+    ]
+  };
+  const doc = Calc.buildDocument(lines, template, true);
+  assert.deepStrictEqual(doc.rows, [
+    ["SO1", "P", "A", 3],
+    ["", "", "B", 5],
+    ["SO2", "P", "A", 1]
+  ]);
+  assert.deepStrictEqual(doc.merges, [
+    { r: 0, c: 0, rowspan: 2 },
+    { r: 0, c: 1, rowspan: 2 }
+  ]);
+  const separate = Calc.buildDocument(lines, Object.assign({}, template, { mergeSame: false }), false);
+  assert.strictEqual(separate.rows.length, 4);
+  assert.strictEqual(separate.rows[0][3], 1);
+  assert.strictEqual(separate.rows[1][0], "SO1");
+  assert.strictEqual(separate.rows[1][3], 2);
+  assert.strictEqual(separate.rows[2][0], "");
+  assert.strictEqual(separate.rows[2][2], "B");
+});
+
 test("export projection blanks unchecked parent fields", () => {
   const rows = [{ orderNo: "SO1", parentCode: "P", parentName: "母件名", materialCode: "C", qty: 2, price: 3, amount: 6 }];
   const columns = [

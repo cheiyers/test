@@ -232,8 +232,20 @@
 
   function currentColumns() {
     var template = templateById(db.prefs.templateId);
-    if (template && template.columns.length) return template.columns;
+    if (template && template.kind !== "document" && template.columns && template.columns.length) return template.columns;
     return Calc.defaultColumns(db.prefs.parentFields);
+  }
+
+  function columnKey(column, index) {
+    return (column.source || "field") + ":" + (column.key || column.field || column.header || index);
+  }
+
+  function columnWidth(column, index) {
+    var saved = db.prefs.columnWidths && db.prefs.columnWidths[columnKey(column, index)];
+    if (saved) return saved;
+    var field = column.key || column.field;
+    var defaults = { spec: 220, parentName: 180, materialName: 180, materialCode: 140, parentCode: 130, orderNo: 100, unit: 64, qty: 72, price: 72, amount: 80 };
+    return defaults[field] || 120;
   }
 
   function viewRows() {
@@ -290,6 +302,7 @@
         }
       }
     }
+    enableColumnResize();
   }
 
   function sidebar() {
@@ -706,7 +719,7 @@
       ),
       h("p", { class: "muted" }, headers.length ? "列名来自当前订单。" : "还没有订单，列名暂时为空。可以先写公式。"),
       h("div", { class: "table-wrap" }, h("table", { class: "table" },
-        h("thead", {}, h("tr", {}, ["参数", "用在", "取值", "订单列或公式"].map(function (name) { return h("th", {}, name); }))),
+        h("thead", {}, h("tr", {}, ["参数", "用在", "取值", "订单列、公式或固定值"].map(function (name) { return h("th", {}, name); }))),
         h("tbody", {}, allParams().map(function (name) {
           var spec = paramSpec(name);
           return h("tr", {},
@@ -719,22 +732,12 @@
                 save();
                 render();
               }
-            }, selectOptions([{ value: "column", label: "取订单列" }, { value: "formula", label: "用公式" }], spec.mode))),
-            h("td", {}, spec.mode === "formula"
-              ? h("div", {}, h("input", {
-                id: "formula-" + name,
-                value: spec.formula || "",
-                placeholder: "例如 IF([系列]=\"LF18\",[下单数量],0)",
-                oninput: function (event) { spec.formula = event.target.value; save(); },
-                onblur: function () {
-                  try { if (spec.formula) Formula.parse(spec.formula); ui.formulaError[name] = ""; }
-                  catch (error) { ui.formulaError[name] = error.message; }
-                  render();
-                }
-              }), ui.formulaError[name] ? h("div", { class: "error" }, ui.formulaError[name]) : null)
-              : h("select", {
-                onchange: function (event) { spec.column = event.target.value; save(); }
-              }, selectOptions(headers, spec.column, "选择列")))
+            }, selectOptions([
+              { value: "column", label: "取订单列" },
+              { value: "fixed", label: "固定值" },
+              { value: "formula", label: "用公式" }
+            ], spec.mode))),
+            h("td", {}, paramValueEditor(name, spec, headers))
           );
         }))
       )),
@@ -747,6 +750,33 @@
         render();
       } }, "删除方案")
     );
+  }
+
+  function paramValueEditor(name, spec, headers) {
+    if (spec.mode === "fixed") {
+      return h("input", {
+        id: "fixed-" + name,
+        value: spec.value == null ? "" : String(spec.value),
+        placeholder: "例如 LF18 或 2",
+        oninput: function (event) { spec.value = event.target.value; save(); }
+      });
+    }
+    if (spec.mode === "formula") {
+      return h("div", {}, h("input", {
+        id: "formula-" + name,
+        value: spec.formula || "",
+        placeholder: "例如 IF([系列]=\"LF18\",[下单数量],0)",
+        oninput: function (event) { spec.formula = event.target.value; save(); },
+        onblur: function () {
+          try { if (spec.formula) Formula.parse(spec.formula); ui.formulaError[name] = ""; }
+          catch (error) { ui.formulaError[name] = error.message; }
+          render();
+        }
+      }), ui.formulaError[name] ? h("div", { class: "error" }, ui.formulaError[name]) : null);
+    }
+    return h("select", {
+      onchange: function (event) { spec.column = event.target.value; save(); }
+    }, selectOptions(headers, spec.column, "选择列"));
   }
 
   function selectOptions(list, selected, placeholder) {
@@ -878,14 +908,15 @@
         return "第 " + error.sourceRow + " 行 " + (error.materialCode || "") + " " + error.message;
       }).join("；")) : null,
       h("div", { class: "table-wrap" }, h("table", { id: "result-table" },
-        h("colgroup", {}, columns.map(function (column) {
-          var width = { orderNo: "8%", parentCode: "12%", parentName: "16%", materialCode: "12%", materialName: "14%", spec: "16%", unit: "6%", qty: "6%", price: "5%", amount: "5%" }[column.field] || "10%";
-          return h("col", { style: "width:" + width });
+        h("colgroup", {}, columns.map(function (column, index) {
+          return h("col", { style: "width:" + columnWidth(column, index) + "px" });
         })),
-        h("thead", {}, h("tr", {}, columns.map(function (column) { return h("th", {}, column.header); }))),
-        h("tbody", {}, rows.length ? Calc.projectRows(rows, columns, db.prefs.parentFields).map(function (line, index) {
+        h("thead", {}, h("tr", {}, columns.map(function (column, index) {
+          return h("th", { "data-col": columnKey(column, index) }, column.header);
+        }))),
+        h("tbody", {}, rows.length ? Calc.projectMapped(rows, columns, db.prefs.parentFields).map(function (line, index) {
           return h("tr", { "data-code": rows[index].materialCode }, line.map(function (value, cell) {
-            var field = columns[cell].field;
+            var field = columns[cell].key || columns[cell].field;
             var text = value == null ? "" : String(value);
             var klass = field === "qty" || field === "price" || field === "amount" ? "num" : "";
             if (field === "qty" && (value === 0 || value === "" || value == null)) klass += " zero";
@@ -893,6 +924,7 @@
           }));
         }) : [h("tr", {}, h("td", { colspan: String(columns.length) }, "没有可导出的行。"))])
       )),
+      h("p", { class: "muted" }, "拖动表头右缘可以调整列宽。"),
       h("label", { class: "check" }, h("input", {
         type: "checkbox",
         checked: ui.showDetail ? true : null,
@@ -915,7 +947,7 @@
         class: "btn-primary",
         id: "export-xlsx",
         disabled: rows.length ? null : true,
-        onclick: function () { exportResult(rows, columns); }
+        onclick: exportResult
       }, "导出 Excel"))
     );
   }
@@ -924,19 +956,63 @@
     return h("div", { class: "stat" }, h("span", { class: "muted" }, label), h("b", {}, String(value)));
   }
 
+  function orderHeaders() {
+    var order = orderById(db.prefs.orderId) || db.orders[0];
+    return order ? order.headers : [];
+  }
+
+  function childFieldOptions() {
+    return [
+      { value: "materialCode", label: "子件物料代码" },
+      { value: "materialName", label: "子件物料名称" },
+      { value: "spec", label: "子件规格" },
+      { value: "attr", label: "子件辅助属性" },
+      { value: "warehouse", label: "子件仓库" },
+      { value: "unit", label: "子件单位" },
+      { value: "level", label: "子件级次" },
+      { value: "qty", label: "数量" },
+      { value: "price", label: "单价" },
+      { value: "amount", label: "金额" }
+    ];
+  }
+
+  function parentFieldOptions() {
+    return Calc.EXPORT_FIELDS.filter(function (field) {
+      return Calc.PARENT_FIELDS.indexOf(field.id) >= 0;
+    }).map(function (field) { return { value: field.id, label: field.label }; });
+  }
+
+  function sourceOptions(kind) {
+    if (kind === "header") return [{ value: "order", label: "订单列" }, { value: "parent", label: "母件列" }];
+    return [{ value: "order", label: "订单列" }, { value: "child", label: "子件列" }];
+  }
+
+  function fieldOptions(column) {
+    if (column.source === "order") {
+      return [{ value: "", label: "选择订单列" }].concat(orderHeaders().map(function (header) {
+        return { value: header, label: header };
+      }));
+    }
+    if (column.source === "parent") return [{ value: "", label: "选择母件列" }].concat(parentFieldOptions());
+    return [{ value: "", label: "选择子件列" }].concat(childFieldOptions());
+  }
+
   function templatePanel() {
     var selected = templateById(db.prefs.templateId);
     return h("section", { class: "card" },
       h("h2", {}, "导出格式"),
-      h("p", { class: "muted" }, "不选模板时，按上面勾选的母件字段和默认列导出。上传模板则用第一行表头，再把每一列对应到系统字段。"),
+      h("p", { class: "muted" }, "可以保存多套格式。列对应：每一列选择订单里的一列，或匹配 BOM 的子件列。表头表体：前面几列是表头，后面几列是表体，用来导入其他系统。"),
       h("div", { class: "row" },
         h("select", {
           id: "template-select",
           onchange: function (event) { db.prefs.templateId = event.target.value; save(); render(); }
         }, selectOptions([{ value: "", label: "使用默认列" }].concat(db.templates.map(function (template) {
-          return { value: template.id, label: template.name };
+          var kind = template.kind === "document" ? "表头表体" : "列对应";
+          return { value: template.id, label: template.name + " · " + kind };
         })), db.prefs.templateId)),
-        fileButton("上传模板", ".xlsx,.xls", false, function (file) {
+        h("button", { type: "button", class: "btn", id: "new-column-format", onclick: function () { addTemplate("columns"); } }, "新建列对应"),
+        h("button", { type: "button", class: "btn", id: "new-document-format", onclick: function () { addTemplate("document"); } }, "新建表头表体"),
+        fileButton("上传表头", ".xlsx,.xls", false, function (file) {
           readWorkbook(file).then(function (workbook) {
             var rows = sheetRows(workbook.Sheets[workbook.SheetNames[0]]);
             var headers = headersFromRow(rows[0] || []).filter(function (header) { return header && header.indexOf("列") !== 0; });
@@ -944,79 +1020,252 @@
             var template = {
               id: uid(),
               name: file.name.replace(/\.(xlsx|xls)$/i, ""),
+              kind: "columns",
               columns: headers.map(function (header) {
-                var known = Calc.EXPORT_FIELDS.filter(function (field) { return field.label === header; })[0];
-                return { header: header, field: known ? known.id : "" };
+                var known = childFieldOptions().filter(function (field) { return field.label === header || field.value === header; })[0];
+                return { header: header, source: known ? "child" : "order", key: known ? known.value : "" };
               })
             };
             db.templates.push(template);
             db.prefs.templateId = template.id;
             save();
-            ui.notice = "已按第一行建立导出模板。请检查列和系统字段的对应。";
+            ui.notice = "已按第一行建立列对应格式。请把每一列对应到订单列或子件列。";
             render();
           });
-        }),
-        h("button", { type: "button", class: "btn", onclick: function () {
-          var template = { id: uid(), name: "自定义模板", columns: [{ header: "物料代码", field: "materialCode" }, { header: "数量", field: "qty" }] };
-          db.templates.push(template);
-          db.prefs.templateId = template.id;
-          save();
-          render();
-        } }, "自定义列")
+        })
       ),
-      selected ? h("div", {},
-        h("label", { class: "field" }, h("span", {}, "模板名称"), h("input", {
-          value: selected.name,
-          oninput: function (event) { selected.name = event.target.value; save(); }
-        })),
-        selected.columns.map(function (column, index) {
-          return h("div", { class: "template-row" },
-            h("input", { value: column.header, oninput: function (event) { column.header = event.target.value; save(); } }),
-            h("select", { onchange: function (event) { column.field = event.target.value; save(); } }, selectOptions(
-              [{ value: "", label: "（留空）" }].concat(Calc.EXPORT_FIELDS.map(function (field) { return { value: field.id, label: field.label }; })),
-              column.field
-            )),
-            h("span", { class: "row" },
-              h("button", { type: "button", class: "btn", onclick: function () { moveColumn(selected, index, -1); } }, "上移"),
-              h("button", { type: "button", class: "btn", onclick: function () { moveColumn(selected, index, 1); } }, "下移"),
-              h("button", { type: "button", class: "btn-danger", onclick: function () { selected.columns.splice(index, 1); save(); render(); } }, "删除")
-            )
-          );
-        }),
-        h("div", { class: "row" },
-          h("button", { type: "button", class: "btn", onclick: function () { selected.columns.push({ header: "新列", field: "" }); save(); render(); } }, "增加列"),
-          h("button", { type: "button", class: "btn-danger", onclick: function () {
-            db.templates = db.templates.filter(function (template) { return template.id !== selected.id; });
-            db.prefs.templateId = "";
-            save();
-            render();
-          } }, "删除模板")
-        )
-      ) : null
+      selected ? formatEditor(selected) : null,
+      selected && selected.kind === "document" ? documentPreview(selected) : null
     );
   }
 
-  function moveColumn(template, index, delta) {
-    var next = index + delta;
-    if (next < 0 || next >= template.columns.length) return;
-    var item = template.columns.splice(index, 1)[0];
-    template.columns.splice(next, 0, item);
+  function addTemplate(kind) {
+    var template = kind === "document" ? {
+      id: uid(),
+      name: "表头表体 " + (db.templates.length + 1),
+      kind: "document",
+      mergeSame: true,
+      headerColumns: [{ header: "订单号", source: "order", key: "" }],
+      bodyColumns: [
+        { header: "物料代码", source: "child", key: "materialCode" },
+        { header: "数量", source: "child", key: "qty" }
+      ]
+    } : {
+      id: uid(),
+      name: "列对应 " + (db.templates.length + 1),
+      kind: "columns",
+      columns: [
+        { header: "物料代码", source: "child", key: "materialCode" },
+        { header: "数量", source: "child", key: "qty" }
+      ]
+    };
+    db.templates.push(template);
+    db.prefs.templateId = template.id;
     save();
     render();
   }
 
-  function exportResult(rows, columns) {
-    var header = columns.map(function (column) { return column.header; });
-    var body = Calc.projectRows(rows, columns, db.prefs.parentFields);
-    var sheet = XLSX.utils.aoa_to_sheet([header].concat(body));
-    sheet["!cols"] = header.map(function (name, index) {
+  function formatEditor(template) {
+    return h("div", {},
+      h("label", { class: "field" }, h("span", {}, "格式名称"), h("input", {
+        id: "template-name",
+        value: template.name,
+        oninput: function (event) { template.name = event.target.value; save(); }
+      })),
+      template.kind === "document" ? documentEditor(template) : columnEditor(template),
+      h("button", { type: "button", class: "btn-danger", onclick: function () {
+        db.templates = db.templates.filter(function (item) { return item.id !== template.id; });
+        db.prefs.templateId = "";
+        save();
+        render();
+      } }, "删除这个格式")
+    );
+  }
+
+  function columnEditor(template) {
+    template.columns = template.columns || [];
+    return h("div", {},
+      h("p", { class: "muted" }, "每一列对应订单中的一列，或匹配到的 BOM 子件列。"),
+      template.columns.map(function (column, index) {
+        return mappingRow(column, index, template.columns, "列");
+      }),
+      h("button", { type: "button", class: "btn", onclick: function () {
+        template.columns.push({ header: "新列", source: "child", key: "" });
+        save();
+        render();
+      } }, "增加列")
+    );
+  }
+
+  function documentEditor(template) {
+    template.headerColumns = template.headerColumns || [];
+    template.bodyColumns = template.bodyColumns || [];
+    return h("div", {},
+      h("h2", {}, "表头"),
+      h("p", { class: "muted" }, "前面几列。可以选择订单列，或母件上的列。"),
+      template.headerColumns.map(function (column, index) {
+        return mappingRow(column, index, template.headerColumns, "表头", "header");
+      }),
+      h("button", { type: "button", class: "btn", onclick: function () {
+        template.headerColumns.push({ header: "表头列", source: "order", key: "" });
+        save();
+        render();
+      } }, "增加表头列"),
+      h("h2", {}, "表体"),
+      h("p", { class: "muted" }, "后面几列。填匹配 BOM 的子件信息，或这一行订单上的内容。"),
+      template.bodyColumns.map(function (column, index) {
+        return mappingRow(column, index, template.bodyColumns, "表体");
+      }),
+      h("button", { type: "button", class: "btn", onclick: function () {
+        template.bodyColumns.push({ header: "表体列", source: "child", key: "" });
+        save();
+        render();
+      } }, "增加表体列"),
+      h("label", { class: "check" }, h("input", {
+        type: "checkbox",
+        id: "merge-same-child",
+        checked: template.mergeSame !== false ? true : null,
+        onchange: function (event) { template.mergeSame = event.target.checked; save(); render(); }
+      }), h("span", {}, "多行订单对应同一 BOM、且表头内容相同时，合并相同子件数量")),
+      h("p", { class: "muted" }, "勾选后，表头相同的行合成一块：相同子件数量相加，不同子件向下排，表头只占一块。不勾选时，每一行订单单独展开。")
+    );
+  }
+
+  function mappingRow(column, index, list, label, kind) {
+    if (!column.source) column.source = column.field ? "child" : "order";
+    if (column.key == null) column.key = column.field || "";
+    return h("div", { class: "template-row" },
+      h("input", {
+        value: column.header || "",
+        "aria-label": label + "名称",
+        oninput: function (event) { column.header = event.target.value; save(); }
+      }),
+      h("select", {
+        "aria-label": label + "来源",
+        onchange: function (event) {
+          column.source = event.target.value;
+          column.key = "";
+          save();
+          render();
+        }
+      }, selectOptions(sourceOptions(kind), column.source)),
+      h("select", {
+        "aria-label": label + "字段",
+        onchange: function (event) { column.key = event.target.value; save(); render(); }
+      }, selectOptions(fieldOptions(column), column.key)),
+      h("span", { class: "row" },
+        h("button", { type: "button", class: "btn", onclick: function () { moveList(list, index, -1); } }, "上移"),
+        h("button", { type: "button", class: "btn", onclick: function () { moveList(list, index, 1); } }, "下移"),
+        h("button", { type: "button", class: "btn-danger", onclick: function () { list.splice(index, 1); save(); render(); } }, "删除")
+      )
+    );
+  }
+
+  function moveList(list, index, delta) {
+    var next = index + delta;
+    if (next < 0 || next >= list.length) return;
+    var item = list.splice(index, 1)[0];
+    list.splice(next, 0, item);
+    save();
+    render();
+  }
+
+  function documentLines() {
+    if (!ui.result || ui.result.conflicts.length) return [];
+    var lines = Calc.applyMaterials(ui.result.lines || [], db.materials, db.prefs.calcAmount);
+    return Calc.filterRows(lines, db.prefs.hideEmpty);
+  }
+
+  function documentPreview(template) {
+    if (!ui.result || ui.result.conflicts.length) return h("p", { class: "muted" }, "计算出结果后，这里会按表头和表体预览。");
+    var doc = Calc.buildDocument(documentLines(), template, db.prefs.calcAmount);
+    var covered = {};
+    doc.merges.forEach(function (merge) {
+      for (var offset = 1; offset < merge.rowspan; offset++) covered[(merge.r + offset) + ":" + merge.c] = true;
+    });
+    var spanAt = {};
+    doc.merges.forEach(function (merge) { spanAt[merge.r + ":" + merge.c] = merge.rowspan; });
+    return h("div", {},
+      h("h2", {}, "表头表体预览"),
+      h("div", { class: "table-wrap" }, h("table", { id: "format-preview" },
+        h("thead", {}, h("tr", {}, doc.headers.map(function (header) { return h("th", {}, header); }))),
+        h("tbody", {}, doc.rows.length ? doc.rows.map(function (row, rowIndex) {
+          return h("tr", {}, row.map(function (value, columnIndex) {
+            if (covered[rowIndex + ":" + columnIndex]) return null;
+            var span = spanAt[rowIndex + ":" + columnIndex];
+            var props = { title: value == null ? "" : String(value) };
+            if (span) props.rowspan = String(span);
+            return h("td", props, value == null ? "" : String(value));
+          }));
+        }) : [h("tr", {}, h("td", { colspan: String(Math.max(doc.headers.length, 1)) }, "没有可导出的行。"))])
+      ))
+    );
+  }
+
+  function writeSheet(headers, body, merges) {
+    var sheet = XLSX.utils.aoa_to_sheet([headers].concat(body));
+    sheet["!cols"] = headers.map(function (name, index) {
       var width = String(name).length;
       body.forEach(function (line) { width = Math.max(width, String(line[index] == null ? "" : line[index]).length); });
       return { wch: Math.min(40, Math.max(10, width + 2)) };
     });
+    if (merges && merges.length) {
+      sheet["!merges"] = merges.map(function (merge) {
+        return {
+          s: { r: merge.r + 1, c: merge.c },
+          e: { r: merge.r + merge.rowspan, c: merge.c }
+        };
+      });
+    }
     var book = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(book, sheet, "算料结果");
     XLSX.writeFile(book, "算料结果.xlsx");
+  }
+
+  function exportResult() {
+    var template = templateById(db.prefs.templateId);
+    if (template && template.kind === "document") {
+      var doc = Calc.buildDocument(documentLines(), template, db.prefs.calcAmount);
+      if (!doc.rows.length) return;
+      writeSheet(doc.headers, doc.rows, doc.merges);
+      return;
+    }
+    var columns = currentColumns();
+    var rows = viewRows();
+    if (!rows.length) return;
+    var headers = columns.map(function (column) { return column.header; });
+    writeSheet(headers, Calc.projectMapped(rows, columns, db.prefs.parentFields));
+  }
+
+  function enableColumnResize() {
+    var table = document.getElementById("result-table");
+    if (!table) return;
+    var cols = table.querySelectorAll("col");
+    table.querySelectorAll("thead th").forEach(function (th, index) {
+      var handle = document.createElement("span");
+      handle.className = "col-resize";
+      th.appendChild(handle);
+      handle.addEventListener("mousedown", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        var startX = event.clientX;
+        var startWidth = th.getBoundingClientRect().width;
+        function move(moveEvent) {
+          var width = Math.max(56, Math.round(startWidth + moveEvent.clientX - startX));
+          if (cols[index]) cols[index].style.width = width + "px";
+          var key = th.getAttribute("data-col");
+          if (!db.prefs.columnWidths) db.prefs.columnWidths = {};
+          if (key) db.prefs.columnWidths[key] = width;
+        }
+        function up() {
+          document.removeEventListener("mousemove", move);
+          document.removeEventListener("mouseup", up);
+          save();
+        }
+        document.addEventListener("mousemove", move);
+        document.addEventListener("mouseup", up);
+      });
+    });
   }
 
   function downloadBackup() {
