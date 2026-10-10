@@ -455,9 +455,11 @@
 
   function defaultColumns(parentFields) {
     var allowed = parentFields || ["parentCode", "parentName"];
-    return EXPORT_FIELDS.filter(function (field) {
-      return !isParentField(field.id) || allowed.indexOf(field.id) >= 0;
-    }).map(function (field) {
+    var preferred = ["orderNo", "parentCode", "parentName", "materialCode", "materialName", "spec", "unit", "qty", "price", "amount"];
+    return preferred.filter(function (id) {
+      return !isParentField(id) || allowed.indexOf(id) >= 0;
+    }).map(function (id) {
+      var field = EXPORT_FIELDS.filter(function (item) { return item.id === id; })[0];
       return { header: field.label, field: field.id };
     });
   }

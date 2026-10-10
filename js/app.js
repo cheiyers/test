@@ -878,13 +878,18 @@
         return "第 " + error.sourceRow + " 行 " + (error.materialCode || "") + " " + error.message;
       }).join("；")) : null,
       h("div", { class: "table-wrap" }, h("table", { id: "result-table" },
+        h("colgroup", {}, columns.map(function (column) {
+          var width = { orderNo: "8%", parentCode: "12%", parentName: "16%", materialCode: "12%", materialName: "14%", spec: "16%", unit: "6%", qty: "6%", price: "5%", amount: "5%" }[column.field] || "10%";
+          return h("col", { style: "width:" + width });
+        })),
         h("thead", {}, h("tr", {}, columns.map(function (column) { return h("th", {}, column.header); }))),
         h("tbody", {}, rows.length ? Calc.projectRows(rows, columns, db.prefs.parentFields).map(function (line, index) {
           return h("tr", { "data-code": rows[index].materialCode }, line.map(function (value, cell) {
             var field = columns[cell].field;
+            var text = value == null ? "" : String(value);
             var klass = field === "qty" || field === "price" || field === "amount" ? "num" : "";
             if (field === "qty" && (value === 0 || value === "" || value == null)) klass += " zero";
-            return h("td", { class: klass }, value == null ? "" : String(value));
+            return h("td", { class: klass, title: text }, text);
           }));
         }) : [h("tr", {}, h("td", { colspan: String(columns.length) }, "没有可导出的行。"))])
       )),
