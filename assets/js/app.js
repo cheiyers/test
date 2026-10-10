@@ -18,6 +18,8 @@
     columns: [],
     source: "",
     schemes: [],
+    activeSchemeName: "",
+    fileName: "schindler-po",
     editingColId: null,
     dragColId: null,
     dragActive: false,
@@ -112,6 +114,8 @@
         if (Array.isArray(p.selectedFields)) state.selectedFields = new Set(p.selectedFields);
         if (Array.isArray(p.extraKeywords)) state.extraKeywords = p.extraKeywords;
         if (Array.isArray(p.columns)) state.columns = p.columns;
+        if (typeof p.fileName === "string" && p.fileName.trim()) state.fileName = p.fileName.trim();
+        if (typeof p.activeSchemeName === "string") state.activeSchemeName = p.activeSchemeName;
         if (!fromV3 && !fromV2) state.selectedFields.add("documentDate");
       }
       const schemeRaw = localStorage.getItem(SCHEMES_KEY);
@@ -132,6 +136,8 @@
         selectedFields: Array.from(state.selectedFields),
         extraKeywords: state.extraKeywords,
         columns: state.columns,
+        fileName: state.fileName,
+        activeSchemeName: state.activeSchemeName,
       })
     );
     localStorage.setItem(SCHEMES_KEY, JSON.stringify(state.schemes));
@@ -221,21 +227,80 @@
     });
   }
 
-  function renderSchemeSelect() {
-    const sel = $("schemeSelect");
-    const current = sel.value;
-    sel.innerHTML = "";
-    const placeholder = document.createElement("option");
-    placeholder.value = "";
-    placeholder.textContent = state.schemes.length ? "选择已存方案" : "暂无已存方案";
-    sel.appendChild(placeholder);
-    state.schemes.forEach(function (s, i) {
-      const opt = document.createElement("option");
-      opt.value = String(i);
-      opt.textContent = s.name;
-      sel.appendChild(opt);
+  function currentSchemeSnap(name) {
+    return F.captureScheme(
+      name || state.activeSchemeName,
+      Array.from(state.selectedFields),
+      state.extraKeywords,
+      state.columns,
+      state.fileName
+    );
+  }
+
+  function sameScheme(a, b) {
+    if (!a || !b) return false;
+    function pick(s) {
+      return JSON.stringify({
+        selectedFields: (s.selectedFields || []).slice().sort(),
+        extraKeywords: s.extraKeywords || [],
+        columns: s.columns || [],
+        fileName: s.fileName || "",
+      });
+    }
+    return pick(a) === pick(b);
+  }
+
+  function renderSchemeList() {
+    const box = $("schemeList");
+    if (!box) return;
+    if (!state.schemes.length) {
+      box.innerHTML = '<p class="hint" style="margin:0">还没有保存的方案。输入名称后点「添加」。</p>';
+      return;
+    }
+    const now = currentSchemeSnap();
+    box.innerHTML = state.schemes
+      .map(function (s) {
+        const on = state.activeSchemeName === s.name;
+        const dirty = on && !sameScheme(now, s);
+        return (
+          '<div class="scheme-row' +
+          (on ? " on" : "") +
+          '" data-scheme="' +
+          escapeAttr(s.name) +
+          '"><span class="name">' +
+          escapeHtml(s.name) +
+          "</span>" +
+          (dirty ? '<em class="dirty">已改动</em>' : "") +
+          '<button type="button" data-del-scheme="' +
+          escapeAttr(s.name) +
+          '" title="删除">×</button></div>'
+        );
+      })
+      .join("");
+    box.querySelectorAll(".scheme-row").forEach(function (row) {
+      row.addEventListener("click", function (e) {
+        if (e.target.closest("[data-del-scheme]")) return;
+        applySchemeByName(row.dataset.scheme);
+      });
     });
-    if (current && Number(current) < state.schemes.length) sel.value = current;
+    box.querySelectorAll("[data-del-scheme]").forEach(function (btn) {
+      btn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        deleteSchemeByName(btn.dataset.delScheme);
+      });
+    });
+  }
+
+  function escapeHtml(s) {
+    return String(s ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function escapeAttr(s) {
+    return escapeHtml(s);
   }
 
   function renderFields() {
@@ -255,7 +320,7 @@
       $("keywordFields").appendChild(label);
     });
     renderCustomChips();
-    renderSchemeSelect();
+    renderSchemeList();
   }
 
   function resultColumns() {
@@ -375,6 +440,7 @@
     const input = focusFormula === false ? $("colFormatHeader") : $("colFormatFormula");
     input.focus();
     input.select();
+    renderFormulaBar();
   }
 
   function closeColFormat() {
@@ -524,6 +590,64 @@
     renderOutputTable();
     renderDocs();
     renderWarnings();
+    syncFileNameInput();
+    renderFormulaBar();
+    savePrefs();
+  }
+
+  function syncFileNameInput() {
+    const el = $("exportFileName");
+    if (el && document.activeElement !== el) el.value = state.fileName || "";
+  }
+
+  function renderFormulaBar() {
+    const bar = $("formulaBar");
+    if (!bar || !window.PoFormula || !PoFormula.HELP) return;
+    const letters = state.columns
+      .map(function (c, i) {
+        const letter = F.colLetter(i);
+        return '<button type="button" class="chip-fn" data-insert="' + letter + '" title="' + escapeHtml(c.header || letter) + '">' + letter + "</button>";
+      })
+      .join("");
+    const fns = PoFormula.HELP.map(function (h) {
+      return (
+        '<button type="button" class="chip-fn" data-snippet="' +
+        escapeHtml(h.snippet) +
+        '" title="' +
+        escapeHtml(h.hint) +
+        '">' +
+        escapeHtml(h.id) +
+        "</button>"
+      );
+    }).join("");
+    bar.innerHTML = (letters ? '<span class="meta">插入列</span>' + letters : "") + '<span class="meta">插入函数</span>' + fns;
+    bar.querySelectorAll("[data-insert]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        insertFormulaText(btn.dataset.insert);
+      });
+    });
+    bar.querySelectorAll("[data-snippet]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        insertFormulaText(btn.dataset.snippet);
+      });
+    });
+  }
+
+  function insertFormulaText(text) {
+    const el = $("colFormatFormula");
+    if (!el || $("colFormatBar").hidden) {
+      toast("请先点击输出表的列头，再插入公式");
+      return;
+    }
+    const start = el.selectionStart == null ? el.value.length : el.selectionStart;
+    const end = el.selectionEnd == null ? el.value.length : el.selectionEnd;
+    el.value = el.value.slice(0, start) + text + el.value.slice(end);
+    el.selectionStart = el.selectionEnd = start + text.length;
+    const col = editingColumn();
+    if (col) col.formula = el.value;
+    el.focus();
+    renderOutputTable();
+    renderSchemeList();
     savePrefs();
   }
 
@@ -538,26 +662,44 @@
       $("schemeName").focus();
       return;
     }
-    const snap = F.captureScheme(
-      name,
-      Array.from(state.selectedFields),
-      state.extraKeywords,
-      state.columns
-    );
+    const snap = currentSchemeSnap(name);
+    snap.name = name;
     const idx = state.schemes.findIndex(function (s) {
       return s.name === name;
     });
     if (idx >= 0) state.schemes[idx] = snap;
     else state.schemes.push(snap);
-    renderSchemeSelect();
-    $("schemeSelect").value = String(idx >= 0 ? idx : state.schemes.length - 1);
+    state.activeSchemeName = name;
+    $("schemeName").value = "";
     savePrefs();
-    toast(idx >= 0 ? "已更新方案「" + name + "」" : "已保存方案「" + name + "」");
+    renderSchemeList();
+    toast(idx >= 0 ? "已更新方案「" + name + "」" : "已添加方案「" + name + "」");
   }
 
-  function applyScheme() {
-    const idx = Number($("schemeSelect").value);
-    const scheme = state.schemes[idx];
+  function updateActiveScheme() {
+    if (!state.activeSchemeName) {
+      toast("请先点选一个已保存的方案，或先添加");
+      return;
+    }
+    const idx = state.schemes.findIndex(function (s) {
+      return s.name === state.activeSchemeName;
+    });
+    if (idx < 0) {
+      toast("没有当前方案可更新");
+      return;
+    }
+    const snap = currentSchemeSnap(state.activeSchemeName);
+    snap.name = state.activeSchemeName;
+    state.schemes[idx] = snap;
+    savePrefs();
+    renderSchemeList();
+    toast("已更新「" + state.activeSchemeName + "」");
+  }
+
+  function applySchemeByName(name) {
+    const scheme = state.schemes.find(function (s) {
+      return s.name === name;
+    });
     if (!scheme) {
       toast("请先选择方案");
       return;
@@ -576,22 +718,27 @@
       };
     });
     state.columns = F.syncOutputColumns(state.columns, Array.from(state.selectedFields), state.extraKeywords);
-    $("schemeName").value = snap.name;
+    if (snap.fileName) state.fileName = snap.fileName;
+    state.activeSchemeName = snap.name;
+    $("schemeName").value = "";
     closeColFormat();
     render();
-    toast("已应用方案「" + snap.name + "」");
+    toast("已切换到方案「" + snap.name + "」");
   }
 
-  function deleteScheme() {
-    const idx = Number($("schemeSelect").value);
-    const scheme = state.schemes[idx];
-    if (!scheme) {
+  function deleteSchemeByName(name) {
+    const idx = state.schemes.findIndex(function (s) {
+      return s.name === name;
+    });
+    if (idx < 0) {
       toast("请先选择要删除的方案");
       return;
     }
+    const scheme = state.schemes[idx];
     state.schemes.splice(idx, 1);
-    renderSchemeSelect();
+    if (state.activeSchemeName === scheme.name) state.activeSchemeName = "";
     savePrefs();
+    renderSchemeList();
     toast("已删除方案「" + scheme.name + "」");
   }
 
@@ -614,12 +761,17 @@
     return s;
   }
 
+  function exportBaseName() {
+    const raw = String(state.fileName || "schindler-po").trim() || "schindler-po";
+    return raw.replace(/[\\/:*?"<>|]+/g, "_").replace(/\.(xlsx|xls|csv|json)$/i, "") || "schindler-po";
+  }
+
   function exportCsv() {
     const matrix = exportMatrix();
     const text = "\ufeff" + matrix.map(function (r) {
       return r.map(csvEscape).join(",");
     }).join("\n");
-    downloadBlob(new Blob([text], { type: "text/csv;charset=utf-8" }), "schindler-po.csv");
+    downloadBlob(new Blob([text], { type: "text/csv;charset=utf-8" }), exportBaseName() + ".csv");
     toast("已导出 CSV（" + (matrix.length - 1) + " 行）");
   }
 
@@ -633,8 +785,69 @@
     const ws = XLSX.utils.aoa_to_sheet(matrix);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "订单行");
-    XLSX.writeFile(wb, "schindler-po.xlsx");
+    XLSX.writeFile(wb, exportBaseName() + ".xlsx");
     toast("已导出 Excel（" + (matrix.length - 1) + " 行）");
+  }
+
+  function exportJson() {
+    const data = F.computeOutput(selectedRowObjects(), state.columns, state.extraKeywords);
+    const payload = {
+      fileName: exportBaseName(),
+      columns: state.columns,
+      rows: data,
+    };
+    downloadBlob(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }), exportBaseName() + ".json");
+    toast("已导出 JSON（" + data.length + " 行）");
+  }
+
+  function decodeCsvBytes(bytes) {
+    const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []);
+    if (!u8.length) return "";
+    let start = 0;
+    if (u8[0] === 0xef && u8[1] === 0xbb && u8[2] === 0xbf) start = 3;
+    return new TextDecoder("utf-8").decode(start ? u8.slice(start) : u8);
+  }
+
+  function readTemplateFile(file) {
+    return new Promise(function (resolve, reject) {
+      const reader = new FileReader();
+      reader.onerror = function () {
+        reject(new Error("无法读取模板"));
+      };
+      reader.onload = function () {
+        try {
+          if (!window.XLSX) throw new Error("Excel 库未加载");
+          const buf = new Uint8Array(reader.result);
+          const isCsv = /\.csv$/i.test(file.name) || file.type === "text/csv";
+          const wb = isCsv
+            ? XLSX.read(decodeCsvBytes(buf), { type: "string", raw: false })
+            : XLSX.read(buf, { type: "array" });
+          const sheet = wb.Sheets[wb.SheetNames[0]];
+          const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: "" });
+          resolve({ name: file.name, aoa: aoa });
+        } catch (err) {
+          reject(err);
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  function applyTemplate(tpl) {
+    const parsed = F.parseTemplateAoa(tpl.aoa);
+    if (!parsed.headers.length) {
+      toast("模板里没有读到表头");
+      return;
+    }
+    state.columns = F.columnsFromHeaders(parsed.headers, state.extraKeywords);
+    const base = String(tpl.name || "")
+      .split(/[/\\]/)
+      .pop()
+      .replace(/\.(xlsx|xls|csv)$/i, "");
+    if (base) state.fileName = base;
+    closeColFormat();
+    render();
+    toast("已按模板「" + tpl.name + "」生成 " + state.columns.length + " 列");
   }
 
   function downloadBlob(blob, name) {
@@ -757,6 +970,12 @@
       if (t.id === "colFormatFormula") {
         col.formula = t.value;
         renderOutputTable();
+        renderSchemeList();
+        savePrefs();
+      }
+      if (t.id === "exportFileName") {
+        state.fileName = t.value;
+        renderSchemeList();
         savePrefs();
       }
     });
@@ -918,8 +1137,11 @@
       }
     });
     $("btnSaveScheme").addEventListener("click", saveScheme);
-    $("btnApplyScheme").addEventListener("click", applyScheme);
-    $("btnDeleteScheme").addEventListener("click", deleteScheme);
+    $("btnUpdateScheme").addEventListener("click", updateActiveScheme);
+    $("btnDeleteScheme").addEventListener("click", function () {
+      if (!state.activeSchemeName) return toast("请先点选要删除的方案");
+      deleteSchemeByName(state.activeSchemeName);
+    });
     $("schemeName").addEventListener("keydown", function (ev) {
       if (ev.key === "Enter") {
         ev.preventDefault();
@@ -928,6 +1150,31 @@
     });
     $("btnXlsx").addEventListener("click", exportXlsx);
     $("btnCsv").addEventListener("click", exportCsv);
+    $("btnJson").addEventListener("click", exportJson);
+    const tplDrop = $("tplDrop");
+    const tplFile = $("tplFile");
+    if (tplDrop && tplFile) {
+      tplDrop.addEventListener("click", function () {
+        tplFile.click();
+      });
+      tplDrop.addEventListener("dragover", function (ev) {
+        ev.preventDefault();
+      });
+      tplDrop.addEventListener("drop", function (ev) {
+        ev.preventDefault();
+        const file = ev.dataTransfer.files && ev.dataTransfer.files[0];
+        if (file) readTemplateFile(file).then(applyTemplate).catch(function (err) {
+          toast(err.message || String(err));
+        });
+      });
+      tplFile.addEventListener("change", function (ev) {
+        const file = ev.target.files && ev.target.files[0];
+        if (file) readTemplateFile(file).then(applyTemplate).catch(function (err) {
+          toast(err.message || String(err));
+        });
+        ev.target.value = "";
+      });
+    }
     $("btnDemo").addEventListener("click", function () {
       if (!window.DEMO_DATA) {
         toast("没有样张数据");

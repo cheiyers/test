@@ -205,11 +205,49 @@ td.num { font-family: var(--mono); text-align: right; }
 .panel h2 { margin: 0 0 12px; }
 .panel .hint { font-size: 12px; color: var(--muted); margin: 0 0 10px; }
 
+.choose-scroll {
+  height: 380px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px;
+  background: #fff;
+}
 .choose-grid {
   display: grid;
   grid-template-columns: 1fr 1fr 1.1fr;
   gap: 14px;
+  height: 100%;
 }
+.choose-grid > .field-block {
+  min-height: 0;
+  height: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+#resultTable.table-wrap,
+#outputTable.table-wrap {
+  max-height: 380px;
+  overscroll-behavior: contain;
+}
+.scheme-list { display: flex; flex-direction: column; gap: 4px; max-height: 160px; overflow: auto; margin-bottom: 8px; }
+.scheme-row {
+  display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 8px;
+  cursor: pointer; font-size: 13px; border: 1px solid transparent;
+}
+.scheme-row:hover { background: var(--accent-soft); }
+.scheme-row.on { background: #ffe4e6; border-color: #fecdd3; }
+.scheme-row .name { flex: 1; }
+.scheme-row .dirty { color: var(--accent); font-size: 11px; }
+.scheme-row button {
+  border: 0; background: transparent; color: var(--accent); cursor: pointer; font-size: 14px;
+}
+.formula-bar { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; margin-top: 4px; }
+.formula-bar .chip-fn {
+  border: 1px solid var(--line); background: #fff; border-radius: 8px;
+  padding: 3px 8px; cursor: pointer; font-size: 12px; font-family: var(--mono);
+}
+.map-drop { margin: 8px 0; padding: 12px; }
 .field-block {
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -370,5 +408,7 @@ button.warn { background: #9f1239; border-color: #9f1239; }
 
 @media (max-width: 960px) {
   .zones, .notes, .doc-body, .choose-grid { grid-template-columns: 1fr; }
+  .choose-scroll { height: auto; max-height: 520px; overflow: auto; }
+  .choose-grid > .field-block { height: auto; }
   .doc-body img { border-right: 0; border-bottom: 1px solid var(--line); max-height: 420px; object-fit: contain; }
 }

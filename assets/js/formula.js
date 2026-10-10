@@ -61,7 +61,66 @@
         return x == null ? "" : String(x);
       }).join("");
     },
+    AND: function () {
+      for (let i = 0; i < arguments.length; i++) if (!truthy(arguments[i])) return false;
+      return arguments.length > 0;
+    },
+    OR: function () {
+      for (let i = 0; i < arguments.length; i++) if (truthy(arguments[i])) return true;
+      return false;
+    },
+    NOT: function (v) {
+      return !truthy(v);
+    },
+    IFEMPTY: function (a, b) {
+      return String(a == null ? "" : a).trim() === "" ? b : a;
+    },
+    IFBLANK: function (a, b) {
+      return String(a == null ? "" : a).trim() === "" ? b : a;
+    },
+    IFERROR: function (a, b) {
+      if (a == null) return b;
+      const s = String(a);
+      if (s.indexOf("#ERR") === 0 || s.indexOf("#") === 0 && /ERR|DIV|VALUE|REF|CYCLE|NAME|NUM/.test(s)) return b;
+      return a;
+    },
+    IFS: function () {
+      for (let i = 0; i + 1 < arguments.length; i += 2) {
+        if (truthy(arguments[i])) return arguments[i + 1];
+      }
+      if (arguments.length % 2 === 1) return arguments[arguments.length - 1];
+      return "";
+    },
+    SWITCH: function (value) {
+      const key = String(value == null ? "" : value);
+      for (let i = 1; i + 1 < arguments.length; i += 2) {
+        if (String(arguments[i]) === key) return arguments[i + 1];
+      }
+      if ((arguments.length - 1) % 2 === 1) return arguments[arguments.length - 1];
+      return "";
+    },
+    CONTAINS: function (s, needle) {
+      return String(s == null ? "" : s).indexOf(String(needle == null ? "" : needle)) >= 0;
+    },
+    SUBSTITUTE: function (s, old, neu) {
+      return String(s == null ? "" : s).split(String(old == null ? "" : old)).join(String(neu == null ? "" : neu));
+    },
+    THIS: function () {
+      return this && this._this != null ? this._this : "";
+    },
+    COL: function (name) {
+      return lookup(this || {}, name);
+    },
   };
+
+  function truthy(v) {
+    if (v === true) return true;
+    if (v === false || v == null) return false;
+    if (typeof v === "number") return v !== 0 && isFinite(v);
+    const s = String(v).trim();
+    if (!s || s === "0" || /^false$/i.test(s) || s === "否") return false;
+    return true;
+  }
 
   function parseDate(v) {
     if (v instanceof Date && !Number.isNaN(v.getTime())) return v;
@@ -193,9 +252,29 @@
   };
   Parser.prototype.parse = function () {
     if (!this.peek()) return "";
-    const v = this.parseCmp();
+    const v = this.parseOr();
     if (this.peek()) throw new Error("公式未结束");
     return v;
+  };
+  Parser.prototype.parseOr = function () {
+    let left = this.parseAnd();
+    while (this.peek() && this.peek().t === "id" && /^(OR|或)$/i.test(this.peek().v)) {
+      const nxt = this.tokens[this.i + 1];
+      if (nxt && nxt.t === "op" && nxt.v === "(") break;
+      this.take();
+      left = FN.OR(left, this.parseAnd());
+    }
+    return left;
+  };
+  Parser.prototype.parseAnd = function () {
+    let left = this.parseCmp();
+    while (this.peek() && this.peek().t === "id" && /^(AND|且)$/i.test(this.peek().v)) {
+      const nxt = this.tokens[this.i + 1];
+      if (nxt && nxt.t === "op" && nxt.v === "(") break;
+      this.take();
+      left = FN.AND(left, this.parseCmp());
+    }
+    return left;
   };
   Parser.prototype.parseCmp = function () {
     let left = this.parseConcat();
@@ -300,8 +379,11 @@
       }
     }
     this.take(")");
-    const fn = FN[name.toUpperCase()];
+    const alias = { 如果: "IF", 且: "AND", 或: "OR", 非: "NOT", 拼接: "CONCAT", 列: "COL", 本列: "THIS", 如果空: "IFEMPTY" };
+    const key = (alias[name] || name).toUpperCase();
+    const fn = FN[key];
     if (!fn) throw new Error("未知函数 " + name);
+    if (key === "THIS" || key === "COL") return fn.apply(this.ctx, args);
     return fn.apply(null, args);
   };
 
@@ -340,7 +422,23 @@
     return String(v);
   }
 
-  const api = { evaluate: evaluate, stringify: stringify, parseNumber: parseNumber };
+  const HELP = [
+    { id: "IF", snippet: '=IF({数量}>3,"大","小")', hint: "条件" },
+    { id: "IFS", snippet: '=IFS({数量}>10,"多",{数量}>3,"中","少")', hint: "多条件" },
+    { id: "AND", snippet: '=AND({数量}>0,{物料号}<>"")', hint: "全部为真" },
+    { id: "OR", snippet: '=OR({物料号}="",{数量}=0)', hint: "任一为真" },
+    { id: "IFEMPTY", snippet: '=IFEMPTY({安装国家},"—")', hint: "空则备用" },
+    { id: "IFERROR", snippet: "=IFERROR({数量}*1,0)", hint: "出错备用" },
+    { id: "CONCAT", snippet: '={物料号}&" · "&{物料描述}', hint: "拼接" },
+    { id: "TEXT", snippet: '=TEXT({凭证日期},"yyyy-mm-dd")', hint: "日期格式" },
+    { id: "LEFT", snippet: "=LEFT({物料号},4)", hint: "左侧" },
+    { id: "SUBSTITUTE", snippet: '=SUBSTITUTE({物料描述},"LED","灯")', hint: "替换" },
+    { id: "CONTAINS", snippet: '=IF(CONTAINS({物料描述},"LED"),"灯","其他")', hint: "包含" },
+    { id: "THIS", snippet: "=THIS()", hint: "本列识别值" },
+    { id: "COL", snippet: '=COL("物料号")', hint: "按列名取值" },
+  ];
+
+  const api = { evaluate: evaluate, stringify: stringify, parseNumber: parseNumber, HELP: HELP, truthy: truthy };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.PoFormula = api;
 })(typeof window !== "undefined" ? window : globalThis);

@@ -259,4 +259,20 @@ if (keptOrder.map(function (c) { return c.sourceId; }).join(",") !== "qty,poNumb
   process.exit(1);
 }
 
+const mapped = fields.columnsFromHeaders(["物料号", "品名", "备注"], []);
+if (mapped[0].sourceId !== "materialNo" || mapped[1].header !== "品名") {
+  console.error("template headers", mapped);
+  process.exit(1);
+}
+const letterCols = [
+  { id: "col-a", sourceId: "materialNo", header: "物料号", formula: "{物料号}" },
+  { id: "col-b", sourceId: "description", header: "物料描述", formula: "{物料描述}" },
+  { id: "col-c", sourceId: "", header: "结果", formula: '=IF(A="","","["&A&"] "&B)' },
+];
+const letterOut = fields.computeOutput(rows.slice(0, 1), letterCols, []);
+if (letterOut[0]["col-c"] !== "[" + rows[0].materialNo + "] " + rows[0].description) {
+  console.error("column letter formula", letterOut[0]["col-c"]);
+  process.exit(1);
+}
+
 console.log("OK fields", rows.length, "rows", cols.length, "cols", "two-line", twoRows.length);

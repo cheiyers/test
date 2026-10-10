@@ -253,10 +253,11 @@
     };
   }
 
-  function captureScheme(name, selectedIds, extraKeywords, columns) {
+  function captureScheme(name, selectedIds, extraKeywords, columns, fileName) {
     const norm = normalizeKeywordsAndSelection(extraKeywords, selectedIds);
     return {
       name: String(name || "").trim(),
+      fileName: String(fileName || "").trim(),
       selectedFields: norm.selectedFields,
       extraKeywords: norm.extraKeywords,
       columns: (columns || []).map(function (c) {
@@ -272,7 +273,7 @@
 
   function cloneScheme(scheme) {
     if (!scheme) return null;
-    return captureScheme(scheme.name, scheme.selectedFields, scheme.extraKeywords, scheme.columns);
+    return captureScheme(scheme.name, scheme.selectedFields, scheme.extraKeywords, scheme.columns, scheme.fileName);
   }
 
   function reorderColumns(columns, draggedId, beforeId) {
@@ -341,14 +342,102 @@
     return next;
   }
 
+  function colLetter(index) {
+    let n = Number(index) + 1;
+    if (!(n > 0)) return "";
+    let s = "";
+    while (n > 0) {
+      const r = (n - 1) % 26;
+      s = String.fromCharCode(65 + r) + s;
+      n = Math.floor((n - 1) / 26);
+    }
+    return s;
+  }
+
+  function fieldByLabel(label, extraKeywords) {
+    const want = String(label || "").trim();
+    if (!want) return null;
+    const all = ALL_BUILTIN.concat(extraKeywords || []);
+    let hit = all.find(function (f) {
+      return f.label === want || f.id === want;
+    });
+    if (hit) return hit;
+    const aliasId = HEADER_ALIASES[want];
+    if (aliasId) return fieldById(aliasId, extraKeywords);
+    const folded = want.replace(/\s+/g, "").toLowerCase();
+    hit = all.find(function (f) {
+      return String(f.label || "").replace(/\s+/g, "").toLowerCase() === folded;
+    });
+    return hit || resolveKeyword(want);
+  }
+
+  function columnsFromHeaders(headers, extraKeywords) {
+    return (headers || []).map(function (name, i) {
+      const label = String(name == null ? "" : name).trim() || "列" + (i + 1);
+      const field = fieldByLabel(label, extraKeywords);
+      if (field) {
+        const col = columnFromField(field);
+        col.header = label;
+        return col;
+      }
+      return {
+        id: "col-tpl-" + i + "-" + Date.now().toString(36),
+        sourceId: "",
+        header: label,
+        formula: "",
+      };
+    });
+  }
+
+  function detectHeaderRow(aoa) {
+    const rows = Array.isArray(aoa) ? aoa : [];
+    let best = 0;
+    let bestCount = 0;
+    for (let i = 0; i < rows.length && i < 20; i++) {
+      const row = rows[i] || [];
+      const n = row.filter(function (c) {
+        return String(c == null ? "" : c).trim() !== "";
+      }).length;
+      if (n >= 2 && n > bestCount) {
+        best = i;
+        bestCount = n;
+      }
+      if (n >= 3) return i;
+    }
+    return best;
+  }
+
+  function parseTemplateAoa(aoa) {
+    const rows = Array.isArray(aoa) ? aoa.map(function (r) {
+      return Array.isArray(r) ? r.slice() : [];
+    }) : [];
+    if (!rows.length) return { headerRow: 1, headers: [] };
+    const idx = detectHeaderRow(rows);
+    const header = rows[idx] || [];
+    const headers = header.map(function (c) {
+      return c == null ? "" : String(c);
+    });
+    return { headerRow: idx + 1, headers: headers };
+  }
+
   function computeOutput(rows, columns, extraKeywords) {
     const Formula = root.PoFormula;
+    const cols = columns || [];
     return rows.map(function (row) {
       const ctx = rowContext(row, extraKeywords);
       const out = { _rowId: row.id };
-      columns.forEach(function (col) {
-        const raw = Formula.evaluate(col.formula, ctx);
-        out[col.id] = Formula.stringify(raw);
+      cols.forEach(function (col, i) {
+        const field = col.sourceId ? fieldById(col.sourceId, extraKeywords) : null;
+        const thisVal = field ? fieldValue(row, field) : "";
+        ctx._this = thisVal;
+        ctx.THIS = thisVal;
+        const expr = col.formula && String(col.formula).trim() ? col.formula : thisVal;
+        const raw = Formula.evaluate(expr, ctx);
+        const shown = Formula.stringify(raw);
+        out[col.id] = shown;
+        ctx[colLetter(i)] = shown;
+        if (col.header) ctx[col.header] = shown;
+        if (col.id) ctx[col.id] = shown;
       });
       return out;
     });
@@ -376,6 +465,10 @@
     columnFromField: columnFromField,
     syncOutputColumns: syncOutputColumns,
     computeOutput: computeOutput,
+    colLetter: colLetter,
+    fieldByLabel: fieldByLabel,
+    columnsFromHeaders: columnsFromHeaders,
+    parseTemplateAoa: parseTemplateAoa,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.PoFields = api;
