@@ -92,4 +92,22 @@ const sampleTpl = bom.parseTemplate(sampleCsv, "bom-template.csv");
 if (sampleTpl.variables.indexOf("轿厢宽度") < 0) fail("sample csv vars", sampleTpl);
 if (sampleTpl.rows[2][3].indexOf("IF") < 0) fail("sample csv LED formula", sampleTpl.rows[2]);
 
+const excelTpl = bom.parseTemplate([
+  ["子件料号", "备注"],
+  ["X", "=IFS(AND(数量>=4,TRUE),ROUNDUP(数量*1.1,0),TRUE,数量)"],
+]);
+if (excelTpl.variables.indexOf("数量") < 0) fail("IFS vars", excelTpl.variables);
+if (excelTpl.variables.indexOf("IFS") >= 0 || excelTpl.variables.indexOf("ROUNDUP") >= 0) fail("IFS leaked", excelTpl.variables);
+const excelRows = bom.compute(
+  [{ id: "a", lineNo: "00010", qty: "4" }, { id: "b", lineNo: "00020", qty: "1" }],
+  excelTpl,
+  [{ name: "数量", mode: "column", value: "qty" }],
+  [],
+  null
+);
+const x4 = excelRows.find(function (r) { return r.行项目 === "00010"; });
+const x1 = excelRows.find(function (r) { return r.行项目 === "00020"; });
+if (!x4 || String(x4.计算数量) !== "5") fail("IFS ROUNDUP qty4", x4);
+if (!x1 || String(x1.计算数量) !== "1") fail("IFS qty1", x1);
+
 console.log("OK bom template vars compute lookup");

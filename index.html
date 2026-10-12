@@ -111,7 +111,8 @@
       <h2>5. 输出表格 · 点击列设置格式</h2>
       <p class="hint">
         只输出上方勾选的行。<strong>点击表头</strong>改列名和格式，<strong>拖动左侧手柄</strong>或用左移 / 右移调整列顺序。格式用 <code>{字段名}</code>，以 <code>=</code> 开头计算，例如
-        <code>={数量}*2</code>、<code>=IF({数量}&gt;3,"大","小")</code>、<code>=TEXT({凭证日期},"yyyy-mm-dd")</code>、<code>=TEXT({凭证日期},"yyyy/m/d")</code>、<code>{物料描述}&amp;" / "&amp;{图号/版本}</code>。
+        <code>={数量}*2</code>、<code>=IF({数量}&gt;3,"大","小")</code>、<code>=IFS(AND({数量}&gt;=4,TRUE),ROUNDUP({数量}*1.1,0),TRUE,{数量})</code>、<code>=TEXT({凭证日期},"yyyy-mm-dd")</code>、<code>=TEXT({凭证日期},"yyyy/m/d")</code>、<code>{物料描述}&amp;" / "&amp;{图号/版本}</code>。
+        与 Excel 相近的常用函数（含中文名如 <code>如果</code>、<code>求和</code>）均可用于列格式和 BOM 备注。
       </p>
       <div class="col-format-bar" id="colFormatBar" hidden>
         <strong>列格式</strong>
@@ -136,6 +137,7 @@
       <h2>6. BOM 子件用量 · 公式模板与料号对照</h2>
       <p class="hint">
         导入带<strong>备注 / 公式</strong>列的表格模板，自动识别公式中的变量。每个变量可映射到识别结果的某一列、一条公式，或固定值。
+        备注公式支持 Excel 常用函数（<code>IF</code> / <code>IFS</code> / <code>AND</code> / <code>ROUNDUP</code> / <code>VALUE</code> / <code>CONVERT</code> 等，也可用 <code>如果</code>、<code>求和</code>）。
         对上方勾选的每一行订单算出各子件数量。可选再导入一张<strong>料号对照表</strong>：匹配到该行物料号的数据会接在该订单 BOM 下方。映射随导出方案一起保存。
       </p>
       <div class="bom-grid">

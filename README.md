@@ -17,7 +17,7 @@
 - **方案**：导出方案同时保存 BOM 模板、变量映射和对照表
 - **表头 / 格式**：点击输出表的列头，直接改列名和输出格式
 - **列顺序**：拖动表头左侧手柄，或在列格式栏里左移 / 右移；顺序会随方案一起保存
-- **公式**：`{字段名}` 取识别值；以 `=` 开头计算。常用：`={数量}*2`、`=IF({数量}>3,"大","小")`、`=TEXT({凭证日期},"yyyy-mm-dd")`、`{物料描述}&" / "&{图号/版本}`
+- **公式**：`{字段名}` 取识别值；以 `=` 开头计算。支持 `+ - * / ^ %`、`&` 拼接，以及与 Excel 相近的常用函数（逻辑、数学、统计、文本、日期、查找、信息、财务、进制与单位换算等），也可用中文函数名（`如果`、`求和`、`四舍五入`）。常用：`={数量}*2`、`=IF({数量}>3,"大","小")`、`=IFS(AND({数量}>=4,TRUE),ROUNDUP({数量}*1.1,0),TRUE,{数量})`、`=TEXT({凭证日期},"yyyy-mm-dd")`、`{物料描述}&" / "&{图号/版本}`
 - **识别内容核对**：导入后按订单展示抬头、行项目、数量、单位和原件预览。卡片在固定高度框内滚动，不一次铺开。缺数量/单位会标红；点击识别结果行可跳到对应订单。
 - **需核对提示**：出现跨页续行、无物料号的文本行、服务类行时，导入区会给出黄色提示，对应结果行标「需核对」。常规物料行不提示。尚未自动拼接跨页或按服务行重算。
 
@@ -53,7 +53,16 @@ python3 -m http.server 8080
 =TEXT({交货日期},"yyyy/m/d")
 ```
 
-`mm`/`dd` 补成两位数，`m`/`d` 不补零。可用函数：`TEXT`、`DATEVALUE`、`IF`、`ROUND`、`LEFT` / `RIGHT` / `MID`、`LEN`、`TRIM`、`UPPER` / `LOWER`、`VALUE`、`TODAY`、`CONCAT`，以及 `+ - * /`、`&` 拼接。
+`mm`/`dd` 补成两位数，`m`/`d` 不补零。BOM 备注和列格式使用同一套公式引擎，覆盖 Excel 常见函数，例如：
+
+- 逻辑：`IF` / `IFS` / `IFERROR` / `AND` / `OR` / `NOT` / `XOR` / `SWITCH`
+- 数学：`SUM` / `ROUND` / `ROUNDUP` / `CEILING` / `FLOOR` / `MOD` / `POWER` / `SQRT` / `ABS` / `INT` / `PI`
+- 统计：`AVERAGE` / `MIN` / `MAX` / `MEDIAN` / `COUNT` / `COUNTIF` / `SUMIF` / `LARGE` / `SMALL`
+- 文本：`LEFT` / `RIGHT` / `MID` / `LEN` / `TRIM` / `SUBSTITUTE` / `FIND` / `SEARCH` / `TEXT` / `VALUE` / `CONCAT` / `TEXTJOIN`
+- 日期：`TODAY` / `DATE` / `YEAR` / `MONTH` / `DAY` / `EOMONTH` / `EDATE` / `DAYS` / `NETWORKDAYS` / `WORKDAY`
+- 其他：`CHOOSE` / `MATCH` / `VLOOKUP` / `CONVERT`（如 mm↔m）/ `HEX2DEC` / `PMT` / `FV`
+
+也支持 `2^3`、`10%`、`TRUE`/`FALSE`，以及中文名 `如果`、`与`、`或`、`求和`、`四舍五入`。不含需单元格区域或动态数组的函数（如 `FILTER`、`LAMBDA`、透视/立方体）。
 
 命令行核对样张：
 
@@ -62,6 +71,7 @@ python3 -m pip install pymupdf
 python3 tools/extract_po.py samples/*.pdf -o data/demo.json
 python3 tools/test_extract.py
 node tools/test_formula.js
+node tools/test_formula_excel.js
 node tools/test_fields.js
 node tools/test_parser.js
 node tools/test_bom.js
