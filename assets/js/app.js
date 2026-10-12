@@ -39,6 +39,7 @@
     exportTemplate: null,
     exportMaps: [],
     skipRule: { enabled: false, column: "计算数量", empty: true, zero: true },
+    collapsedPanels: {},
   };
 
   const SAMPLE_EXPORT_AOA = [
@@ -162,6 +163,7 @@
         if (p.exportTemplate) state.exportTemplate = p.exportTemplate;
         if (Array.isArray(p.exportMaps)) state.exportMaps = p.exportMaps;
         if (p.skipRule) state.skipRule = p.skipRule;
+        if (p.collapsedPanels && typeof p.collapsedPanels === "object") state.collapsedPanels = p.collapsedPanels;
         if (!fromV3 && !fromV2) state.selectedFields.add("documentDate");
       }
       const schemeRaw = localStorage.getItem(SCHEMES_KEY);
@@ -194,9 +196,56 @@
         exportTemplate: state.exportTemplate,
         exportMaps: state.exportMaps,
         skipRule: state.skipRule,
+        collapsedPanels: state.collapsedPanels || {},
       })
     );
     localStorage.setItem(SCHEMES_KEY, JSON.stringify(state.schemes));
+  }
+
+  function panelIds() {
+    return Array.prototype.map.call(document.querySelectorAll("section.panel[data-panel]"), function (el) {
+      return el.getAttribute("data-panel");
+    });
+  }
+
+  function applyPanelCollapsed() {
+    document.querySelectorAll("section.panel[data-panel]").forEach(function (panel) {
+      const id = panel.getAttribute("data-panel");
+      const collapsed = !!(state.collapsedPanels && state.collapsedPanels[id]);
+      panel.classList.toggle("collapsed", collapsed);
+      const btn = panel.querySelector(".panel-toggle");
+      if (btn) btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+      const hint = panel.querySelector(".panel-fold-hint");
+      if (hint) hint.textContent = collapsed ? "展开" : "折叠";
+    });
+  }
+
+  function setPanelCollapsed(id, collapsed) {
+    if (!id) return;
+    state.collapsedPanels = state.collapsedPanels || {};
+    if (collapsed) state.collapsedPanels[id] = true;
+    else delete state.collapsedPanels[id];
+    applyPanelCollapsed();
+    savePrefs();
+  }
+
+  function togglePanel(id) {
+    setPanelCollapsed(id, !(state.collapsedPanels && state.collapsedPanels[id]));
+  }
+
+  function expandPanel(id) {
+    setPanelCollapsed(id, false);
+  }
+
+  function setAllPanelsCollapsed(collapsed) {
+    state.collapsedPanels = {};
+    if (collapsed) {
+      panelIds().forEach(function (id) {
+        state.collapsedPanels[id] = true;
+      });
+    }
+    applyPanelCollapsed();
+    savePrefs();
   }
 
   function mergeDiscoveredKeywords(autoSelect) {
@@ -232,7 +281,10 @@
     const keep = sourceChanged ? [] : state.columns;
     state.columns = F.syncOutputColumns(keep, Array.from(state.selectedFields), state.extraKeywords);
     const panel = $("docsPanel");
-    if (panel) panel.hidden = false;
+    if (panel) {
+      panel.hidden = false;
+      expandPanel("docs");
+    }
   }
 
   function selectedRowObjects() {
@@ -854,7 +906,10 @@
 
   function jumpToPo(poNumber, lineNo) {
     const panel = $("docsPanel");
-    if (panel) panel.hidden = false;
+    if (panel) {
+      panel.hidden = false;
+      expandPanel("docs");
+    }
     const id = "po-" + String(poNumber || "").replace(/[^\w-]/g, "");
     const card = document.getElementById(id);
     if (!card) {
@@ -2109,6 +2164,14 @@
     });
     document.addEventListener("click", function (ev) {
       const t = ev.target;
+      const toggle = t.closest && t.closest(".panel-toggle");
+      if (toggle) {
+        const panel = toggle.closest("section.panel");
+        if (panel && panel.getAttribute("data-panel")) {
+          togglePanel(panel.getAttribute("data-panel"));
+        }
+        return;
+      }
       if (t.dataset && t.dataset.bomReplace) {
         state.replacingBomId = t.dataset.bomReplace;
         const input = $("bomFile");
@@ -2382,7 +2445,15 @@
       notifyWarnings("已加载需核对样张，共 " + state.rows.length + " 行");
     });
     $("btnToggleDocs").addEventListener("click", function () {
-      $("docsPanel").hidden = !$("docsPanel").hidden;
+      const panel = $("docsPanel");
+      if (panel) panel.hidden = false;
+      togglePanel("docs");
+    });
+    $("btnFoldAll").addEventListener("click", function () {
+      setAllPanelsCollapsed(true);
+    });
+    $("btnExpandAll").addEventListener("click", function () {
+      setAllPanelsCollapsed(false);
     });
     const drop = $("dropzone");
     drop.addEventListener("click", function () {
@@ -2406,6 +2477,7 @@
 
   loadPrefs();
   bind();
+  applyPanelCollapsed();
   if (window.DEMO_DATA) {
     setDocs(window.DEMO_DATA.documents, "demo");
     render();

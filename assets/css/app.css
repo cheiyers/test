@@ -118,7 +118,7 @@ h3 { font-size: 14px; margin: 0 0 8px; }
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  margin: 8px 0 10px;
+  margin: 0 0 10px;
 }
 .toolbar .meta { font-size: 13px; color: var(--muted); }
 button {
@@ -264,6 +264,14 @@ td.miss {
 tr.result-row { cursor: pointer; }
 tr.result-row:hover td { background: #fff8ea; }
 
+.fold-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -8px 0 4px;
+}
+.fold-bar .hint { flex: 1; }
+
 .panel {
   background: var(--card);
   border: 1px solid var(--line);
@@ -271,6 +279,46 @@ tr.result-row:hover td { background: #fff8ea; }
   padding: 16px 16px 18px;
   margin: 18px 0;
 }
+.panel-head { margin: 0 0 12px; }
+.panel-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  padding: 2px 0;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 8px;
+}
+.panel-toggle:hover { background: #f8fafc; }
+.panel-toggle h2 { margin: 0; flex: 1; }
+.panel .chev {
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg);
+  transition: transform .15s;
+  flex-shrink: 0;
+  margin: 0 2px 3px 6px;
+}
+.panel.collapsed .chev {
+  transform: rotate(-45deg);
+  margin-bottom: 0;
+}
+.panel-fold-hint {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 400;
+  white-space: nowrap;
+  margin-left: auto;
+}
+.panel.collapsed { padding-bottom: 12px; }
+.panel.collapsed .panel-head { margin: 0; }
+.panel.collapsed .panel-body { display: none; }
 .panel h2 { margin: 0 0 12px; }
 .panel .hint { font-size: 12px; color: var(--muted); margin: 0 0 10px; }
 

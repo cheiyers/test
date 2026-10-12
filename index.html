@@ -19,9 +19,21 @@
       导入后可在「识别内容」里按订单核对数量、单位和原件。
       若出现<strong>跨页续行、无物料号文本行、服务类行</strong>，识别区会提示人工核对。
     </div>
+    <div class="fold-bar">
+      <span class="hint" style="margin:0">每个模块标题可折叠，方便对照查看。</span>
+      <button type="button" class="ghost" id="btnFoldAll">全部折叠</button>
+      <button type="button" class="ghost" id="btnExpandAll">全部展开</button>
+    </div>
 
-    <section class="panel">
-      <h2>1. 导入识别</h2>
+    <section class="panel" data-panel="import">
+      <div class="panel-head">
+        <button type="button" class="panel-toggle" aria-expanded="true">
+          <span class="chev" aria-hidden="true"></span>
+          <h2>1. 导入识别</h2>
+          <span class="panel-fold-hint">折叠</span>
+        </button>
+      </div>
+      <div class="panel-body">
       <div class="dropzone" id="dropzone">
         <strong>拖入多个迅达采购订单 PDF，或点击选择</strong>
         <span>浏览器本地识别，文件不会上传到服务器</span>
@@ -35,21 +47,35 @@
       </div>
       <div class="hint" id="sourceHint" style="margin-top:8px"></div>
       <div class="warn-box" id="parseWarnings" hidden></div>
+      </div>
     </section>
 
-    <section class="panel" id="docsPanel">
-      <div class="toolbar">
-        <h2 style="margin:0">2. 识别内容 · 对照原件核对</h2>
-        <span class="hint" style="margin:0">抬头摘要固定在上方。订单卡片在框内滚动，不会一次铺开。缺项会标红；点识别结果行可跳到对应订单。</span>
+    <section class="panel" id="docsPanel" data-panel="docs">
+      <div class="panel-head">
+        <button type="button" class="panel-toggle" aria-expanded="true">
+          <span class="chev" aria-hidden="true"></span>
+          <h2>2. 识别内容 · 对照原件核对</h2>
+          <span class="panel-fold-hint">折叠</span>
+        </button>
       </div>
+      <div class="panel-body">
+      <p class="hint">抬头摘要固定在上方。订单卡片在框内滚动，不会一次铺开。缺项会标红；点识别结果行可跳到对应订单。</p>
       <div class="stats" id="summaryCards"></div>
       <div class="docs-scroll" id="docsScroll">
         <div class="docs" id="docs"></div>
       </div>
+      </div>
     </section>
 
-    <section class="panel">
-      <h2>3. 导出字段与关键字</h2>
+    <section class="panel" data-panel="fields">
+      <div class="panel-head">
+        <button type="button" class="panel-toggle" aria-expanded="true">
+          <span class="chev" aria-hidden="true"></span>
+          <h2>3. 导出字段与关键字</h2>
+          <span class="panel-fold-hint">折叠</span>
+        </button>
+      </div>
+      <div class="panel-body">
       <p class="hint">核心订单行默认导出。选配抬头（含公司代码、工厂）默认关闭。抬头关键字如「公司代码」会对应识别值。文档里新出现的「颜色」等会自动列入关键字。</p>
       <div class="choose-grid">
         <div class="field-block">
@@ -82,11 +108,19 @@
           <button type="button" class="ghost" id="btnDeleteScheme">删除方案</button>
         </div>
       </div>
+      </div>
     </section>
 
-    <section class="panel">
+    <section class="panel" data-panel="rows">
+      <div class="panel-head">
+        <button type="button" class="panel-toggle" aria-expanded="true">
+          <span class="chev" aria-hidden="true"></span>
+          <h2>4. 识别结果 · 勾选要输出的行</h2>
+          <span class="panel-fold-hint">折叠</span>
+        </button>
+      </div>
+      <div class="panel-body">
       <div class="toolbar">
-        <h2 style="margin:0">4. 识别结果 · 勾选要输出的行</h2>
         <div class="actions">
           <button type="button" class="ghost" id="btnSelAll">全选行</button>
           <button type="button" class="ghost" id="btnSelNone">全不选</button>
@@ -105,10 +139,18 @@
         <span class="hint" style="margin:0">筛选只改变可见行，导出仍按勾选。可用「全选可见」只勾当前结果。</span>
       </div>
       <div class="table-wrap" id="resultTable"></div>
+      </div>
     </section>
 
-    <section class="panel">
-      <h2>5. 识别行预览 · 点击列设置格式</h2>
+    <section class="panel" data-panel="preview">
+      <div class="panel-head">
+        <button type="button" class="panel-toggle" aria-expanded="true">
+          <span class="chev" aria-hidden="true"></span>
+          <h2>5. 识别行预览 · 点击列设置格式</h2>
+          <span class="panel-fold-hint">折叠</span>
+        </button>
+      </div>
+      <div class="panel-body">
       <p class="hint">
         这里是勾选订单行的预览，不含 BOM 展开。最终导出请到第 7 步按模板输出 BOM 计算结果。
         <strong>点击表头</strong>改列名和格式，<strong>拖动左侧手柄</strong>或用左移 / 右移调整列顺序。格式用 <code>{字段名}</code>，以 <code>=</code> 开头计算，例如
@@ -132,10 +174,18 @@
         <button type="button" class="secondary" id="btnCsv">导出 CSV</button>
       </div>
       <div class="table-wrap" id="outputTable"></div>
+      </div>
     </section>
 
-    <section class="panel" id="bomPanel">
-      <h2>6. BOM 子件用量 · 公式模板与料号对照</h2>
+    <section class="panel" id="bomPanel" data-panel="bom">
+      <div class="panel-head">
+        <button type="button" class="panel-toggle" aria-expanded="true">
+          <span class="chev" aria-hidden="true"></span>
+          <h2>6. BOM 子件用量 · 公式模板与料号对照</h2>
+          <span class="panel-fold-hint">折叠</span>
+        </button>
+      </div>
+      <div class="panel-body">
       <p class="hint">
         可上传多份 BOM 模板（带<strong>备注 / 公式</strong>列），列表里可继续添加、替换或删除。公式中的变量可映射到识别列、公式或固定值。
         备注公式支持 Excel 常用函数（<code>IF</code> / <code>IFS</code> / <code>AND</code> / <code>ROUNDUP</code> / <code>VALUE</code> / <code>CONVERT</code> 等，也可用 <code>如果</code>、<code>求和</code>）。
@@ -183,10 +233,18 @@
         <span class="meta" id="bomCount"></span>
       </div>
       <div class="table-wrap scroll-pane" id="bomTable"></div>
+      </div>
     </section>
 
-    <section class="panel" id="exportPanel">
-      <h2>7. 最终导出 · 模板表头与 BOM 列对应</h2>
+    <section class="panel" id="exportPanel" data-panel="export">
+      <div class="panel-head">
+        <button type="button" class="panel-toggle" aria-expanded="true">
+          <span class="chev" aria-hidden="true"></span>
+          <h2>7. 最终导出 · 模板表头与 BOM 列对应</h2>
+          <span class="panel-fold-hint">折叠</span>
+        </button>
+      </div>
+      <div class="panel-body">
       <p class="hint">
         导出内容是上方 BOM 计算后的每一行（一行订单展开为多个子件，对照行接在后面）。预览在框内滚动，不一次铺开。
         可上传带表头的 Excel/CSV 作为导出模板；每列对应 BOM 计算结果、识别订单列、公式或固定值。映射到识别订单列时，取该子件所属的那一行订单，不会把所有行写成同一份数据。
@@ -227,6 +285,7 @@
         <span class="meta" id="exportCount"></span>
       </div>
       <div class="table-wrap scroll-pane" id="finalExportTable"></div>
+      </div>
     </section>
 
   </main>
