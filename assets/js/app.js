@@ -34,7 +34,14 @@
     lookupTable: null,
     lookupKey: "",
     bomRows: [],
+    exportTemplate: null,
+    exportMaps: [],
+    skipRule: { enabled: false, column: "计算数量", empty: true, zero: true },
   };
+
+  const SAMPLE_EXPORT_AOA = [
+    ["物料编码", "物料名称", "数量", "单位", "采购订单号", "行项目", "订单物料号", "物料描述"],
+  ];
 
   const SAMPLE_BOM_AOA = [
     ["子件料号", "子件描述", "单位", "备注"],
@@ -149,6 +156,9 @@
         if (Array.isArray(p.varMaps)) state.varMaps = p.varMaps;
         if (p.lookupTable) state.lookupTable = p.lookupTable;
         if (p.lookupKey) state.lookupKey = p.lookupKey;
+        if (p.exportTemplate) state.exportTemplate = p.exportTemplate;
+        if (Array.isArray(p.exportMaps)) state.exportMaps = p.exportMaps;
+        if (p.skipRule) state.skipRule = p.skipRule;
         if (!fromV3 && !fromV2) state.selectedFields.add("documentDate");
       }
       const schemeRaw = localStorage.getItem(SCHEMES_KEY);
@@ -173,6 +183,9 @@
         varMaps: state.varMaps,
         lookupTable: state.lookupTable,
         lookupKey: state.lookupKey,
+        exportTemplate: state.exportTemplate,
+        exportMaps: state.exportMaps,
+        skipRule: state.skipRule,
       })
     );
     localStorage.setItem(SCHEMES_KEY, JSON.stringify(state.schemes));
@@ -292,6 +305,9 @@
       varMaps: state.varMaps || [],
       lookupTable: state.lookupTable || null,
       lookupKey: state.lookupKey || "",
+      exportTemplate: state.exportTemplate || null,
+      exportMaps: state.exportMaps || [],
+      skipRule: state.skipRule || { enabled: false, column: "计算数量", empty: true, zero: true },
     };
   }
 
@@ -300,7 +316,13 @@
     state.varMaps = snap && Array.isArray(snap.varMaps) ? snap.varMaps : [];
     state.lookupTable = snap && snap.lookupTable ? snap.lookupTable : null;
     state.lookupKey = snap && snap.lookupKey ? snap.lookupKey : (state.lookupTable && state.lookupTable.key) || "";
+    state.exportTemplate = snap && snap.exportTemplate ? snap.exportTemplate : null;
+    state.exportMaps = snap && Array.isArray(snap.exportMaps) ? snap.exportMaps : [];
+    state.skipRule = snap && snap.skipRule
+      ? snap.skipRule
+      : { enabled: false, column: "计算数量", empty: true, zero: true };
     syncBomMaps();
+    syncExportMaps();
   }
 
   function syncBomMaps() {
@@ -309,6 +331,53 @@
       return;
     }
     state.varMaps = B.mergeVarMaps(state.bomTemplate.variables || [], state.varMaps, state.extraKeywords);
+  }
+
+  function bomHeaderList() {
+    if (!B) return [];
+    return B.resultHeaders(state.bomTemplate, activeLookup());
+  }
+
+  function syncExportMaps() {
+    if (!B || !state.exportTemplate || !state.exportTemplate.headers || !state.exportTemplate.headers.length) {
+      return;
+    }
+    state.exportMaps = B.mergeExportMaps(
+      state.exportTemplate.headers,
+      state.exportMaps,
+      bomHeaderList(),
+      state.extraKeywords
+    );
+    const headers = state.exportMaps.map(function (m) { return m.header; });
+    if (headers.length && headers.indexOf((state.skipRule && state.skipRule.column) || "") < 0) {
+      const hit = headers.find(function (h) { return /数量|用量/.test(h); });
+      state.skipRule = state.skipRule || { enabled: false, empty: true, zero: true };
+      state.skipRule.column = hit || headers[0];
+    }
+  }
+
+  function orderRowById() {
+    const map = {};
+    state.rows.forEach(function (r) {
+      map[r.id] = r;
+    });
+    return map;
+  }
+
+  function skipRuleFromState() {
+    const r = state.skipRule || {};
+    return {
+      enabled: !!r.enabled,
+      column: r.column || (state.exportMaps[0] && state.exportMaps[0].header) || "计算数量",
+      empty: r.empty !== false,
+      zero: r.zero !== false,
+    };
+  }
+
+  function computeFinalExport() {
+    if (!B || !state.exportMaps.length) return [];
+    const mapped = B.applyExport(state.bomRows || [], orderRowById(), state.extraKeywords, state.exportMaps);
+    return B.filterExportRows(mapped, skipRuleFromState());
   }
 
   function resolvedVarMaps() {
@@ -1152,6 +1221,217 @@
     renderVarMapTable();
     computeBomRows();
     renderBomTable();
+    renderExport();
+  }
+
+  function renderExportMapTable() {
+    const box = $("exportMapTable");
+    if (!box) return;
+    box.innerHTML = "";
+    if (!state.exportTemplate || !state.exportMaps.length) {
+      box.innerHTML = '<p class="hint" style="padding:12px">先上传导出表头，或点「按 BOM 表头生成」。</p>';
+      return;
+    }
+    const bomHeads = bomHeaderList();
+    const orderFields = F.CORE_FIELDS.concat(F.OPTIONAL_FIELDS, F.KEYWORD_FIELDS).concat(
+      state.extraKeywords.map(function (k) {
+        return { id: k.id, label: k.label };
+      })
+    );
+    const table = document.createElement("table");
+    table.className = "var-map-table";
+    table.innerHTML = "<thead><tr><th>导出列</th><th>来源</th><th>取值</th></tr></thead>";
+    const tbody = document.createElement("tbody");
+    state.exportMaps.forEach(function (m) {
+      const tr = document.createElement("tr");
+      const tdH = document.createElement("td");
+      tdH.textContent = m.header;
+      const tdMode = document.createElement("td");
+      tdMode.className = "mode";
+      const mode = document.createElement("select");
+      mode.dataset.exHeader = m.header;
+      mode.dataset.exProp = "mode";
+      [["bom", "BOM 计算列"], ["order", "识别订单列"], ["formula", "公式"], ["const", "固定值"]].forEach(function (pair) {
+        const opt = document.createElement("option");
+        opt.value = pair[0];
+        opt.textContent = pair[1];
+        if (m.mode === pair[0]) opt.selected = true;
+        mode.appendChild(opt);
+      });
+      tdMode.appendChild(mode);
+      const tdVal = document.createElement("td");
+      tdVal.className = "value";
+      if (m.mode === "bom") {
+        const sel = document.createElement("select");
+        sel.dataset.exHeader = m.header;
+        sel.dataset.exProp = "value";
+        const blank = document.createElement("option");
+        blank.value = "";
+        blank.textContent = "请选择 BOM 列";
+        sel.appendChild(blank);
+        bomHeads.forEach(function (h) {
+          const opt = document.createElement("option");
+          opt.value = h;
+          opt.textContent = h;
+          if (m.value === h) opt.selected = true;
+          sel.appendChild(opt);
+        });
+        tdVal.appendChild(sel);
+      } else if (m.mode === "order") {
+        const sel = document.createElement("select");
+        sel.dataset.exHeader = m.header;
+        sel.dataset.exProp = "value";
+        const blank = document.createElement("option");
+        blank.value = "";
+        blank.textContent = "请选择订单列";
+        sel.appendChild(blank);
+        orderFields.forEach(function (f) {
+          const opt = document.createElement("option");
+          opt.value = f.id;
+          opt.textContent = f.label;
+          if (m.value === f.id) opt.selected = true;
+          sel.appendChild(opt);
+        });
+        tdVal.appendChild(sel);
+      } else {
+        const input = document.createElement("input");
+        input.type = "text";
+        input.dataset.exHeader = m.header;
+        input.dataset.exProp = "value";
+        input.value = m.value || "";
+        input.placeholder = m.mode === "formula" ? '={计算数量}*1 或 {物料描述}' : "固定文字";
+        tdVal.appendChild(input);
+      }
+      tr.appendChild(tdH);
+      tr.appendChild(tdMode);
+      tr.appendChild(tdVal);
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    box.appendChild(table);
+  }
+
+  function renderSkipControls() {
+    const rule = skipRuleFromState();
+    const en = $("skipEnabled");
+    const col = $("skipColumn");
+    const empty = $("skipEmpty");
+    const zero = $("skipZero");
+    if (en && document.activeElement !== en) en.checked = rule.enabled;
+    if (empty && document.activeElement !== empty) empty.checked = rule.empty;
+    if (zero && document.activeElement !== zero) zero.checked = rule.zero;
+    if (!col) return;
+    const prev = rule.column;
+    col.innerHTML = "";
+    const headers = (state.exportMaps || []).map(function (m) { return m.header; });
+    const extras = bomHeaderList();
+    const seen = {};
+    headers.concat(extras).forEach(function (h) {
+      if (!h || seen[h]) return;
+      seen[h] = true;
+      const opt = document.createElement("option");
+      opt.value = h;
+      opt.textContent = h;
+      col.appendChild(opt);
+    });
+    if (!col.options.length) {
+      const opt = document.createElement("option");
+      opt.value = "计算数量";
+      opt.textContent = "计算数量";
+      col.appendChild(opt);
+    }
+    col.value = seen[prev] ? prev : (col.options[0] && col.options[0].value) || "计算数量";
+    state.skipRule.column = col.value;
+  }
+
+  function renderFinalExportTable() {
+    const box = $("finalExportTable");
+    const count = $("exportCount");
+    if (!box) return;
+    box.innerHTML = "";
+    if (!state.exportMaps.length) {
+      if (count) count.textContent = "";
+      return;
+    }
+    const rows = computeFinalExport();
+    const headers = state.exportMaps.map(function (m) { return m.header; });
+    const table = document.createElement("table");
+    const thead = document.createElement("thead");
+    const hr = document.createElement("tr");
+    headers.forEach(function (h) {
+      const th = document.createElement("th");
+      th.textContent = h;
+      hr.appendChild(th);
+    });
+    thead.appendChild(hr);
+    const tbody = document.createElement("tbody");
+    rows.forEach(function (row) {
+      const tr = document.createElement("tr");
+      if (row._kind === "lookup") tr.className = "bom-lookup";
+      headers.forEach(function (h) {
+        const td = document.createElement("td");
+        const v = row[h];
+        if (v == null || v === "") {
+          td.className = "empty";
+          td.textContent = "—";
+        } else {
+          td.textContent = String(v);
+          if (/^\d/.test(String(v))) td.classList.add("num");
+        }
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    table.appendChild(thead);
+    table.appendChild(tbody);
+    box.appendChild(table);
+    if (count) {
+      const raw = (state.bomRows || []).length;
+      count.textContent = "将导出 " + rows.length + " 行（BOM 计算 " + raw + " 行" + (raw !== rows.length ? "，已按空/0 跳过" : "") + "）";
+    }
+  }
+
+  function renderExport() {
+    syncExportMaps();
+    const hint = $("exportTplHint");
+    if (hint) {
+      hint.textContent = state.exportTemplate && state.exportTemplate.headers && state.exportTemplate.headers.length
+        ? "已加载「" + (state.exportTemplate.name || "导出模板") + "」· " + state.exportTemplate.headers.length + " 列：" + state.exportTemplate.headers.join("、")
+        : "尚未导入表头。最终导出按 BOM 计算行输出，可先加载示例表头。";
+    }
+    renderExportMapTable();
+    renderSkipControls();
+    renderFinalExportTable();
+  }
+
+  function setExportTemplate(aoa, name) {
+    if (!B) {
+      toast("未加载 BOM 组件");
+      return;
+    }
+    const tpl = B.parseExportTemplate(aoa, name);
+    if (!tpl.headers.length) {
+      toast("模板没有表头");
+      return;
+    }
+    state.exportTemplate = tpl;
+    state.exportMaps = [];
+    syncExportMaps();
+    render();
+    toast("已加载导出表头 " + tpl.headers.length + " 列");
+  }
+
+  function setExportFromBomHeaders() {
+    if (!B || !state.bomTemplate) {
+      toast("请先导入并计算 BOM");
+      return;
+    }
+    const headers = bomHeaderList();
+    state.exportTemplate = { name: "BOM表头", headers: headers };
+    state.exportMaps = [];
+    syncExportMaps();
+    render();
+    toast("已按 BOM 表头生成 " + headers.length + " 列");
   }
 
   function setBomTemplate(aoa, name) {
@@ -1222,6 +1502,50 @@
     toast("已导出 BOM Excel（" + (matrix.length - 1) + " 行）");
   }
 
+  function finalExportMatrix() {
+    if (!B || !state.exportMaps.length) return [];
+    return B.exportMatrix(computeFinalExport(), state.exportMaps);
+  }
+
+  function exportFinalCsv() {
+    if (!state.bomRows.length) {
+      toast("请先计算 BOM");
+      return;
+    }
+    if (!state.exportMaps.length) {
+      toast("请先上传导出表头或按 BOM 表头生成");
+      return;
+    }
+    const matrix = finalExportMatrix();
+    const text = "\ufeff" + matrix.map(function (r) {
+      return r.map(csvEscape).join(",");
+    }).join("\n");
+    downloadBlob(new Blob([text], { type: "text/csv;charset=utf-8" }), "schindler-bom-export.csv");
+    toast("已导出 " + (matrix.length - 1) + " 行（BOM 计算结果）");
+  }
+
+  function exportFinalXlsx() {
+    if (!state.bomRows.length) {
+      toast("请先计算 BOM");
+      return;
+    }
+    if (!state.exportMaps.length) {
+      toast("请先上传导出表头或按 BOM 表头生成");
+      return;
+    }
+    if (!window.XLSX) {
+      exportFinalCsv();
+      toast("未加载 Excel 组件，已改为 CSV");
+      return;
+    }
+    const matrix = finalExportMatrix();
+    const ws = XLSX.utils.aoa_to_sheet(matrix);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "BOM导出");
+    XLSX.writeFile(wb, "schindler-bom-export.xlsx");
+    toast("已导出 Excel（" + (matrix.length - 1) + " 行，BOM 计算结果）");
+  }
+
   function bindDropzone(dropId, inputId, onFiles) {
     const drop = $(dropId);
     const input = $(inputId);
@@ -1251,7 +1575,8 @@
     readTableFile(files[0])
       .then(function (res) {
         if (kind === "bom") setBomTemplate(res.aoa, res.name);
-        else setLookupTable(res.aoa, res.name);
+        else if (kind === "lookup") setLookupTable(res.aoa, res.name);
+        else setExportTemplate(res.aoa, res.name);
       })
       .catch(function (err) {
         toast("读取表格失败：" + (err.message || err));
@@ -1267,11 +1592,13 @@
       .then(function (text) {
         const got = readTableText(text, name);
         if (kind === "bom") setBomTemplate(got.aoa, name);
-        else setLookupTable(got.aoa, name);
+        else if (kind === "lookup") setLookupTable(got.aoa, name);
+        else setExportTemplate(got.aoa, name);
       })
       .catch(function () {
         if (kind === "bom") setBomTemplate(fallback, name);
-        else setLookupTable(fallback, name);
+        else if (kind === "lookup") setLookupTable(fallback, name);
+        else setExportTemplate(fallback, name);
       });
   }
 
@@ -1282,6 +1609,7 @@
     renderDocs();
     renderWarnings();
     renderBom();
+    renderExport();
     savePrefs();
   }
 
@@ -1531,6 +1859,32 @@
         }
         computeBomRows();
         renderBomTable();
+        renderExport();
+        savePrefs();
+        return;
+      }
+      if (t.dataset && t.dataset.exHeader) {
+        const m = state.exportMaps.find(function (x) {
+          return x.header === t.dataset.exHeader;
+        });
+        if (!m) return;
+        const prop = t.dataset.exProp;
+        m[prop] = t.value;
+        if (prop === "mode") {
+          m.value = "";
+          renderExportMapTable();
+        }
+        renderFinalExportTable();
+        savePrefs();
+        return;
+      }
+      if (t.id === "skipEnabled" || t.id === "skipEmpty" || t.id === "skipZero" || t.id === "skipColumn") {
+        state.skipRule = state.skipRule || { enabled: false, column: "计算数量", empty: true, zero: true };
+        if (t.id === "skipEnabled") state.skipRule.enabled = t.checked;
+        if (t.id === "skipEmpty") state.skipRule.empty = t.checked;
+        if (t.id === "skipZero") state.skipRule.zero = t.checked;
+        if (t.id === "skipColumn") state.skipRule.column = t.value;
+        renderFinalExportTable();
         savePrefs();
       }
     });
@@ -1549,6 +1903,17 @@
         m.value = t.value;
         computeBomRows();
         renderBomTable();
+        renderExport();
+        savePrefs();
+        return;
+      }
+      if (t.dataset && t.dataset.exHeader && t.dataset.exProp === "value") {
+        const m = state.exportMaps.find(function (x) {
+          return x.header === t.dataset.exHeader;
+        });
+        if (!m) return;
+        m.value = t.value;
+        renderFinalExportTable();
         savePrefs();
         return;
       }
@@ -1753,6 +2118,7 @@
       }
       computeBomRows();
       renderBomTable();
+      renderExport();
       toast(state.bomRows.length ? "已按勾选行计算 BOM" : "勾选行后没有算出子件");
     });
     $("btnBomXlsx").addEventListener("click", exportBomXlsx);
@@ -1782,6 +2148,21 @@
     bindDropzone("lookupDrop", "lookupFile", function (files) {
       handleTableFiles(files, "lookup");
     });
+    bindDropzone("exportDrop", "exportFile", function (files) {
+      handleTableFiles(files, "export");
+    });
+    $("btnExportSample").addEventListener("click", function () {
+      loadSampleCsv("samples/export-template.csv", SAMPLE_EXPORT_AOA, "export-template.csv", "export");
+    });
+    $("btnExportFromBom").addEventListener("click", setExportFromBomHeaders);
+    $("btnClearExportTpl").addEventListener("click", function () {
+      state.exportTemplate = null;
+      state.exportMaps = [];
+      render();
+      toast("已清除导出模板");
+    });
+    $("btnFinalXlsx").addEventListener("click", exportFinalXlsx);
+    $("btnFinalCsv").addEventListener("click", exportFinalCsv);
     $("btnDemo").addEventListener("click", function () {
       if (!window.DEMO_DATA) {
         toast("没有样张数据");

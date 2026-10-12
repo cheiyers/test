@@ -273,6 +273,9 @@
     if (extras.varMaps) snap.varMaps = extras.varMaps;
     if (extras.lookupTable) snap.lookupTable = extras.lookupTable;
     if (extras.lookupKey) snap.lookupKey = extras.lookupKey;
+    if (extras.exportTemplate) snap.exportTemplate = extras.exportTemplate;
+    if (extras.exportMaps) snap.exportMaps = extras.exportMaps;
+    if (extras.skipRule) snap.skipRule = extras.skipRule;
     return snap;
   }
 

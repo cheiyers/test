@@ -110,4 +110,39 @@ const x1 = excelRows.find(function (r) { return r.行项目 === "00020"; });
 if (!x4 || String(x4.计算数量) !== "5") fail("IFS ROUNDUP qty4", x4);
 if (!x1 || String(x1.计算数量) !== "1") fail("IFS qty1", x1);
 
+if (!screw1._orderId) fail("bom _orderId", screw1);
+const expTpl = bom.parseExportTemplate([["物料编码", "物料名称", "数量", "采购订单号", "物料描述", "备注列"]]);
+if (expTpl.headers[0] !== "物料编码") fail("export headers", expTpl.headers);
+const bomHeads = bom.resultHeaders(tpl, lookup);
+const expMaps = bom.mergeExportMaps(expTpl.headers, [], bomHeads, []);
+function mapOf(h) { return expMaps.find(function (m) { return m.header === h; }); }
+if (!mapOf("物料编码") || mapOf("物料编码").value !== "子件料号") fail("guess 物料编码", mapOf("物料编码"));
+if (!mapOf("数量") || mapOf("数量").value !== "计算数量") fail("guess 数量", mapOf("数量"));
+if (!mapOf("物料描述") || mapOf("物料描述").mode !== "order" || mapOf("物料描述").value !== "description") fail("guess 物料描述", mapOf("物料描述"));
+expMaps.find(function (m) { return m.header === "备注列"; }).mode = "const";
+expMaps.find(function (m) { return m.header === "备注列"; }).value = "固定";
+
+const orderById = {};
+orderRows.forEach(function (r) {
+  r.description = r.lineNo === "00010" ? "Edge light灯组件" : "套管";
+  orderById[r.id] = r;
+});
+const exported = bom.applyExport(rows, orderById, [], expMaps);
+const expScrew = exported.find(function (r) { return r.物料编码 === "SCREW-M6" && r.采购订单号 === "4550711151" && rows.find(function (b) { return b._rowId === r._rowId; }).行项目 === "00010"; });
+if (!expScrew) fail("export screw row", exported.slice(0, 3));
+if (String(expScrew.数量) !== "4") fail("export qty", expScrew);
+if (expScrew.物料描述 !== "Edge light灯组件") fail("export order desc", expScrew);
+if (expScrew.备注列 !== "固定") fail("export const", expScrew);
+
+const withZero = exported.concat([{ 物料编码: "ZERO", 数量: "0", 物料描述: "x" }, { 物料编码: "EMPTY", 数量: "", 物料描述: "y" }]);
+const skipped = bom.filterExportRows(withZero, { enabled: true, column: "数量", empty: true, zero: true });
+if (skipped.some(function (r) { return r.物料编码 === "ZERO" || r.物料编码 === "EMPTY"; })) fail("skip zero/empty", skipped);
+const kept = bom.filterExportRows(withZero, { enabled: false, column: "数量", empty: true, zero: true });
+if (kept.length !== withZero.length) fail("skip disabled should keep all", kept.length);
+const onlyEmpty = bom.filterExportRows(withZero, { enabled: true, column: "数量", empty: true, zero: false });
+if (!onlyEmpty.some(function (r) { return r.物料编码 === "ZERO"; }) || onlyEmpty.some(function (r) { return r.物料编码 === "EMPTY"; })) fail("skip empty only", onlyEmpty);
+
+const matrix = bom.exportMatrix(exported, expMaps);
+if (matrix[0][0] !== "物料编码" || matrix.length !== exported.length + 1) fail("export matrix", matrix[0]);
+
 console.log("OK bom template vars compute lookup");

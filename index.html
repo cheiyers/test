@@ -73,7 +73,7 @@
       </div>
       <div class="scheme-bar">
         <h3>导出方案</h3>
-        <p class="hint">保存当前勾选的字段、自定义关键字、列顺序、列名与格式，以及下方 BOM 模板、变量映射和料号对照，下次直接应用。</p>
+        <p class="hint">保存当前勾选的字段、自定义关键字、列顺序、列名与格式，以及 BOM 模板、变量映射、料号对照和最终导出模板列对应，下次直接应用。</p>
         <div class="actions">
           <input id="schemeName" type="text" placeholder="方案名称，例如 物料对账">
           <button type="button" id="btnSaveScheme">保存方案</button>
@@ -108,9 +108,10 @@
     </section>
 
     <section class="panel">
-      <h2>5. 输出表格 · 点击列设置格式</h2>
+      <h2>5. 识别行预览 · 点击列设置格式</h2>
       <p class="hint">
-        只输出上方勾选的行。<strong>点击表头</strong>改列名和格式，<strong>拖动左侧手柄</strong>或用左移 / 右移调整列顺序。格式用 <code>{字段名}</code>，以 <code>=</code> 开头计算，例如
+        这里是勾选订单行的预览，不含 BOM 展开。最终导出请到第 7 步按模板输出 BOM 计算结果。
+        <strong>点击表头</strong>改列名和格式，<strong>拖动左侧手柄</strong>或用左移 / 右移调整列顺序。格式用 <code>{字段名}</code>，以 <code>=</code> 开头计算，例如
         <code>={数量}*2</code>、<code>=IF({数量}&gt;3,"大","小")</code>、<code>=IFS(AND({数量}&gt;=4,TRUE),ROUNDUP({数量}*1.1,0),TRUE,{数量})</code>、<code>=TEXT({凭证日期},"yyyy-mm-dd")</code>、<code>=TEXT({凭证日期},"yyyy/m/d")</code>、<code>{物料描述}&amp;" / "&amp;{图号/版本}</code>。
         与 Excel 相近的常用函数（含中文名如 <code>如果</code>、<code>求和</code>）均可用于列格式和 BOM 备注。
       </p>
@@ -181,6 +182,50 @@
         <span class="meta" id="bomCount"></span>
       </div>
       <div class="table-wrap" id="bomTable"></div>
+    </section>
+
+    <section class="panel" id="exportPanel">
+      <h2>7. 最终导出 · 模板表头与 BOM 列对应</h2>
+      <p class="hint">
+        导出内容是上方 BOM 计算后的每一行（一行订单展开为多个子件，对照行接在后面）。
+        可上传带表头的 Excel/CSV 作为导出模板；每列对应 BOM 计算结果、识别订单列、公式或固定值。
+        也可指定某列为空或为 0 时不导出该行，或选择仍然导出。
+      </p>
+      <div class="field-block">
+        <h3>导出模板（表头）</h3>
+        <div class="dropzone" id="exportDrop">
+          <strong>拖入表头 Excel / CSV，或点击选择</strong>
+          <span>只读第一行作为导出列名</span>
+        </div>
+        <input id="exportFile" type="file" accept=".xlsx,.xls,.csv,text/csv" hidden>
+        <div class="actions" style="margin-top:8px">
+          <button type="button" class="ghost" id="btnExportSample">加载示例表头</button>
+          <button type="button" class="ghost" id="btnExportFromBom">按 BOM 表头生成</button>
+          <button type="button" class="ghost" id="btnClearExportTpl">清除模板</button>
+        </div>
+        <div class="hint" id="exportTplHint" style="margin-top:8px"></div>
+      </div>
+      <h3>列对应</h3>
+      <p class="hint">模板每一列可对应 BOM 计算列、识别订单列、公式或固定值。</p>
+      <div class="table-wrap" id="exportMapTable"></div>
+      <div class="filter-bar skip-bar">
+        <label class="chk">
+          <input id="skipEnabled" type="checkbox">
+          下列列为空或为 0 时不导出该行
+        </label>
+        <label>检查列
+          <select id="skipColumn" aria-label="跳过行检查列"></select>
+        </label>
+        <label class="chk"><input id="skipEmpty" type="checkbox" checked> 空</label>
+        <label class="chk"><input id="skipZero" type="checkbox" checked> 为 0</label>
+        <span class="hint" style="margin:0">关闭则空值和 0 也导出。</span>
+      </div>
+      <div class="actions" style="margin:12px 0">
+        <button type="button" id="btnFinalXlsx">导出 Excel</button>
+        <button type="button" class="secondary" id="btnFinalCsv">导出 CSV</button>
+        <span class="meta" id="exportCount"></span>
+      </div>
+      <div class="table-wrap" id="finalExportTable"></div>
     </section>
 
   </main>

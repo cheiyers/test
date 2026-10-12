@@ -247,6 +247,7 @@
         const rec = {
           _kind: "bom",
           _rowId: (row.id || "") + "-bom-" + ri,
+          _orderId: row.id || "",
           来源: "BOM模板",
           采购订单号: row.poNumber || "",
           行项目: row.lineNo || "",
@@ -279,6 +280,7 @@
             const rec = {
               _kind: "lookup",
               _rowId: (row.id || "") + "-lk-" + li,
+              _orderId: row.id || "",
               来源: "料号对照",
               采购订单号: row.poNumber || "",
               行项目: row.lineNo || "",
@@ -320,6 +322,157 @@
     return [cols].concat(body);
   }
 
+  const EXPORT_ALIASES = {
+    物料编码: "子件料号",
+    子件编码: "子件料号",
+    料号: "子件料号",
+    编码: "子件料号",
+    物料名称: "子件描述",
+    子件名称: "子件描述",
+    名称: "子件描述",
+    描述: "子件描述",
+    数量: "计算数量",
+    用量: "计算数量",
+    需求数量: "计算数量",
+    计算用量: "计算数量",
+    订单号: "采购订单号",
+    PO: "采购订单号",
+    采购订单: "采购订单号",
+    行号: "行项目",
+    行项目号: "行项目",
+    母件料号: "订单物料号",
+    订单物料: "订单物料号",
+    订单料号: "订单物料号",
+  };
+
+  function parseExportTemplate(aoa, name) {
+    const lines = (aoa || []).filter(nonemptyRow);
+    if (!lines.length) return { name: name || "", headers: [] };
+    const headers = [];
+    const seen = {};
+    (lines[0] || []).forEach(function (h) {
+      const t = cellText(h);
+      if (!t) return;
+      let label = t;
+      let n = 2;
+      while (seen[label]) {
+        label = t + "_" + n;
+        n++;
+      }
+      seen[label] = true;
+      headers.push(label);
+    });
+    return { name: name || "", headers: headers };
+  }
+
+  function guessExportMap(header, bomHeaders, extraKeywords) {
+    const h = cellText(header);
+    const heads = bomHeaders || [];
+    if (heads.indexOf(h) >= 0) return { header: h, mode: "bom", value: h };
+    const alias = EXPORT_ALIASES[h];
+    if (alias && heads.indexOf(alias) >= 0) return { header: h, mode: "bom", value: alias };
+    const F = Fields();
+    const field = F ? F.resolveKeyword(h) : null;
+    if (field && F && F.isBuiltinId(field.id)) {
+      if (heads.indexOf(field.label) >= 0) return { header: h, mode: "bom", value: field.label };
+      return { header: h, mode: "order", value: field.id };
+    }
+    const extra = (extraKeywords || []).find(function (k) {
+      return k && (k.label === h || k.id === h);
+    });
+    if (extra) return { header: h, mode: "order", value: extra.id || extra.label };
+    return { header: h, mode: "bom", value: "" };
+  }
+
+  function mergeExportMaps(headers, existing, bomHeaders, extraKeywords) {
+    const prev = {};
+    (existing || []).forEach(function (m) {
+      if (m && m.header) prev[m.header] = m;
+    });
+    return (headers || []).map(function (h) {
+      if (prev[h] && prev[h].mode) {
+        return { header: h, mode: prev[h].mode, value: prev[h].value || "" };
+      }
+      return guessExportMap(h, bomHeaders, extraKeywords);
+    });
+  }
+
+  function isEmptyCell(v) {
+    if (v == null) return true;
+    const s = String(v).trim();
+    return !s || s === "—" || s === "-";
+  }
+
+  function isZeroCell(v) {
+    if (isEmptyCell(v)) return false;
+    const Fml = Formula();
+    const n = Fml && Fml.parseNumber ? Fml.parseNumber(v) : Number(String(v).replace(/,/g, ""));
+    return n === 0;
+  }
+
+  function shouldSkipRow(value, skipRule) {
+    const rule = skipRule || {};
+    if (!rule.enabled) return false;
+    const empty = rule.empty !== false;
+    const zero = rule.zero !== false;
+    if (empty && isEmptyCell(value)) return true;
+    if (zero && isZeroCell(value)) return true;
+    return false;
+  }
+
+  function filterExportRows(rows, skipRule) {
+    const rule = skipRule || {};
+    if (!rule.enabled) return rows || [];
+    const col = rule.column || "计算数量";
+    return (rows || []).filter(function (row) {
+      return !shouldSkipRow(row[col], rule);
+    });
+  }
+
+  function applyExport(bomRows, orderById, extraKeywords, maps) {
+    const F = Fields();
+    const Fml = Formula();
+    return (bomRows || []).map(function (bom) {
+      const order = (orderById && bom._orderId && orderById[bom._orderId]) || {};
+      const orderCtx = F ? F.rowContext(order, extraKeywords) : {};
+      const ctx = Object.assign({}, orderCtx, bom);
+      const out = {
+        _rowId: bom._rowId,
+        _kind: bom._kind,
+        _orderId: bom._orderId || "",
+      };
+      (maps || []).forEach(function (m) {
+        if (!m || !m.header) return;
+        if (m.mode === "const") {
+          out[m.header] = m.value == null ? "" : String(m.value);
+          return;
+        }
+        if (m.mode === "formula") {
+          out[m.header] = Fml ? Fml.stringify(Fml.evaluate(m.value || "", ctx)) : String(m.value || "");
+          return;
+        }
+        if (m.mode === "order") {
+          const field = F ? F.fieldById(m.value, extraKeywords) || F.resolveKeyword(m.value) : null;
+          out[m.header] = field && F ? F.fieldValue(order, field) : ctx[m.value] || "";
+          return;
+        }
+        const key = m.value || m.header;
+        out[m.header] = bom[key] != null && bom[key] !== "" ? String(bom[key]) : ctx[key] != null ? String(ctx[key]) : "";
+      });
+      return out;
+    });
+  }
+
+  function exportMatrix(rows, maps) {
+    const headers = (maps || []).map(function (m) { return m.header; });
+    const body = (rows || []).map(function (row) {
+      return headers.map(function (h) {
+        return row[h] == null ? "" : String(row[h]);
+      });
+    });
+    return [headers].concat(body);
+  }
+
   const api = {
     parseCsv: parseCsv,
     parseTemplate: parseTemplate,
@@ -332,6 +485,15 @@
     resultHeaders: resultHeaders,
     toMatrix: toMatrix,
     isFormulaCell: isFormulaCell,
+    parseExportTemplate: parseExportTemplate,
+    guessExportMap: guessExportMap,
+    mergeExportMaps: mergeExportMaps,
+    isEmptyCell: isEmptyCell,
+    isZeroCell: isZeroCell,
+    shouldSkipRow: shouldSkipRow,
+    filterExportRows: filterExportRows,
+    applyExport: applyExport,
+    exportMatrix: exportMatrix,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.PoBom = api;

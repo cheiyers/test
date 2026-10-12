@@ -233,6 +233,26 @@ if (!schemeBom.lookupTable || schemeBom.lookupKey !== "物料号") {
   console.error("scheme lookup", schemeBom.lookupTable, schemeBom.lookupKey);
   process.exit(1);
 }
+
+const schemeExp = fields.captureScheme(
+  "导出方案",
+  ["poNumber"],
+  [],
+  [],
+  {
+    exportTemplate: { name: "out.csv", headers: ["物料编码", "数量"] },
+    exportMaps: [{ header: "物料编码", mode: "bom", value: "子件料号" }],
+    skipRule: { enabled: true, column: "数量", empty: true, zero: true },
+  }
+);
+if (!schemeExp.exportTemplate || schemeExp.exportMaps[0].value !== "子件料号") {
+  console.error("scheme export", schemeExp);
+  process.exit(1);
+}
+if (!schemeExp.skipRule || !schemeExp.skipRule.enabled) {
+  console.error("scheme skip", schemeExp.skipRule);
+  process.exit(1);
+}
 const clonedBom = fields.cloneScheme(schemeBom);
 clonedBom.varMaps[0].value = "mutated";
 if (schemeBom.varMaps[0].value !== "qty") {

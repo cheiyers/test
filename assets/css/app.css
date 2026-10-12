@@ -396,6 +396,8 @@ tr.bom-lookup td { background: #fffbeb; }
 }
 .var-map-table td.mode { min-width: 110px; }
 .var-map-table td.value { min-width: 220px; }
+.skip-bar { margin: 12px 0; }
+.skip-bar .chk { margin-right: 8px; }
 
 .scheme-bar {
   margin-top: 14px;
