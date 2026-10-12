@@ -369,7 +369,25 @@
     return aoa;
   }
 
+  function isCsvName(name, mime) {
+    return /\.csv$/i.test(name || "") || mime === "text/csv" || mime === "text/plain";
+  }
+
+  function aoaFromText(text, name) {
+    if (B && B.parseCsv && (isCsvName(name) || !window.XLSX)) {
+      return B.parseCsv(text);
+    }
+    if (!window.XLSX) throw new Error("未加载表格组件");
+    const wb = XLSX.read(text, { type: "string", raw: false });
+    return sheetToAoa(wb);
+  }
+
   function readTableFile(file) {
+    if (isCsvName(file.name, file.type)) {
+      return file.text().then(function (text) {
+        return { name: file.name, aoa: aoaFromText(text, file.name) };
+      });
+    }
     return file.arrayBuffer().then(function (buf) {
       if (!window.XLSX) throw new Error("未加载表格组件");
       const wb = XLSX.read(new Uint8Array(buf), { type: "array", cellFormula: true, raw: false });
@@ -378,9 +396,7 @@
   }
 
   function readTableText(text, name) {
-    if (!window.XLSX) throw new Error("未加载表格组件");
-    const wb = XLSX.read(text, { type: "string", raw: false });
-    return { name: name || "", aoa: sheetToAoa(wb) };
+    return { name: name || "", aoa: aoaFromText(text, name) };
   }
 
   function recognizedSample(field) {

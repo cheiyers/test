@@ -25,6 +25,81 @@
     });
   }
 
+  function unbalanced(s) {
+    let p = 0;
+    let b = 0;
+    const t = String(s || "");
+    for (let i = 0; i < t.length; i++) {
+      if (t[i] === "(") p++;
+      else if (t[i] === ")") p--;
+      else if (t[i] === "{") b++;
+      else if (t[i] === "}") b--;
+    }
+    return p > 0 || b > 0;
+  }
+
+  function joinSplitFormulas(row) {
+    const out = [];
+    for (let i = 0; i < (row || []).length; i++) {
+      let cell = row[i] == null ? "" : String(row[i]);
+      if (cell.charAt(0) === "=" && unbalanced(cell)) {
+        while (i + 1 < row.length && unbalanced(cell)) {
+          i++;
+          cell += "," + (row[i] == null ? "" : String(row[i]));
+        }
+      }
+      out.push(cell);
+    }
+    return out;
+  }
+
+  function parseCsv(text) {
+    const s = String(text || "").replace(/^\ufeff/, "");
+    const rows = [];
+    let row = [];
+    let cur = "";
+    let inQuotes = false;
+    for (let i = 0; i < s.length; i++) {
+      const c = s[i];
+      if (inQuotes) {
+        if (c === '"') {
+          if (s[i + 1] === '"') {
+            cur += '"';
+            i++;
+          } else {
+            inQuotes = false;
+          }
+        } else {
+          cur += c;
+        }
+        continue;
+      }
+      if (c === '"') {
+        inQuotes = true;
+        continue;
+      }
+      if (c === ",") {
+        row.push(cur);
+        cur = "";
+        continue;
+      }
+      if (c === "\n") {
+        row.push(cur);
+        rows.push(joinSplitFormulas(row));
+        row = [];
+        cur = "";
+        continue;
+      }
+      if (c === "\r") continue;
+      cur += c;
+    }
+    if (cur !== "" || row.length) {
+      row.push(cur);
+      rows.push(joinSplitFormulas(row));
+    }
+    return rows.filter(nonemptyRow);
+  }
+
   function parseTemplate(aoa, name) {
     const lines = (aoa || []).filter(nonemptyRow);
     if (!lines.length) {
@@ -246,6 +321,7 @@
   }
 
   const api = {
+    parseCsv: parseCsv,
     parseTemplate: parseTemplate,
     parseLookup: parseLookup,
     collectVariables: collectVariables,

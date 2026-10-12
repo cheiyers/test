@@ -10,6 +10,8 @@ function fail(msg, extra) {
   process.exit(1);
 }
 
+const fs = require("fs");
+
 const names = formula.extractNames("=IF(VALUE({轿厢宽度})>1400,2,1)*数量");
 if (names.indexOf("轿厢宽度") < 0 || names.indexOf("数量") < 0) fail("extractNames", names);
 if (names.indexOf("IF") >= 0 || names.indexOf("VALUE") >= 0) fail("reserved leaked", names);
@@ -80,5 +82,14 @@ const screwConst = constRows.find(function (r) { return r.子件料号 === "SCRE
 const ledConst = constRows.find(function (r) { return r.子件料号 === "LED-CORE"; });
 if (!screwConst || String(screwConst.计算数量) !== "12") fail("const qty", screwConst);
 if (!ledConst || String(ledConst.计算数量) !== "3") fail("formula cabin qty", ledConst);
+
+const csvQuoted = bom.parseCsv('子件料号,备注\nX,"=IF(VALUE({轿厢宽度})>1400,2,1)*数量"\n');
+if (csvQuoted[1][1] !== "=IF(VALUE({轿厢宽度})>1400,2,1)*数量") fail("quoted csv formula", csvQuoted);
+const csvBare = bom.parseCsv("子件料号,备注\nX,=IF(VALUE({轿厢宽度})>1400,2,1)*数量\n");
+if (csvBare[1][1] !== "=IF(VALUE({轿厢宽度})>1400,2,1)*数量") fail("unquoted csv formula join", csvBare);
+const sampleCsv = bom.parseCsv(fs.readFileSync(path.join(__dirname, "../samples/bom-template.csv"), "utf8"));
+const sampleTpl = bom.parseTemplate(sampleCsv, "bom-template.csv");
+if (sampleTpl.variables.indexOf("轿厢宽度") < 0) fail("sample csv vars", sampleTpl);
+if (sampleTpl.rows[2][3].indexOf("IF") < 0) fail("sample csv LED formula", sampleTpl.rows[2]);
 
 console.log("OK bom template vars compute lookup");
