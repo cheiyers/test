@@ -145,4 +145,78 @@ if (!onlyEmpty.some(function (r) { return r.物料编码 === "ZERO"; }) || onlyE
 const matrix = bom.exportMatrix(exported, expMaps);
 if (matrix[0][0] !== "物料编码" || matrix.length !== exported.length + 1) fail("export matrix", matrix[0]);
 
+const duped = rows.concat(rows);
+if (bom.uniqueRows(duped).length !== rows.length) fail("uniqueRows", bom.uniqueRows(duped).length);
+const exportedDup = bom.applyExport(duped, orderById, [], expMaps, orderRows);
+if (exportedDup.length !== exported.length) fail("applyExport unique", exportedDup.length);
+
+const orphan = Object.assign({}, screw1);
+delete orphan._orderId;
+orphan._orderSnapshot = bom.orderSnapshot(orderRows[0]);
+const resolved = bom.resolveOrder(orphan, {}, orderRows);
+if (!resolved || resolved.lineNo !== "00010") fail("resolveOrder fallback", resolved);
+if (resolved.description !== "Edge light灯组件") fail("resolveOrder desc", resolved);
+
+const descByLine = {};
+exported.forEach(function (r) {
+  const src = rows.find(function (b) { return b._rowId === r._rowId; });
+  if (!src) return;
+  descByLine[src.行项目] = r.物料描述;
+});
+if (descByLine["00010"] !== "Edge light灯组件") fail("order col line 00010", descByLine);
+if (descByLine["00030"] !== "套管") fail("order col line 00030", descByLine);
+
+const dupMaps = bom.mergeExportMaps(
+  ["物料编码", "物料编码", "数量"],
+  [{ header: "物料编码", mode: "const", value: "keep" }, { header: "物料编码", mode: "const", value: "dup" }],
+  [],
+  []
+);
+if (dupMaps.length !== 2 || dupMaps[0].header !== "物料编码" || dupMaps[1].header !== "数量") fail("merge dup headers", dupMaps);
+if (dupMaps[0].value !== "keep") fail("merge keep first", dupMaps[0]);
+if (bom.uniqueExportMaps(dupMaps.concat(dupMaps)).length !== 2) fail("uniqueExportMaps", bom.uniqueExportMaps(dupMaps.concat(dupMaps)));
+
+const tpl2 = bom.parseTemplate([
+  ["子件料号", "备注"],
+  ["NUT-M6", "=数量*2"],
+]);
+const lib = bom.normalizeLibrary([
+  { id: "a", name: "one.csv", template: tpl },
+  { id: "a", name: "dup.csv", template: tpl },
+  { id: "b", name: "two.csv", template: tpl2 },
+]);
+if (lib.length !== 2) fail("normalize dedupe", lib);
+const legacy = bom.normalizeLibrary(null, tpl);
+if (legacy.length !== 1 || legacy[0].id !== "bom-legacy") fail("legacy migrate", legacy);
+const libRows = bom.computeLibrary(orderRows, lib, varMaps, [{ id: "kw-轿厢宽度", label: "轿厢宽度" }], lookup);
+const libBom = libRows.filter(function (r) { return r._kind === "bom"; });
+const libLk = libRows.filter(function (r) { return r._kind === "lookup"; });
+if (libBom.length !== 6) fail("library bom count", libBom.length);
+if (libLk.length !== 2) fail("library lookup once per order", libLk.length);
+const nut = libBom.find(function (r) { return r.子件料号 === "NUT-M6" && r.行项目 === "00030"; });
+if (!nut || String(nut.计算数量) !== "8") fail("second BOM qty", nut);
+if (!nut.BOM模板) fail("BOM模板 stamped", nut);
+const libHeads = bom.libraryResultHeaders(lib, lookup);
+if (libHeads.indexOf("BOM模板") < 0) fail("library headers", libHeads);
+const oneLibHeads = bom.libraryResultHeaders([lib[0]], lookup);
+if (oneLibHeads.indexOf("BOM模板") >= 0) fail("single library should omit BOM模板", oneLibHeads);
+const disabledLib = lib.map(function (item, i) {
+  return Object.assign({}, item, { enabled: i === 0 });
+});
+const disabledRows = bom.computeLibrary([orderRows[0]], disabledLib, varMaps, [{ id: "kw-轿厢宽度", label: "轿厢宽度" }], null);
+if (disabledRows.some(function (r) { return r.子件料号 === "NUT-M6"; })) fail("disabled template still computed", disabledRows);
+if (bom.libraryVariables(lib).indexOf("数量") < 0) fail("library vars", bom.libraryVariables(lib));
+
+const noIdRows = bom.applyExport(
+  [
+    { 采购订单号: "4550711151", 行项目: "00010", 子件料号: "SCREW-M6", 计算数量: "4", _orderSnapshot: orderRows[0] },
+    { 采购订单号: "4550711151", 行项目: "00030", 子件料号: "SCREW-M6", 计算数量: "16", _orderSnapshot: orderRows[1] },
+  ],
+  {},
+  [],
+  [{ header: "物料描述", mode: "order", value: "description" }, { header: "行项目", mode: "bom", value: "行项目" }],
+  orderRows
+);
+if (noIdRows[0].物料描述 !== "Edge light灯组件" || noIdRows[1].物料描述 !== "套管") fail("order map without _orderId", noIdRows);
+
 console.log("OK bom template vars compute lookup");

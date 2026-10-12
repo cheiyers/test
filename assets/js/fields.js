@@ -276,6 +276,7 @@
     if (extras.exportTemplate) snap.exportTemplate = extras.exportTemplate;
     if (extras.exportMaps) snap.exportMaps = extras.exportMaps;
     if (extras.skipRule) snap.skipRule = extras.skipRule;
+    if (extras.bomLibrary) snap.bomLibrary = extras.bomLibrary;
     return snap;
   }
 

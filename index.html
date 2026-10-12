@@ -73,7 +73,7 @@
       </div>
       <div class="scheme-bar">
         <h3>导出方案</h3>
-        <p class="hint">保存当前勾选的字段、自定义关键字、列顺序、列名与格式，以及 BOM 模板、变量映射、料号对照和最终导出模板列对应，下次直接应用。</p>
+        <p class="hint">保存当前勾选的字段、自定义关键字、列顺序、列名与格式，以及 BOM 列表、变量映射、料号对照和最终导出模板列对应，下次直接应用（替换列表，不会追加重复）。</p>
         <div class="actions">
           <input id="schemeName" type="text" placeholder="方案名称，例如 物料对账">
           <button type="button" id="btnSaveScheme">保存方案</button>
@@ -137,23 +137,24 @@
     <section class="panel" id="bomPanel">
       <h2>6. BOM 子件用量 · 公式模板与料号对照</h2>
       <p class="hint">
-        导入带<strong>备注 / 公式</strong>列的表格模板，自动识别公式中的变量。每个变量可映射到识别结果的某一列、一条公式，或固定值。
+        可上传多份 BOM 模板（带<strong>备注 / 公式</strong>列），列表里可继续添加、替换或删除。公式中的变量可映射到识别列、公式或固定值。
         备注公式支持 Excel 常用函数（<code>IF</code> / <code>IFS</code> / <code>AND</code> / <code>ROUNDUP</code> / <code>VALUE</code> / <code>CONVERT</code> 等，也可用 <code>如果</code>、<code>求和</code>）。
-        对上方勾选的每一行订单算出各子件数量。可选再导入一张<strong>料号对照表</strong>：匹配到该行物料号的数据会接在该订单 BOM 下方。映射随导出方案一起保存。
+        对上方勾选的每一行订单，按勾选的 BOM 算出各子件数量。计算结果在框内滚动查看。可选再导入一张<strong>料号对照表</strong>：匹配到该行物料号的数据会接在该订单 BOM 下方。映射随导出方案一起保存。
       </p>
       <div class="bom-grid">
         <div class="field-block">
           <h3>BOM 模板</h3>
           <div class="dropzone" id="bomDrop">
             <strong>拖入 Excel / CSV，或点击选择</strong>
-            <span>表头含「备注」「公式」或单元格以 = 开头</span>
+            <span>可多次添加。表头含「备注」「公式」或单元格以 = 开头</span>
           </div>
-          <input id="bomFile" type="file" accept=".xlsx,.xls,.csv,text/csv" hidden>
+          <input id="bomFile" type="file" accept=".xlsx,.xls,.csv,text/csv" multiple hidden>
           <div class="actions" style="margin-top:8px">
             <button type="button" class="ghost" id="btnBomSample">加载示例模板</button>
-            <button type="button" class="ghost" id="btnClearBom">清除模板</button>
+            <button type="button" class="ghost" id="btnClearBom">清空列表</button>
           </div>
           <div class="hint" id="bomTplHint" style="margin-top:8px"></div>
+          <div class="bom-lib" id="bomLibrary"></div>
         </div>
         <div class="field-block">
           <h3>料号对照（可选）</h3>
@@ -181,14 +182,14 @@
         <button type="button" class="secondary" id="btnBomCsv">导出 BOM CSV</button>
         <span class="meta" id="bomCount"></span>
       </div>
-      <div class="table-wrap" id="bomTable"></div>
+      <div class="table-wrap scroll-pane" id="bomTable"></div>
     </section>
 
     <section class="panel" id="exportPanel">
       <h2>7. 最终导出 · 模板表头与 BOM 列对应</h2>
       <p class="hint">
-        导出内容是上方 BOM 计算后的每一行（一行订单展开为多个子件，对照行接在后面）。
-        可上传带表头的 Excel/CSV 作为导出模板；每列对应 BOM 计算结果、识别订单列、公式或固定值。
+        导出内容是上方 BOM 计算后的每一行（一行订单展开为多个子件，对照行接在后面）。预览在框内滚动，不一次铺开。
+        可上传带表头的 Excel/CSV 作为导出模板；每列对应 BOM 计算结果、识别订单列、公式或固定值。映射到识别订单列时，取该子件所属的那一行订单，不会把所有行写成同一份数据。
         也可指定某列为空或为 0 时不导出该行，或选择仍然导出。
       </p>
       <div class="field-block">
@@ -225,7 +226,7 @@
         <button type="button" class="secondary" id="btnFinalCsv">导出 CSV</button>
         <span class="meta" id="exportCount"></span>
       </div>
-      <div class="table-wrap" id="finalExportTable"></div>
+      <div class="table-wrap scroll-pane" id="finalExportTable"></div>
     </section>
 
   </main>

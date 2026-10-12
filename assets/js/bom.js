@@ -237,7 +237,35 @@
     return s;
   }
 
-  function compute(orderRows, template, varMaps, extraKeywords, lookup) {
+  function orderSnapshot(row) {
+    if (!row) return {};
+    const snap = {
+      id: row.id || "",
+      poNumber: row.poNumber || "",
+      lineNo: row.lineNo || "",
+      materialNo: row.materialNo || "",
+      materialGroup: row.materialGroup || "",
+      description: row.description || "",
+      qty: row.qty || "",
+      unit: row.unit || "",
+      unitPrice: row.unitPrice || "",
+      amount: row.amount || "",
+      documentDate: row.documentDate || "",
+      deliveryDate: row.deliveryDate || "",
+      supplierName: row.supplierName || "",
+      extras: Object.assign({}, row.extras || {}),
+    };
+    Object.keys(row).forEach(function (k) {
+      if (snap[k] != null && snap[k] !== "") return;
+      if (k.charAt(0) === "_") return;
+      const v = row[k];
+      if (v == null || typeof v === "object") return;
+      snap[k] = v;
+    });
+    return snap;
+  }
+
+  function compute(orderRows, template, varMaps, extraKeywords, lookup, templateId) {
     const out = [];
     const tpl = template || { headers: [], rows: [], formulaCols: [], qtyCol: -1 };
     const look = lookup && lookup.headers && lookup.headers.length ? lookup : null;
@@ -246,8 +274,10 @@
       (tpl.rows || []).forEach(function (cells, ri) {
         const rec = {
           _kind: "bom",
-          _rowId: (row.id || "") + "-bom-" + ri,
+          _rowId: (row.id || "") + "-" + (templateId || tpl.name || "bom") + "-" + ri,
           _orderId: row.id || "",
+          _orderKey: String(row.poNumber || "") + "\t" + String(row.lineNo || ""),
+          _orderSnapshot: orderSnapshot(row),
           来源: "BOM模板",
           采购订单号: row.poNumber || "",
           行项目: row.lineNo || "",
@@ -270,32 +300,135 @@
         }
         out.push(rec);
       });
-      if (look) {
-        const keyName = look.key || look.headers[0] || "";
-        const keyIdx = look.headers.indexOf(keyName);
-        const orderKey = String(row.materialNo || "").trim();
-        if (keyIdx >= 0 && orderKey) {
-          look.rows.forEach(function (cells, li) {
-            if (String(cells[keyIdx] || "").trim() !== orderKey) return;
-            const rec = {
-              _kind: "lookup",
-              _rowId: (row.id || "") + "-lk-" + li,
-              _orderId: row.id || "",
-              来源: "料号对照",
-              采购订单号: row.poNumber || "",
-              行项目: row.lineNo || "",
-              订单物料号: row.materialNo || "",
-              计算数量: "",
-            };
-            look.headers.forEach(function (h, i) {
-              if (h) rec[h] = cells[i] || "";
-            });
-            out.push(rec);
-          });
-        }
-      }
+      appendLookupRows(out, row, look);
     });
     return out;
+  }
+
+  function appendLookupRows(out, row, lookup) {
+    const look = lookup && lookup.headers && lookup.headers.length ? lookup : null;
+    if (!look || !row) return;
+    const keyName = look.key || look.headers[0] || "";
+    const keyIdx = look.headers.indexOf(keyName);
+    const orderKey = String(row.materialNo || "").trim();
+    if (keyIdx < 0 || !orderKey) return;
+    look.rows.forEach(function (cells, li) {
+      if (String(cells[keyIdx] || "").trim() !== orderKey) return;
+      const rec = {
+        _kind: "lookup",
+        _rowId: (row.id || "") + "-lk-" + li,
+        _orderId: row.id || "",
+        _orderKey: String(row.poNumber || "") + "\t" + String(row.lineNo || ""),
+        _orderSnapshot: orderSnapshot(row),
+        来源: "料号对照",
+        采购订单号: row.poNumber || "",
+        行项目: row.lineNo || "",
+        订单物料号: row.materialNo || "",
+        计算数量: "",
+      };
+      look.headers.forEach(function (h, i) {
+        if (h) rec[h] = cells[i] || "";
+      });
+      out.push(rec);
+    });
+  }
+
+  function makeLibraryItem(template, name, id) {
+    return {
+      id: id || ("bom-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8)),
+      name: name || (template && template.name) || "BOM",
+      enabled: true,
+      template: template,
+    };
+  }
+
+  function normalizeLibrary(library, fallbackTemplate) {
+    const seen = {};
+    const out = [];
+    function push(item) {
+      if (!item || !item.template || !item.template.rows || !item.template.rows.length) return;
+      let id = String(item.id || "");
+      if (id && seen[id]) return;
+      if (!id) {
+        id = "bom-" + out.length + "-" + String(item.name || item.template.name || "t");
+        let n = 2;
+        while (seen[id]) {
+          id = "bom-" + out.length + "-" + n;
+          n++;
+        }
+      }
+      seen[id] = true;
+      out.push({
+        id: id,
+        name: item.name || item.template.name || "BOM",
+        enabled: item.enabled !== false,
+        template: item.template,
+      });
+    }
+    (library || []).forEach(push);
+    if (!out.length && fallbackTemplate) {
+      push({ id: "bom-legacy", name: fallbackTemplate.name || "BOM", enabled: true, template: fallbackTemplate });
+    }
+    return out;
+  }
+
+  function libraryVariables(library) {
+    const seen = {};
+    const names = [];
+    normalizeLibrary(library).forEach(function (item) {
+      (item.template.variables || []).forEach(function (n) {
+        if (!n || seen[n]) return;
+        seen[n] = true;
+        names.push(n);
+      });
+    });
+    return names;
+  }
+
+  function enabledLibrary(library) {
+    return normalizeLibrary(library).filter(function (item) {
+      return item.enabled !== false;
+    });
+  }
+
+  function libraryResultHeaders(library, lookup) {
+    const items = enabledLibrary(library);
+    if (items.length <= 1) {
+      return resultHeaders(items[0] && items[0].template, lookup);
+    }
+    const seen = { 来源: 1, BOM模板: 1, 采购订单号: 1, 行项目: 1, 订单物料号: 1, 计算数量: 1 };
+    const heads = ["来源", "BOM模板", "采购订单号", "行项目", "订单物料号"];
+    function add(h) {
+      if (!h || seen[h]) return;
+      seen[h] = 1;
+      heads.push(h);
+    }
+    items.forEach(function (item) {
+      (item.template.headers || []).forEach(add);
+    });
+    ((lookup && lookup.headers) || []).forEach(add);
+    heads.push("计算数量");
+    return heads;
+  }
+
+  function computeLibrary(orderRows, library, varMaps, extraKeywords, lookup) {
+    const items = enabledLibrary(library);
+    if (!items.length) return [];
+    const out = [];
+    const multi = items.length > 1;
+    (orderRows || []).forEach(function (row) {
+      items.forEach(function (item) {
+        const part = compute([row], item.template, varMaps, extraKeywords, null, item.id);
+        part.forEach(function (r) {
+          r._templateId = item.id;
+          r._templateName = item.name;
+          if (multi) r.BOM模板 = item.name;
+          out.push(r);
+        });
+      });
+      appendLookupRows(out, row, lookup);
+    });
+    return uniqueRows(out);
   }
 
   function resultHeaders(template, lookup) {
@@ -387,14 +520,20 @@
   function mergeExportMaps(headers, existing, bomHeaders, extraKeywords) {
     const prev = {};
     (existing || []).forEach(function (m) {
-      if (m && m.header) prev[m.header] = m;
+      if (m && m.header && !prev[m.header]) prev[m.header] = m;
     });
-    return (headers || []).map(function (h) {
+    const seen = {};
+    const out = [];
+    (headers || []).forEach(function (h) {
+      if (!h || seen[h]) return;
+      seen[h] = true;
       if (prev[h] && prev[h].mode) {
-        return { header: h, mode: prev[h].mode, value: prev[h].value || "" };
+        out.push({ header: h, mode: prev[h].mode, value: prev[h].value || "" });
+      } else {
+        out.push(guessExportMap(h, bomHeaders, extraKeywords));
       }
-      return guessExportMap(h, bomHeaders, extraKeywords);
     });
+    return out;
   }
 
   function isEmptyCell(v) {
@@ -429,17 +568,69 @@
     });
   }
 
-  function applyExport(bomRows, orderById, extraKeywords, maps) {
+  function uniqueRows(rows) {
+    const seen = {};
+    return (rows || []).filter(function (row) {
+      if (!row) return false;
+      const id = row._rowId || [
+        row._kind || "",
+        row._templateId || "",
+        row.采购订单号 || "",
+        row.行项目 || "",
+        row.子件料号 || "",
+        row.对照料号 || "",
+        row.计算数量 || "",
+      ].join("\t");
+      if (seen[id]) return false;
+      seen[id] = true;
+      return true;
+    });
+  }
+
+  function uniqueExportMaps(maps) {
+    return mergeExportMaps(
+      (maps || []).map(function (m) {
+        return m && m.header;
+      }).filter(Boolean),
+      maps,
+      [],
+      []
+    );
+  }
+
+  function resolveOrder(bom, orderById, orderList) {
+    if (!bom) return {};
+    if (bom._orderId && orderById && orderById[bom._orderId]) return orderById[bom._orderId];
+    const list = orderList || (orderById ? Object.keys(orderById).map(function (k) { return orderById[k]; }) : []);
+    const key = bom._orderKey || (String(bom.采购订单号 || "") + "\t" + String(bom.行项目 || ""));
+    if (key && key !== "\t") {
+      for (let i = 0; i < list.length; i++) {
+        const k = String(list[i].poNumber || "") + "\t" + String(list[i].lineNo || "");
+        if (k === key) return list[i];
+      }
+    }
+    const po = String(bom.采购订单号 || "");
+    const line = String(bom.行项目 || "");
+    if (po && line) {
+      for (let i = 0; i < list.length; i++) {
+        if (String(list[i].poNumber || "") === po && String(list[i].lineNo || "") === line) return list[i];
+      }
+    }
+    return bom._orderSnapshot || {};
+  }
+
+  function applyExport(bomRows, orderById, extraKeywords, maps, orderList) {
     const F = Fields();
     const Fml = Formula();
-    return (bomRows || []).map(function (bom) {
-      const order = (orderById && bom._orderId && orderById[bom._orderId]) || {};
+    const rows = uniqueRows(bomRows);
+    return rows.map(function (bom) {
+      const order = resolveOrder(bom, orderById, orderList);
       const orderCtx = F ? F.rowContext(order, extraKeywords) : {};
       const ctx = Object.assign({}, orderCtx, bom);
       const out = {
         _rowId: bom._rowId,
         _kind: bom._kind,
-        _orderId: bom._orderId || "",
+        _orderId: order.id || bom._orderId || "",
       };
       (maps || []).forEach(function (m) {
         if (!m || !m.header) return;
@@ -453,11 +644,19 @@
         }
         if (m.mode === "order") {
           const field = F ? F.fieldById(m.value, extraKeywords) || F.resolveKeyword(m.value) : null;
-          out[m.header] = field && F ? F.fieldValue(order, field) : ctx[m.value] || "";
+          let val = field && F ? F.fieldValue(order, field) : (orderCtx[m.value] || "");
+          if ((val == null || val === "") && bom._orderSnapshot && field && F) {
+            val = F.fieldValue(bom._orderSnapshot, field);
+          }
+          out[m.header] = val;
           return;
         }
         const key = m.value || m.header;
-        out[m.header] = bom[key] != null && bom[key] !== "" ? String(bom[key]) : ctx[key] != null ? String(ctx[key]) : "";
+        if (bom[key] != null && bom[key] !== "") {
+          out[m.header] = String(bom[key]);
+          return;
+        }
+        out[m.header] = ctx[key] != null ? String(ctx[key]) : "";
       });
       return out;
     });
@@ -494,6 +693,16 @@
     filterExportRows: filterExportRows,
     applyExport: applyExport,
     exportMatrix: exportMatrix,
+    uniqueRows: uniqueRows,
+    uniqueExportMaps: uniqueExportMaps,
+    resolveOrder: resolveOrder,
+    orderSnapshot: orderSnapshot,
+    makeLibraryItem: makeLibraryItem,
+    normalizeLibrary: normalizeLibrary,
+    libraryVariables: libraryVariables,
+    enabledLibrary: enabledLibrary,
+    libraryResultHeaders: libraryResultHeaders,
+    computeLibrary: computeLibrary,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.PoBom = api;

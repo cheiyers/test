@@ -30,6 +30,8 @@
     rowFilter: "",
     rowFilterField: "",
     bomTemplate: null,
+    bomLibrary: [],
+    replacingBomId: null,
     varMaps: [],
     lookupTable: null,
     lookupKey: "",
@@ -153,6 +155,7 @@
         if (Array.isArray(p.extraKeywords)) state.extraKeywords = p.extraKeywords;
         if (Array.isArray(p.columns)) state.columns = p.columns;
         if (p.bomTemplate) state.bomTemplate = p.bomTemplate;
+        if (Array.isArray(p.bomLibrary)) state.bomLibrary = p.bomLibrary;
         if (Array.isArray(p.varMaps)) state.varMaps = p.varMaps;
         if (p.lookupTable) state.lookupTable = p.lookupTable;
         if (p.lookupKey) state.lookupKey = p.lookupKey;
@@ -170,6 +173,10 @@
     applyNormalized(
       F.normalizeKeywordsAndSelection(state.extraKeywords, Array.from(state.selectedFields))
     );
+    if (B) {
+      state.bomLibrary = B.normalizeLibrary(state.bomLibrary, state.bomTemplate);
+      syncPrimaryTemplate();
+    }
   }
 
   function savePrefs() {
@@ -180,6 +187,7 @@
         extraKeywords: state.extraKeywords,
         columns: state.columns,
         bomTemplate: state.bomTemplate,
+        bomLibrary: state.bomLibrary,
         varMaps: state.varMaps,
         lookupTable: state.lookupTable,
         lookupKey: state.lookupKey,
@@ -302,44 +310,68 @@
   function bomExtras() {
     return {
       bomTemplate: state.bomTemplate || null,
+      bomLibrary: B ? B.normalizeLibrary(state.bomLibrary, state.bomTemplate) : state.bomLibrary || [],
       varMaps: state.varMaps || [],
       lookupTable: state.lookupTable || null,
       lookupKey: state.lookupKey || "",
       exportTemplate: state.exportTemplate || null,
-      exportMaps: state.exportMaps || [],
+      exportMaps: B && B.uniqueExportMaps ? B.uniqueExportMaps(state.exportMaps || []) : state.exportMaps || [],
       skipRule: state.skipRule || { enabled: false, column: "计算数量", empty: true, zero: true },
     };
   }
 
+  function syncPrimaryTemplate() {
+    const lib = B ? B.normalizeLibrary(state.bomLibrary, null) : state.bomLibrary || [];
+    state.bomLibrary = lib;
+    const enabled = lib.filter(function (item) {
+      return item.enabled !== false;
+    });
+    const first = enabled[0] || lib[0] || null;
+    state.bomTemplate = first ? first.template : null;
+  }
+
   function applyBomExtras(snap) {
-    state.bomTemplate = snap && snap.bomTemplate ? snap.bomTemplate : null;
+    const lib = B
+      ? B.normalizeLibrary(snap && snap.bomLibrary, snap && snap.bomTemplate)
+      : (snap && Array.isArray(snap.bomLibrary) ? snap.bomLibrary : []);
+    state.bomLibrary = lib;
+    syncPrimaryTemplate();
     state.varMaps = snap && Array.isArray(snap.varMaps) ? snap.varMaps : [];
     state.lookupTable = snap && snap.lookupTable ? snap.lookupTable : null;
     state.lookupKey = snap && snap.lookupKey ? snap.lookupKey : (state.lookupTable && state.lookupTable.key) || "";
     state.exportTemplate = snap && snap.exportTemplate ? snap.exportTemplate : null;
     state.exportMaps = snap && Array.isArray(snap.exportMaps) ? snap.exportMaps : [];
+    if (B && B.uniqueExportMaps) state.exportMaps = B.uniqueExportMaps(state.exportMaps);
     state.skipRule = snap && snap.skipRule
       ? snap.skipRule
       : { enabled: false, column: "计算数量", empty: true, zero: true };
+    state.bomRows = [];
     syncBomMaps();
     syncExportMaps();
   }
 
   function syncBomMaps() {
-    if (!B || !state.bomTemplate) {
-      if (!state.bomTemplate) state.varMaps = [];
+    if (!B) return;
+    const vars = B.libraryVariables(state.bomLibrary);
+    if (!vars.length) {
+      if (!(state.bomLibrary || []).length) state.varMaps = [];
       return;
     }
-    state.varMaps = B.mergeVarMaps(state.bomTemplate.variables || [], state.varMaps, state.extraKeywords);
+    state.varMaps = B.mergeVarMaps(vars, state.varMaps, state.extraKeywords);
   }
 
   function bomHeaderList() {
     if (!B) return [];
+    if (B.libraryResultHeaders) return B.libraryResultHeaders(state.bomLibrary, activeLookup());
     return B.resultHeaders(state.bomTemplate, activeLookup());
   }
 
   function syncExportMaps() {
-    if (!B || !state.exportTemplate || !state.exportTemplate.headers || !state.exportTemplate.headers.length) {
+    if (!B) return;
+    if (state.exportMaps && state.exportMaps.length && B.uniqueExportMaps) {
+      state.exportMaps = B.uniqueExportMaps(state.exportMaps);
+    }
+    if (!state.exportTemplate || !state.exportTemplate.headers || !state.exportTemplate.headers.length) {
       return;
     }
     state.exportMaps = B.mergeExportMaps(
@@ -376,7 +408,14 @@
 
   function computeFinalExport() {
     if (!B || !state.exportMaps.length) return [];
-    const mapped = B.applyExport(state.bomRows || [], orderRowById(), state.extraKeywords, state.exportMaps);
+    const maps = B.uniqueExportMaps ? B.uniqueExportMaps(state.exportMaps) : state.exportMaps;
+    const mapped = B.applyExport(
+      B.uniqueRows(state.bomRows || []),
+      orderRowById(),
+      state.extraKeywords,
+      maps,
+      state.rows
+    );
     return B.filterExportRows(mapped, skipRuleFromState());
   }
 
@@ -399,17 +438,28 @@
   }
 
   function computeBomRows() {
-    if (!B || !state.bomTemplate || !state.bomTemplate.rows || !state.bomTemplate.rows.length) {
+    if (!B) {
       state.bomRows = [];
       return;
     }
-    state.bomRows = B.compute(
-      selectedRowObjects(),
-      state.bomTemplate,
-      resolvedVarMaps(),
-      state.extraKeywords,
-      activeLookup()
-    );
+    const lib = B.normalizeLibrary(state.bomLibrary, state.bomTemplate);
+    const enabled = B.enabledLibrary ? B.enabledLibrary(lib) : lib.filter(function (item) {
+      return item.enabled !== false;
+    });
+    if (!enabled.length) {
+      state.bomRows = [];
+      return;
+    }
+    state.bomRows = B.computeLibrary
+      ? B.computeLibrary(selectedRowObjects(), lib, resolvedVarMaps(), state.extraKeywords, activeLookup())
+      : B.uniqueRows(B.compute(
+        selectedRowObjects(),
+        enabled[0].template,
+        resolvedVarMaps(),
+        state.extraKeywords,
+        activeLookup(),
+        enabled[0].id
+      ));
   }
 
   function sheetToAoa(wb) {
@@ -1037,11 +1087,68 @@
     });
   }
 
+  function renderBomLibrary() {
+    const box = $("bomLibrary");
+    if (!box) return;
+    box.innerHTML = "";
+    const lib = state.bomLibrary || [];
+    if (!lib.length) {
+      const p = document.createElement("p");
+      p.className = "hint";
+      p.style.padding = "10px 12px";
+      p.style.margin = "0";
+      p.textContent = "尚未上传。拖入或选择表格会加入列表，可继续添加；点「替换」可修改某一份。";
+      box.appendChild(p);
+      return;
+    }
+    const head = document.createElement("h4");
+    head.textContent = "已上传 BOM（" + lib.length + "）";
+    box.appendChild(head);
+    const ul = document.createElement("ul");
+    lib.forEach(function (item) {
+      const li = document.createElement("li");
+      const chk = document.createElement("label");
+      chk.className = "chk";
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.checked = item.enabled !== false;
+      input.dataset.bomEnable = item.id;
+      chk.appendChild(input);
+      const mark = document.createElement("span");
+      mark.textContent = "计算";
+      chk.appendChild(mark);
+      li.appendChild(chk);
+      const name = document.createElement("span");
+      name.className = "name";
+      name.textContent = item.name || "BOM";
+      name.title = item.name || "";
+      li.appendChild(name);
+      const meta = document.createElement("span");
+      meta.className = "meta";
+      meta.textContent = ((item.template && item.template.rows) || []).length + " 个子件";
+      li.appendChild(meta);
+      const btnRep = document.createElement("button");
+      btnRep.type = "button";
+      btnRep.className = "ghost";
+      btnRep.textContent = "替换";
+      btnRep.dataset.bomReplace = item.id;
+      li.appendChild(btnRep);
+      const btnDel = document.createElement("button");
+      btnDel.type = "button";
+      btnDel.className = "ghost";
+      btnDel.textContent = "删除";
+      btnDel.dataset.bomDelete = item.id;
+      li.appendChild(btnDel);
+      ul.appendChild(li);
+    });
+    box.appendChild(ul);
+  }
+
   function renderVarMapTable() {
     const box = $("varMapTable");
     if (!box) return;
     box.innerHTML = "";
-    if (!state.bomTemplate) {
+    if (!(state.bomLibrary || []).length) {
       box.innerHTML = '<p class="hint" style="padding:12px">先导入 BOM 模板，将自动列出公式中的变量。</p>';
       return;
     }
@@ -1144,11 +1251,11 @@
     const count = $("bomCount");
     if (!box) return;
     box.innerHTML = "";
-    if (!state.bomTemplate) {
+    if (!(state.bomLibrary || []).some(function (item) { return item.enabled !== false; })) {
       if (count) count.textContent = "";
       return;
     }
-    const headers = B ? B.resultHeaders(state.bomTemplate, activeLookup()) : [];
+    const headers = bomHeaderList();
     const table = document.createElement("table");
     const thead = document.createElement("thead");
     const hr = document.createElement("tr");
@@ -1187,22 +1294,26 @@
     if (count) {
       const nBom = (state.bomRows || []).filter(function (r) { return r._kind === "bom"; }).length;
       const nLk = (state.bomRows || []).filter(function (r) { return r._kind === "lookup"; }).length;
+      const nTpl = B && B.enabledLibrary ? B.enabledLibrary(state.bomLibrary).length : (state.bomLibrary || []).length;
       count.textContent =
-        "BOM " + nBom + " 行" + (nLk ? " · 对照 " + nLk + " 行" : "") + " · 来自 " + selectedRowObjects().length + " 条勾选订单";
+        "BOM " + nBom + " 行" + (nLk ? " · 对照 " + nLk + " 行" : "") +
+        " · " + nTpl + " 份模板 · 来自 " + selectedRowObjects().length + " 条勾选订单";
     }
   }
 
   function renderBom() {
+    syncPrimaryTemplate();
     syncBomMaps();
+    renderBomLibrary();
     const tplHint = $("bomTplHint");
     if (tplHint) {
-      tplHint.textContent = state.bomTemplate
-        ? "已加载「" +
-          (state.bomTemplate.name || "模板") +
-          "」· " +
-          (state.bomTemplate.rows || []).length +
-          " 个子件 · 变量 " +
-          ((state.bomTemplate.variables || []).join("、") || "无")
+      const lib = state.bomLibrary || [];
+      const enabled = lib.filter(function (item) { return item.enabled !== false; });
+      const vars = B ? B.libraryVariables(lib) : [];
+      tplHint.textContent = lib.length
+        ? "列表 " + lib.length + " 份，计算 " + enabled.length + " 份 · 子件 " +
+          enabled.reduce(function (n, item) { return n + ((item.template && item.template.rows) || []).length; }, 0) +
+          " · 变量 " + (vars.join("、") || "无") + "。继续上传可追加。"
         : "尚未导入模板。可用示例：螺丝=数量×4，灯芯按轿厢宽度分档。";
     }
     const lkHint = $("lookupHint");
@@ -1422,7 +1533,7 @@
   }
 
   function setExportFromBomHeaders() {
-    if (!B || !state.bomTemplate) {
+    if (!B || !(state.bomLibrary || []).some(function (item) { return item.enabled !== false; })) {
       toast("请先导入并计算 BOM");
       return;
     }
@@ -1435,6 +1546,10 @@
   }
 
   function setBomTemplate(aoa, name) {
+    addOrReplaceBom(aoa, name);
+  }
+
+  function addOrReplaceBom(aoa, name) {
     if (!B) {
       toast("未加载 BOM 组件");
       return;
@@ -1444,10 +1559,44 @@
       toast("模板没有数据行");
       return;
     }
-    state.bomTemplate = tpl;
+    state.bomLibrary = B.normalizeLibrary(state.bomLibrary, null);
+    const replaceId = state.replacingBomId;
+    state.replacingBomId = null;
+    if (replaceId) {
+      const idx = state.bomLibrary.findIndex(function (item) {
+        return item.id === replaceId;
+      });
+      if (idx >= 0) {
+        state.bomLibrary[idx] = {
+          id: replaceId,
+          name: name || tpl.name || state.bomLibrary[idx].name,
+          enabled: state.bomLibrary[idx].enabled !== false,
+          template: tpl,
+        };
+        syncPrimaryTemplate();
+        syncBomMaps();
+        render();
+        toast("已替换「" + (state.bomLibrary[idx].name) + "」· " + tpl.rows.length + " 个子件");
+        return;
+      }
+    }
+    const item = B.makeLibraryItem(tpl, name);
+    state.bomLibrary.push(item);
+    syncPrimaryTemplate();
     syncBomMaps();
     render();
-    toast("已识别 " + tpl.variables.length + " 个变量：" + (tpl.variables.join("、") || "无"));
+    toast("已加入 BOM 列表「" + item.name + "」· " + tpl.rows.length + " 个子件 · 变量 " + ((tpl.variables || []).join("、") || "无"));
+  }
+
+  function deleteBom(id) {
+    state.bomLibrary = (state.bomLibrary || []).filter(function (item) {
+      return item.id !== id;
+    });
+    if (state.replacingBomId === id) state.replacingBomId = null;
+    syncPrimaryTemplate();
+    syncBomMaps();
+    render();
+    toast(state.bomLibrary.length ? "已删除该 BOM" : "已清空 BOM 列表");
   }
 
   function setLookupTable(aoa, name) {
@@ -1468,7 +1617,7 @@
 
   function bomMatrix() {
     if (!B) return [];
-    return B.toMatrix(state.bomRows || [], B.resultHeaders(state.bomTemplate, activeLookup()));
+    return B.toMatrix(state.bomRows || [], bomHeaderList());
   }
 
   function exportBomCsv() {
@@ -1551,6 +1700,7 @@
     const input = $(inputId);
     if (!drop || !input) return;
     drop.addEventListener("click", function () {
+      if (dropId === "bomDrop") state.replacingBomId = null;
       input.click();
     });
     input.addEventListener("change", function (ev) {
@@ -1562,6 +1712,7 @@
     });
     drop.addEventListener("drop", function (ev) {
       ev.preventDefault();
+      if (dropId === "bomDrop") state.replacingBomId = null;
       onFiles(ev.dataTransfer.files);
     });
   }
@@ -1572,10 +1723,23 @@
       toast("请选择表格文件");
       return;
     }
+    if (kind === "bom") {
+      const list = state.replacingBomId ? files.slice(0, 1) : files;
+      list.reduce(function (p, file) {
+        return p.then(function () {
+          return readTableFile(file).then(function (res) {
+            addOrReplaceBom(res.aoa, res.name);
+          });
+        });
+      }, Promise.resolve()).catch(function (err) {
+        state.replacingBomId = null;
+        toast("读取表格失败：" + (err.message || err));
+      });
+      return;
+    }
     readTableFile(files[0])
       .then(function (res) {
-        if (kind === "bom") setBomTemplate(res.aoa, res.name);
-        else if (kind === "lookup") setLookupTable(res.aoa, res.name);
+        if (kind === "lookup") setLookupTable(res.aoa, res.name);
         else setExportTemplate(res.aoa, res.name);
       })
       .catch(function (err) {
@@ -1609,7 +1773,6 @@
     renderDocs();
     renderWarnings();
     renderBom();
-    renderExport();
     savePrefs();
   }
 
@@ -1846,6 +2009,19 @@
         savePrefs();
         return;
       }
+      if (t.dataset && t.dataset.bomEnable) {
+        const item = (state.bomLibrary || []).find(function (x) {
+          return x.id === t.dataset.bomEnable;
+        });
+        if (!item) return;
+        item.enabled = t.checked;
+        syncPrimaryTemplate();
+        syncBomMaps();
+        computeBomRows();
+        renderBom();
+        savePrefs();
+        return;
+      }
       if (t.dataset && t.dataset.varName) {
         const m = state.varMaps.find(function (x) {
           return x.name === t.dataset.varName;
@@ -1933,6 +2109,16 @@
     });
     document.addEventListener("click", function (ev) {
       const t = ev.target;
+      if (t.dataset && t.dataset.bomReplace) {
+        state.replacingBomId = t.dataset.bomReplace;
+        const input = $("bomFile");
+        if (input) input.click();
+        return;
+      }
+      if (t.dataset && t.dataset.bomDelete) {
+        deleteBom(t.dataset.bomDelete);
+        return;
+      }
       if (t.dataset && t.dataset.removeKw != null) {
         const i = Number(t.dataset.removeKw);
         const kw = state.extraKeywords[i];
@@ -2112,23 +2298,26 @@
     $("btnXlsx").addEventListener("click", exportXlsx);
     $("btnCsv").addEventListener("click", exportCsv);
     $("btnComputeBom").addEventListener("click", function () {
-      if (!state.bomTemplate) {
+      const enabled = (state.bomLibrary || []).filter(function (item) { return item.enabled !== false; });
+      if (!enabled.length) {
         toast("请先导入 BOM 模板");
         return;
       }
       computeBomRows();
       renderBomTable();
       renderExport();
-      toast(state.bomRows.length ? "已按勾选行计算 BOM" : "勾选行后没有算出子件");
+      toast(state.bomRows.length ? "已按勾选行计算 BOM（" + enabled.length + " 份模板）" : "勾选行后没有算出子件");
     });
     $("btnBomXlsx").addEventListener("click", exportBomXlsx);
     $("btnBomCsv").addEventListener("click", exportBomCsv);
     $("btnClearBom").addEventListener("click", function () {
+      state.bomLibrary = [];
       state.bomTemplate = null;
+      state.replacingBomId = null;
       state.varMaps = [];
       state.bomRows = [];
       render();
-      toast("已清除 BOM 模板");
+      toast("已清空 BOM 列表");
     });
     $("btnClearLookup").addEventListener("click", function () {
       state.lookupTable = null;

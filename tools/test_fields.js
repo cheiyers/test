@@ -216,6 +216,14 @@ const schemeBom = fields.captureScheme(
   [{ id: "col-qty", sourceId: "qty", header: "数量", formula: "{数量}" }],
   {
     bomTemplate: { name: "tpl.csv", headers: ["子件料号", "备注"], rows: [["SCREW-M6", "=数量*4"]], formulaCols: [1], variables: ["数量"], qtyCol: 1 },
+    bomLibrary: [
+      {
+        id: "bom-a",
+        name: "tpl.csv",
+        enabled: true,
+        template: { name: "tpl.csv", headers: ["子件料号", "备注"], rows: [["SCREW-M6", "=数量*4"]], formulaCols: [1], variables: ["数量"], qtyCol: 1 },
+      },
+    ],
     varMaps: [{ name: "数量", mode: "column", value: "qty" }],
     lookupTable: { name: "lk.csv", headers: ["物料号", "对照料号"], rows: [["57866241", "LED-ALT"]], key: "物料号" },
     lookupKey: "物料号",
@@ -231,6 +239,10 @@ if (!schemeBom.varMaps || schemeBom.varMaps[0].value !== "qty") {
 }
 if (!schemeBom.lookupTable || schemeBom.lookupKey !== "物料号") {
   console.error("scheme lookup", schemeBom.lookupTable, schemeBom.lookupKey);
+  process.exit(1);
+}
+if (!schemeBom.bomLibrary || schemeBom.bomLibrary.length !== 1 || schemeBom.bomLibrary[0].id !== "bom-a") {
+  console.error("scheme bomLibrary", schemeBom.bomLibrary);
   process.exit(1);
 }
 
