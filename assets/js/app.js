@@ -1,5 +1,6 @@
 (function () {
   const F = window.PoFields;
+  const B = window.PoBom;
   const PDFJS_BASE = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/";
   const pdfjsLib = window["pdfjs-dist/build/pdf"] || window.pdfjsLib;
   if (pdfjsLib) {
@@ -26,7 +27,29 @@
     suppressHeadClick: false,
     pdfBuffers: {},
     pdfPaintToken: 0,
+    rowFilter: "",
+    rowFilterField: "",
+    bomTemplate: null,
+    varMaps: [],
+    lookupTable: null,
+    lookupKey: "",
+    bomRows: [],
   };
+
+  const SAMPLE_BOM_AOA = [
+    ["子件料号", "子件描述", "单位", "备注"],
+    ["SCREW-M6", "平头套管配套螺丝", "件", "=数量*4"],
+    ["BRKT-01", "装饰吊顶固定支架", "件", "=数量"],
+    ["LED-CORE", "Edge light灯芯", "件", '=IF(VALUE({轿厢宽度})>1400,2,1)*数量'],
+  ];
+  const SAMPLE_LOOKUP_AOA = [
+    ["物料号", "对照料号", "对照描述", "规格"],
+    ["57668963", "LED-ALT", "备用灯条", "白色"],
+    ["57664581", "SLV-04", "套管配件", "M6"],
+    ["57866241", "LED-ALT", "备用灯条", "白色"],
+    ["57886847", "SLV-04", "套管配件", "M6"],
+    ["57886831", "BRKT-ALT", "支架备件", "喷塑"],
+  ];
 
   const $ = function (id) {
     return document.getElementById(id);
@@ -122,6 +145,10 @@
         if (Array.isArray(p.selectedFields)) state.selectedFields = new Set(p.selectedFields);
         if (Array.isArray(p.extraKeywords)) state.extraKeywords = p.extraKeywords;
         if (Array.isArray(p.columns)) state.columns = p.columns;
+        if (p.bomTemplate) state.bomTemplate = p.bomTemplate;
+        if (Array.isArray(p.varMaps)) state.varMaps = p.varMaps;
+        if (p.lookupTable) state.lookupTable = p.lookupTable;
+        if (p.lookupKey) state.lookupKey = p.lookupKey;
         if (!fromV3 && !fromV2) state.selectedFields.add("documentDate");
       }
       const schemeRaw = localStorage.getItem(SCHEMES_KEY);
@@ -142,6 +169,10 @@
         selectedFields: Array.from(state.selectedFields),
         extraKeywords: state.extraKeywords,
         columns: state.columns,
+        bomTemplate: state.bomTemplate,
+        varMaps: state.varMaps,
+        lookupTable: state.lookupTable,
+        lookupKey: state.lookupKey,
       })
     );
     localStorage.setItem(SCHEMES_KEY, JSON.stringify(state.schemes));
@@ -187,6 +218,169 @@
     return state.rows.filter(function (r) {
       return state.selectedRows.has(r.id);
     });
+  }
+
+  function rowMatchesFilter(row) {
+    const q = String(state.rowFilter || "").trim().toLowerCase();
+    if (!q) return true;
+    const cols = resultColumns();
+    if (state.rowFilterField) {
+      const field = cols.find(function (c) {
+        return c.id === state.rowFilterField;
+      }) || F.fieldById(state.rowFilterField, state.extraKeywords);
+      const v = field ? String(F.fieldValue(row, field) || "") : "";
+      return v.toLowerCase().indexOf(q) >= 0;
+    }
+    if ((row.reviewFlags || []).map(flagLabel).join(" ").toLowerCase().indexOf(q) >= 0) return true;
+    return cols.some(function (c) {
+      return String(F.fieldValue(row, c) || "").toLowerCase().indexOf(q) >= 0;
+    });
+  }
+
+  function visibleRows() {
+    return state.rows.filter(rowMatchesFilter);
+  }
+
+  function updateRowCount() {
+    const el = $("rowCount");
+    if (!el) return;
+    const shown = visibleRows();
+    const visSel = shown.filter(function (r) {
+      return state.selectedRows.has(r.id);
+    }).length;
+    el.textContent =
+      "已选 " +
+      state.selectedRows.size +
+      " / 可见 " +
+      shown.length +
+      " / 共 " +
+      state.rows.length +
+      " 行 · 可见已选 " +
+      visSel +
+      " · " +
+      state.docs.length +
+      " 张 PO";
+  }
+
+  function fillFilterFieldSelect() {
+    const sel = $("rowFilterField");
+    if (!sel) return;
+    const prev = state.rowFilterField || sel.value || "";
+    sel.innerHTML = "";
+    const all = document.createElement("option");
+    all.value = "";
+    all.textContent = "全部列";
+    sel.appendChild(all);
+    resultColumns().forEach(function (c) {
+      const opt = document.createElement("option");
+      opt.value = c.id;
+      opt.textContent = c.label;
+      sel.appendChild(opt);
+    });
+    const exists = prev && Array.prototype.some.call(sel.options, function (o) {
+      return o.value === prev;
+    });
+    sel.value = exists ? prev : "";
+    state.rowFilterField = sel.value;
+    const input = $("rowFilter");
+    if (input && document.activeElement !== input) input.value = state.rowFilter;
+  }
+
+  function bomExtras() {
+    return {
+      bomTemplate: state.bomTemplate || null,
+      varMaps: state.varMaps || [],
+      lookupTable: state.lookupTable || null,
+      lookupKey: state.lookupKey || "",
+    };
+  }
+
+  function applyBomExtras(snap) {
+    state.bomTemplate = snap && snap.bomTemplate ? snap.bomTemplate : null;
+    state.varMaps = snap && Array.isArray(snap.varMaps) ? snap.varMaps : [];
+    state.lookupTable = snap && snap.lookupTable ? snap.lookupTable : null;
+    state.lookupKey = snap && snap.lookupKey ? snap.lookupKey : (state.lookupTable && state.lookupTable.key) || "";
+    syncBomMaps();
+  }
+
+  function syncBomMaps() {
+    if (!B || !state.bomTemplate) {
+      if (!state.bomTemplate) state.varMaps = [];
+      return;
+    }
+    state.varMaps = B.mergeVarMaps(state.bomTemplate.variables || [], state.varMaps, state.extraKeywords);
+  }
+
+  function resolvedVarMaps() {
+    return (state.varMaps || []).map(function (m) {
+      if (!m || m.mode !== "column" || !m.value) return m;
+      const col = state.columns.find(function (c) {
+        return c.id === m.value;
+      });
+      if (col) return { name: m.name, mode: "formula", value: col.formula || "" };
+      return m;
+    });
+  }
+
+  function activeLookup() {
+    if (!state.lookupTable || !state.lookupTable.rows || !state.lookupTable.rows.length) return null;
+    return Object.assign({}, state.lookupTable, {
+      key: state.lookupKey || state.lookupTable.key || "",
+    });
+  }
+
+  function computeBomRows() {
+    if (!B || !state.bomTemplate || !state.bomTemplate.rows || !state.bomTemplate.rows.length) {
+      state.bomRows = [];
+      return;
+    }
+    state.bomRows = B.compute(
+      selectedRowObjects(),
+      state.bomTemplate,
+      resolvedVarMaps(),
+      state.extraKeywords,
+      activeLookup()
+    );
+  }
+
+  function sheetToAoa(wb) {
+    const name = wb.SheetNames && wb.SheetNames[0];
+    const sheet = name ? wb.Sheets[name] : null;
+    if (!sheet) return [];
+    const ref = sheet["!ref"];
+    if (!ref) return XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: "" });
+    const range = XLSX.utils.decode_range(ref);
+    const aoa = [];
+    for (let r = range.s.r; r <= range.e.r; r++) {
+      const row = [];
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        const cell = sheet[XLSX.utils.encode_cell({ r: r, c: c })];
+        if (!cell) {
+          row.push("");
+          continue;
+        }
+        if (cell.f) row.push("=" + cell.f);
+        else if (cell.w != null && cell.w !== "") row.push(String(cell.w));
+        else if (cell.v != null) row.push(String(cell.v));
+        else row.push("");
+      }
+      aoa.push(row);
+    }
+    return aoa;
+  }
+
+  function readTableFile(file) {
+    return file.arrayBuffer().then(function (buf) {
+      if (!window.XLSX) throw new Error("未加载表格组件");
+      const wb = XLSX.read(new Uint8Array(buf), { type: "array", cellFormula: true, raw: false });
+      return { name: file.name, aoa: sheetToAoa(wb) };
+    });
+  }
+
+  function readTableText(text, name) {
+    if (!window.XLSX) throw new Error("未加载表格组件");
+    const wb = XLSX.read(text, { type: "string", raw: false });
+    return { name: name || "", aoa: sheetToAoa(wb) };
   }
 
   function recognizedSample(field) {
@@ -281,7 +475,9 @@
   }
 
   function renderResultTable() {
+    fillFilterFieldSelect();
     const cols = resultColumns();
+    const shown = visibleRows();
     const table = document.createElement("table");
     const thead = document.createElement("thead");
     const hr = document.createElement("tr");
@@ -295,7 +491,7 @@
     });
     thead.appendChild(hr);
     const tbody = document.createElement("tbody");
-    state.rows.forEach(function (row) {
+    shown.forEach(function (row) {
       const tr = document.createElement("tr");
       const flags = row.reviewFlags || [];
       if (flags.length) {
@@ -345,9 +541,15 @@
     table.appendChild(thead);
     table.appendChild(tbody);
     $("resultTable").innerHTML = "";
+    if (!shown.length) {
+      const empty = document.createElement("p");
+      empty.className = "hint";
+      empty.style.padding = "12px";
+      empty.textContent = state.rows.length ? "没有符合筛选条件的行" : "还没有识别结果";
+      $("resultTable").appendChild(empty);
+    }
     $("resultTable").appendChild(table);
-    $("rowCount").textContent =
-      "已选 " + state.selectedRows.size + " / " + state.rows.length + " 行 · " + state.docs.length + " 张 PO";
+    updateRowCount();
     $("sourceHint").textContent =
       state.source === "demo"
         ? "当前：三份样张预识别结果"
@@ -729,12 +931,341 @@
     }
   }
 
+  function fieldOptionsForVar() {
+    const groups = [
+      { label: "识别字段", items: F.CORE_FIELDS.concat(F.OPTIONAL_FIELDS, F.KEYWORD_FIELDS) },
+      {
+        label: "关键字",
+        items: state.extraKeywords.map(function (k) {
+          return { id: k.id, label: k.label };
+        }),
+      },
+      {
+        label: "导出列",
+        items: state.columns.map(function (c) {
+          return { id: c.id, label: (c.header || "未命名列") + "（导出）" };
+        }),
+      },
+    ];
+    return groups.filter(function (g) {
+      return g.items.length;
+    });
+  }
+
+  function renderVarMapTable() {
+    const box = $("varMapTable");
+    if (!box) return;
+    box.innerHTML = "";
+    if (!state.bomTemplate) {
+      box.innerHTML = '<p class="hint" style="padding:12px">先导入 BOM 模板，将自动列出公式中的变量。</p>';
+      return;
+    }
+    if (!state.varMaps.length) {
+      box.innerHTML = '<p class="hint" style="padding:12px">模板公式中没有识别到变量。</p>';
+      return;
+    }
+    const table = document.createElement("table");
+    table.className = "var-map-table";
+    table.innerHTML = "<thead><tr><th>变量</th><th>来源</th><th>取值</th></tr></thead>";
+    const tbody = document.createElement("tbody");
+    const groups = fieldOptionsForVar();
+    state.varMaps.forEach(function (m) {
+      const tr = document.createElement("tr");
+      const tdName = document.createElement("td");
+      tdName.textContent = m.name;
+      const tdMode = document.createElement("td");
+      tdMode.className = "mode";
+      const mode = document.createElement("select");
+      mode.dataset.varName = m.name;
+      mode.dataset.varProp = "mode";
+      [["column", "识别/导出列"], ["formula", "公式"], ["const", "固定值"]].forEach(function (pair) {
+        const opt = document.createElement("option");
+        opt.value = pair[0];
+        opt.textContent = pair[1];
+        if (m.mode === pair[0]) opt.selected = true;
+        mode.appendChild(opt);
+      });
+      tdMode.appendChild(mode);
+      const tdVal = document.createElement("td");
+      tdVal.className = "value";
+      if (m.mode === "column") {
+        const sel = document.createElement("select");
+        sel.dataset.varName = m.name;
+        sel.dataset.varProp = "value";
+        const blank = document.createElement("option");
+        blank.value = "";
+        blank.textContent = "请选择列";
+        sel.appendChild(blank);
+        groups.forEach(function (g) {
+          const og = document.createElement("optgroup");
+          og.label = g.label;
+          g.items.forEach(function (item) {
+            const opt = document.createElement("option");
+            opt.value = item.id;
+            opt.textContent = item.label;
+            if (m.value === item.id) opt.selected = true;
+            og.appendChild(opt);
+          });
+          sel.appendChild(og);
+        });
+        tdVal.appendChild(sel);
+      } else {
+        const input = document.createElement("input");
+        input.type = "text";
+        input.dataset.varName = m.name;
+        input.dataset.varProp = "value";
+        input.value = m.value || "";
+        input.placeholder = m.mode === "formula" ? '=数量*2 或 {物料号}' : "例如 1 或 1200 mm";
+        tdVal.appendChild(input);
+      }
+      tr.appendChild(tdName);
+      tr.appendChild(tdMode);
+      tr.appendChild(tdVal);
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    box.appendChild(table);
+  }
+
+  function renderLookupKeySelect() {
+    const sel = $("lookupKey");
+    if (!sel) return;
+    const headers = (state.lookupTable && state.lookupTable.headers) || [];
+    const prev = state.lookupKey || (state.lookupTable && state.lookupTable.key) || "";
+    sel.innerHTML = "";
+    if (!headers.length) {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "无对照表";
+      sel.appendChild(opt);
+      sel.disabled = true;
+      return;
+    }
+    sel.disabled = false;
+    headers.forEach(function (h) {
+      if (!h) return;
+      const opt = document.createElement("option");
+      opt.value = h;
+      opt.textContent = h;
+      sel.appendChild(opt);
+    });
+    sel.value = headers.indexOf(prev) >= 0 ? prev : headers[0];
+    state.lookupKey = sel.value;
+    if (state.lookupTable) state.lookupTable.key = state.lookupKey;
+  }
+
+  function renderBomTable() {
+    const box = $("bomTable");
+    const count = $("bomCount");
+    if (!box) return;
+    box.innerHTML = "";
+    if (!state.bomTemplate) {
+      if (count) count.textContent = "";
+      return;
+    }
+    const headers = B ? B.resultHeaders(state.bomTemplate, activeLookup()) : [];
+    const table = document.createElement("table");
+    const thead = document.createElement("thead");
+    const hr = document.createElement("tr");
+    headers.forEach(function (h) {
+      const th = document.createElement("th");
+      th.textContent = h;
+      hr.appendChild(th);
+    });
+    thead.appendChild(hr);
+    const tbody = document.createElement("tbody");
+    (state.bomRows || []).forEach(function (row) {
+      const tr = document.createElement("tr");
+      if (row._kind === "lookup") tr.className = "bom-lookup";
+      headers.forEach(function (h) {
+        const td = document.createElement("td");
+        const v = row[h];
+        if (h === "来源") {
+          const pill = document.createElement("span");
+          pill.className = "kind-pill" + (row._kind === "lookup" ? " lookup" : "");
+          pill.textContent = v || "";
+          td.appendChild(pill);
+        } else if (v == null || v === "") {
+          td.className = "empty";
+          td.textContent = "—";
+        } else {
+          td.textContent = String(v);
+          if (h === "计算数量" || /^\d/.test(String(v))) td.classList.add("num");
+        }
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    table.appendChild(thead);
+    table.appendChild(tbody);
+    box.appendChild(table);
+    if (count) {
+      const nBom = (state.bomRows || []).filter(function (r) { return r._kind === "bom"; }).length;
+      const nLk = (state.bomRows || []).filter(function (r) { return r._kind === "lookup"; }).length;
+      count.textContent =
+        "BOM " + nBom + " 行" + (nLk ? " · 对照 " + nLk + " 行" : "") + " · 来自 " + selectedRowObjects().length + " 条勾选订单";
+    }
+  }
+
+  function renderBom() {
+    syncBomMaps();
+    const tplHint = $("bomTplHint");
+    if (tplHint) {
+      tplHint.textContent = state.bomTemplate
+        ? "已加载「" +
+          (state.bomTemplate.name || "模板") +
+          "」· " +
+          (state.bomTemplate.rows || []).length +
+          " 个子件 · 变量 " +
+          ((state.bomTemplate.variables || []).join("、") || "无")
+        : "尚未导入模板。可用示例：螺丝=数量×4，灯芯按轿厢宽度分档。";
+    }
+    const lkHint = $("lookupHint");
+    if (lkHint) {
+      lkHint.textContent = state.lookupTable
+        ? "已加载「" +
+          (state.lookupTable.name || "对照表") +
+          "」· " +
+          (state.lookupTable.rows || []).length +
+          " 行 · 按「" +
+          (state.lookupKey || state.lookupTable.key || "") +
+          "」匹配订单物料号"
+        : "可选。匹配到物料号的行会追加到该订单 BOM 下方。";
+    }
+    renderLookupKeySelect();
+    renderVarMapTable();
+    computeBomRows();
+    renderBomTable();
+  }
+
+  function setBomTemplate(aoa, name) {
+    if (!B) {
+      toast("未加载 BOM 组件");
+      return;
+    }
+    const tpl = B.parseTemplate(aoa, name);
+    if (!tpl.rows.length) {
+      toast("模板没有数据行");
+      return;
+    }
+    state.bomTemplate = tpl;
+    syncBomMaps();
+    render();
+    toast("已识别 " + tpl.variables.length + " 个变量：" + (tpl.variables.join("、") || "无"));
+  }
+
+  function setLookupTable(aoa, name) {
+    if (!B) {
+      toast("未加载 BOM 组件");
+      return;
+    }
+    const look = B.parseLookup(aoa, name);
+    if (!look.rows.length) {
+      toast("对照表没有数据行");
+      return;
+    }
+    state.lookupTable = look;
+    state.lookupKey = look.key || look.headers[0] || "";
+    render();
+    toast("已加载对照表 " + look.rows.length + " 行，键「" + state.lookupKey + "」");
+  }
+
+  function bomMatrix() {
+    if (!B) return [];
+    return B.toMatrix(state.bomRows || [], B.resultHeaders(state.bomTemplate, activeLookup()));
+  }
+
+  function exportBomCsv() {
+    if (!state.bomRows.length) {
+      toast("请先计算 BOM");
+      return;
+    }
+    const matrix = bomMatrix();
+    const text = "\ufeff" + matrix.map(function (r) {
+      return r.map(csvEscape).join(",");
+    }).join("\n");
+    downloadBlob(new Blob([text], { type: "text/csv;charset=utf-8" }), "schindler-bom.csv");
+    toast("已导出 BOM CSV（" + (matrix.length - 1) + " 行）");
+  }
+
+  function exportBomXlsx() {
+    if (!state.bomRows.length) {
+      toast("请先计算 BOM");
+      return;
+    }
+    if (!window.XLSX) {
+      exportBomCsv();
+      toast("未加载 Excel 组件，已改为 CSV");
+      return;
+    }
+    const matrix = bomMatrix();
+    const ws = XLSX.utils.aoa_to_sheet(matrix);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "BOM子件");
+    XLSX.writeFile(wb, "schindler-bom.xlsx");
+    toast("已导出 BOM Excel（" + (matrix.length - 1) + " 行）");
+  }
+
+  function bindDropzone(dropId, inputId, onFiles) {
+    const drop = $(dropId);
+    const input = $(inputId);
+    if (!drop || !input) return;
+    drop.addEventListener("click", function () {
+      input.click();
+    });
+    input.addEventListener("change", function (ev) {
+      onFiles(ev.target.files);
+      input.value = "";
+    });
+    drop.addEventListener("dragover", function (ev) {
+      ev.preventDefault();
+    });
+    drop.addEventListener("drop", function (ev) {
+      ev.preventDefault();
+      onFiles(ev.dataTransfer.files);
+    });
+  }
+
+  function handleTableFiles(fileList, kind) {
+    const files = Array.from(fileList || []);
+    if (!files.length) {
+      toast("请选择表格文件");
+      return;
+    }
+    readTableFile(files[0])
+      .then(function (res) {
+        if (kind === "bom") setBomTemplate(res.aoa, res.name);
+        else setLookupTable(res.aoa, res.name);
+      })
+      .catch(function (err) {
+        toast("读取表格失败：" + (err.message || err));
+      });
+  }
+
+  function loadSampleCsv(url, fallback, name, kind) {
+    fetch(url)
+      .then(function (res) {
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.text();
+      })
+      .then(function (text) {
+        const got = readTableText(text, name);
+        if (kind === "bom") setBomTemplate(got.aoa, name);
+        else setLookupTable(got.aoa, name);
+      })
+      .catch(function () {
+        if (kind === "bom") setBomTemplate(fallback, name);
+        else setLookupTable(fallback, name);
+      });
+  }
+
   function render() {
     renderFields();
     renderResultTable();
     renderOutputTable();
     renderDocs();
     renderWarnings();
+    renderBom();
     savePrefs();
   }
 
@@ -753,7 +1284,8 @@
       name,
       Array.from(state.selectedFields),
       state.extraKeywords,
-      state.columns
+      state.columns,
+      bomExtras()
     );
     const idx = state.schemes.findIndex(function (s) {
       return s.name === name;
@@ -787,6 +1319,7 @@
       };
     });
     state.columns = F.syncOutputColumns(state.columns, Array.from(state.selectedFields), state.extraKeywords);
+    applyBomExtras(snap);
     $("schemeName").value = snap.name;
     closeColFormat();
     render();
@@ -951,14 +1484,58 @@
       if (t.dataset && t.dataset.rowId) {
         if (t.checked) state.selectedRows.add(t.dataset.rowId);
         else state.selectedRows.delete(t.dataset.rowId);
-        $("rowCount").textContent =
-          "已选 " + state.selectedRows.size + " / " + state.rows.length + " 行 · " + state.docs.length + " 张 PO";
+        updateRowCount();
         renderOutputTable();
+        renderBom();
+        savePrefs();
+        return;
+      }
+      if (t.id === "rowFilterField") {
+        state.rowFilterField = t.value;
+        renderResultTable();
+        return;
+      }
+      if (t.id === "lookupKey") {
+        state.lookupKey = t.value;
+        if (state.lookupTable) state.lookupTable.key = t.value;
+        renderBom();
+        savePrefs();
+        return;
+      }
+      if (t.dataset && t.dataset.varName) {
+        const m = state.varMaps.find(function (x) {
+          return x.name === t.dataset.varName;
+        });
+        if (!m) return;
+        const prop = t.dataset.varProp;
+        m[prop] = t.value;
+        if (prop === "mode") {
+          m.value = "";
+          renderVarMapTable();
+        }
+        computeBomRows();
+        renderBomTable();
         savePrefs();
       }
     });
     document.addEventListener("input", function (ev) {
       const t = ev.target;
+      if (t.id === "rowFilter") {
+        state.rowFilter = t.value;
+        renderResultTable();
+        return;
+      }
+      if (t.dataset && t.dataset.varName && t.dataset.varProp === "value") {
+        const m = state.varMaps.find(function (x) {
+          return x.name === t.dataset.varName;
+        });
+        if (!m) return;
+        m.value = t.value;
+        computeBomRows();
+        renderBomTable();
+        savePrefs();
+        return;
+      }
       const col = editingColumn();
       if (!col) return;
       if (t.id === "colFormatHeader") {
@@ -1084,6 +1661,18 @@
       state.selectedRows = new Set();
       render();
     });
+    $("btnSelVisible").addEventListener("click", function () {
+      visibleRows().forEach(function (r) {
+        state.selectedRows.add(r.id);
+      });
+      render();
+    });
+    $("btnUnselVisible").addEventListener("click", function () {
+      visibleRows().forEach(function (r) {
+        state.selectedRows.delete(r.id);
+      });
+      render();
+    });
     $("btnAddCol").addEventListener("click", function () {
       const col = {
         id: "col-extra-" + Date.now(),
@@ -1141,6 +1730,42 @@
     });
     $("btnXlsx").addEventListener("click", exportXlsx);
     $("btnCsv").addEventListener("click", exportCsv);
+    $("btnComputeBom").addEventListener("click", function () {
+      if (!state.bomTemplate) {
+        toast("请先导入 BOM 模板");
+        return;
+      }
+      computeBomRows();
+      renderBomTable();
+      toast(state.bomRows.length ? "已按勾选行计算 BOM" : "勾选行后没有算出子件");
+    });
+    $("btnBomXlsx").addEventListener("click", exportBomXlsx);
+    $("btnBomCsv").addEventListener("click", exportBomCsv);
+    $("btnClearBom").addEventListener("click", function () {
+      state.bomTemplate = null;
+      state.varMaps = [];
+      state.bomRows = [];
+      render();
+      toast("已清除 BOM 模板");
+    });
+    $("btnClearLookup").addEventListener("click", function () {
+      state.lookupTable = null;
+      state.lookupKey = "";
+      render();
+      toast("已清除料号对照表");
+    });
+    $("btnBomSample").addEventListener("click", function () {
+      loadSampleCsv("samples/bom-template.csv", SAMPLE_BOM_AOA, "bom-template.csv", "bom");
+    });
+    $("btnLookupSample").addEventListener("click", function () {
+      loadSampleCsv("samples/material-lookup.csv", SAMPLE_LOOKUP_AOA, "material-lookup.csv", "lookup");
+    });
+    bindDropzone("bomDrop", "bomFile", function (files) {
+      handleTableFiles(files, "bom");
+    });
+    bindDropzone("lookupDrop", "lookupFile", function (files) {
+      handleTableFiles(files, "lookup");
+    });
     $("btnDemo").addEventListener("click", function () {
       if (!window.DEMO_DATA) {
         toast("没有样张数据");

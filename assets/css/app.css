@@ -333,6 +333,70 @@ tr.result-row:hover td { background: #fff8ea; }
 .dropzone span { color: var(--muted); font-size: 12px; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 0 0 10px;
+}
+.filter-bar select,
+.filter-bar input[type="search"] {
+  font: inherit;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: #fff;
+}
+.filter-bar select { min-width: 140px; }
+.filter-bar input[type="search"] { min-width: 220px; flex: 1; }
+
+.bom-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.inline-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+.inline-label select {
+  font: inherit;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: #fff;
+  min-width: 120px;
+}
+.kind-pill {
+  display: inline-block;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #075985;
+}
+.kind-pill.lookup {
+  background: #fef3c7;
+  color: #92400e;
+}
+tr.bom-lookup td { background: #fffbeb; }
+.var-map-table select,
+.var-map-table input {
+  font: inherit;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 4px 8px;
+  min-width: 0;
+  width: 100%;
+  background: #fff;
+}
+.var-map-table td.mode { min-width: 110px; }
+.var-map-table td.value { min-width: 220px; }
+
 .scheme-bar {
   margin-top: 14px;
   padding-top: 12px;
@@ -433,7 +497,7 @@ button.secondary { background: #fff; color: var(--navy); }
 button.warn { background: #9f1239; border-color: #9f1239; }
 
 @media (max-width: 960px) {
-  .zones, .notes, .doc-body, .po-layout, .choose-grid, .stats { grid-template-columns: 1fr; }
+  .zones, .notes, .doc-body, .po-layout, .choose-grid, .stats, .bom-grid { grid-template-columns: 1fr; }
   .docs-scroll { max-height: 360px; }
   .doc-body img, .po-preview { border-right: 0; border-bottom: 1px solid var(--line); max-height: 240px; object-fit: contain; }
 }

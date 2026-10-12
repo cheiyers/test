@@ -209,6 +209,37 @@ if (scheme.columns[0].header !== "PO" || scheme.columns[0].formula !== "{采购�
   process.exit(1);
 }
 
+const schemeBom = fields.captureScheme(
+  "BOM方案",
+  ["poNumber", "qty"],
+  [],
+  [{ id: "col-qty", sourceId: "qty", header: "数量", formula: "{数量}" }],
+  {
+    bomTemplate: { name: "tpl.csv", headers: ["子件料号", "备注"], rows: [["SCREW-M6", "=数量*4"]], formulaCols: [1], variables: ["数量"], qtyCol: 1 },
+    varMaps: [{ name: "数量", mode: "column", value: "qty" }],
+    lookupTable: { name: "lk.csv", headers: ["物料号", "对照料号"], rows: [["57866241", "LED-ALT"]], key: "物料号" },
+    lookupKey: "物料号",
+  }
+);
+if (!schemeBom.bomTemplate || schemeBom.bomTemplate.variables[0] !== "数量") {
+  console.error("scheme bom template", schemeBom.bomTemplate);
+  process.exit(1);
+}
+if (!schemeBom.varMaps || schemeBom.varMaps[0].value !== "qty") {
+  console.error("scheme varMaps", schemeBom.varMaps);
+  process.exit(1);
+}
+if (!schemeBom.lookupTable || schemeBom.lookupKey !== "物料号") {
+  console.error("scheme lookup", schemeBom.lookupTable, schemeBom.lookupKey);
+  process.exit(1);
+}
+const clonedBom = fields.cloneScheme(schemeBom);
+clonedBom.varMaps[0].value = "mutated";
+if (schemeBom.varMaps[0].value !== "qty") {
+  console.error("cloneScheme should deep copy BOM extras");
+  process.exit(1);
+}
+
 const abc = [
   { id: "a", header: "A" },
   { id: "b", header: "B" },

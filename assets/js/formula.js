@@ -315,6 +315,51 @@
     return "";
   }
 
+  const RESERVED_IDS = {
+    TRUE: 1,
+    FALSE: 1,
+    AND: 1,
+    OR: 1,
+    NOT: 1,
+    IFEMPTY: 1,
+    THIS: 1,
+    COL: 1,
+  };
+  Object.keys(FN).forEach(function (k) {
+    RESERVED_IDS[k] = 1;
+  });
+
+  function extractNames(expr) {
+    const raw = String(expr == null ? "" : expr).trim();
+    if (!raw) return [];
+    const src = raw[0] === "=" ? raw : "=" + raw;
+    let tokens;
+    try {
+      tokens = tokenize(src);
+    } catch (err) {
+      return [];
+    }
+    const names = [];
+    const seen = {};
+    function add(name) {
+      const n = String(name || "").trim();
+      if (!n || seen[n]) return;
+      if (RESERVED_IDS[n.toUpperCase()]) return;
+      if (/^[A-Za-z]{1,3}\d+$/.test(n)) return;
+      seen[n] = true;
+      names.push(n);
+    }
+    tokens.forEach(function (tok, i) {
+      const next = tokens[i + 1];
+      if (tok.t === "ref") add(tok.v);
+      if (tok.t === "id") {
+        if (next && next.t === "op" && next.v === "(") return;
+        add(tok.v);
+      }
+    });
+    return names;
+  }
+
   function evaluate(expr, ctx) {
     const src = expr == null ? "" : String(expr);
     if (!src.trim()) return "";
@@ -340,7 +385,7 @@
     return String(v);
   }
 
-  const api = { evaluate: evaluate, stringify: stringify, parseNumber: parseNumber };
+  const api = { evaluate: evaluate, stringify: stringify, parseNumber: parseNumber, extractNames: extractNames };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.PoFormula = api;
 })(typeof window !== "undefined" ? window : globalThis);

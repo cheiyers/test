@@ -73,7 +73,7 @@
       </div>
       <div class="scheme-bar">
         <h3>导出方案</h3>
-        <p class="hint">保存当前勾选的字段、自定义关键字、列顺序、列名与格式，下次直接应用。</p>
+        <p class="hint">保存当前勾选的字段、自定义关键字、列顺序、列名与格式，以及下方 BOM 模板、变量映射和料号对照，下次直接应用。</p>
         <div class="actions">
           <input id="schemeName" type="text" placeholder="方案名称，例如 物料对账">
           <button type="button" id="btnSaveScheme">保存方案</button>
@@ -90,8 +90,19 @@
         <div class="actions">
           <button type="button" class="ghost" id="btnSelAll">全选行</button>
           <button type="button" class="ghost" id="btnSelNone">全不选</button>
+          <button type="button" class="ghost" id="btnSelVisible">全选可见</button>
+          <button type="button" class="ghost" id="btnUnselVisible">可见全不选</button>
           <span class="meta" id="rowCount"></span>
         </div>
+      </div>
+      <div class="filter-bar">
+        <label>筛选字段
+          <select id="rowFilterField" aria-label="筛选字段">
+            <option value="">全部列</option>
+          </select>
+        </label>
+        <input id="rowFilter" type="search" placeholder="筛选可见行，例如物料号、描述、订单号" aria-label="筛选识别行">
+        <span class="hint" style="margin:0">筛选只改变可见行，导出仍按勾选。可用「全选可见」只勾当前结果。</span>
       </div>
       <div class="table-wrap" id="resultTable"></div>
     </section>
@@ -121,6 +132,55 @@
       <div class="table-wrap" id="outputTable"></div>
     </section>
 
+    <section class="panel" id="bomPanel">
+      <h2>6. BOM 子件用量 · 公式模板与料号对照</h2>
+      <p class="hint">
+        导入带<strong>备注 / 公式</strong>列的表格模板，自动识别公式中的变量。每个变量可映射到识别结果的某一列、一条公式，或固定值。
+        对上方勾选的每一行订单算出各子件数量。可选再导入一张<strong>料号对照表</strong>：匹配到该行物料号的数据会接在该订单 BOM 下方。映射随导出方案一起保存。
+      </p>
+      <div class="bom-grid">
+        <div class="field-block">
+          <h3>BOM 模板</h3>
+          <div class="dropzone" id="bomDrop">
+            <strong>拖入 Excel / CSV，或点击选择</strong>
+            <span>表头含「备注」「公式」或单元格以 = 开头</span>
+          </div>
+          <input id="bomFile" type="file" accept=".xlsx,.xls,.csv,text/csv" hidden>
+          <div class="actions" style="margin-top:8px">
+            <button type="button" class="ghost" id="btnBomSample">加载示例模板</button>
+            <button type="button" class="ghost" id="btnClearBom">清除模板</button>
+          </div>
+          <div class="hint" id="bomTplHint" style="margin-top:8px"></div>
+        </div>
+        <div class="field-block">
+          <h3>料号对照（可选）</h3>
+          <div class="dropzone" id="lookupDrop">
+            <strong>拖入对照表 Excel / CSV，或点击选择</strong>
+            <span>按订单物料号匹配，命中行追加到该行 BOM 下方</span>
+          </div>
+          <input id="lookupFile" type="file" accept=".xlsx,.xls,.csv,text/csv" hidden>
+          <div class="actions" style="margin-top:8px">
+            <button type="button" class="ghost" id="btnLookupSample">加载示例对照表</button>
+            <button type="button" class="ghost" id="btnClearLookup">清除对照表</button>
+            <label class="inline-label">对照键
+              <select id="lookupKey" aria-label="料号对照键"></select>
+            </label>
+          </div>
+          <div class="hint" id="lookupHint" style="margin-top:8px"></div>
+        </div>
+      </div>
+      <h3>变量映射</h3>
+      <p class="hint">公式中识别到的变量。来源可以是识别列、导出列、公式或固定值。</p>
+      <div class="table-wrap" id="varMapTable"></div>
+      <div class="actions" style="margin:12px 0">
+        <button type="button" id="btnComputeBom">按勾选行计算 BOM</button>
+        <button type="button" id="btnBomXlsx">导出 BOM Excel</button>
+        <button type="button" class="secondary" id="btnBomCsv">导出 BOM CSV</button>
+        <span class="meta" id="bomCount"></span>
+      </div>
+      <div class="table-wrap" id="bomTable"></div>
+    </section>
+
   </main>
   <div class="toast" id="toast"></div>
 
@@ -129,6 +189,7 @@
   <script src="assets/js/demo-data.js"></script>
   <script src="assets/js/formula.js"></script>
   <script src="assets/js/fields.js"></script>
+  <script src="assets/js/bom.js"></script>
   <script src="assets/js/parser.js"></script>
   <script src="assets/js/app.js"></script>
 </body>

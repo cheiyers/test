@@ -253,9 +253,9 @@
     };
   }
 
-  function captureScheme(name, selectedIds, extraKeywords, columns) {
+  function captureScheme(name, selectedIds, extraKeywords, columns, extras) {
     const norm = normalizeKeywordsAndSelection(extraKeywords, selectedIds);
-    return {
+    const snap = {
       name: String(name || "").trim(),
       selectedFields: norm.selectedFields,
       extraKeywords: norm.extraKeywords,
@@ -268,11 +268,17 @@
         };
       }),
     };
+    extras = extras || {};
+    if (extras.bomTemplate) snap.bomTemplate = extras.bomTemplate;
+    if (extras.varMaps) snap.varMaps = extras.varMaps;
+    if (extras.lookupTable) snap.lookupTable = extras.lookupTable;
+    if (extras.lookupKey) snap.lookupKey = extras.lookupKey;
+    return snap;
   }
 
   function cloneScheme(scheme) {
     if (!scheme) return null;
-    return captureScheme(scheme.name, scheme.selectedFields, scheme.extraKeywords, scheme.columns);
+    return JSON.parse(JSON.stringify(scheme));
   }
 
   function reorderColumns(columns, draggedId, beforeId) {
