@@ -81,47 +81,102 @@
   };
 
   const $ = (sel) => document.querySelector(sel);
+  const PREFS_KEY = "kone-po-select-v1";
+  const MAP_KEY = "kone-po-export-map-v1";
+
+  function applyMapPack(pack) {
+    if (!window.ExportMap || !pack) return;
+    const unpacked = ExportMap.unpackConfig(pack);
+    state.exportMap = unpacked.exportMap;
+    if (unpacked.presets.length) state.exportMapPresets = unpacked.presets;
+    if (unpacked.activeId) state.activeExportMapId = unpacked.activeId;
+  }
+
+  function currentMapPack() {
+    if (!window.ExportMap) return null;
+    return ExportMap.packConfig(state.exportMap, state.exportMapPresets, state.activeExportMapId);
+  }
 
   function loadPrefs() {
     try {
-      const raw = localStorage.getItem("kone-po-select-v1");
-      if (!raw) return;
-      const p = JSON.parse(raw);
-      if (Array.isArray(p.parentFields)) state.selectedParentFields = new Set(p.parentFields);
-      if (Array.isArray(p.bomFields)) state.selectedBomFields = new Set(p.bomFields);
-      if (Array.isArray(p.bomDescs)) {
-        state.selectedBomDescs = p.bomDescs.filter((x) => typeof x === "string" && x);
+      const raw = localStorage.getItem(PREFS_KEY);
+      if (raw) {
+        const p = JSON.parse(raw);
+        if (Array.isArray(p.parentFields)) state.selectedParentFields = new Set(p.parentFields);
+        if (Array.isArray(p.bomFields)) state.selectedBomFields = new Set(p.bomFields);
+        if (Array.isArray(p.bomDescs)) {
+          state.selectedBomDescs = p.bomDescs.filter((x) => typeof x === "string" && x);
+        }
+        if (Array.isArray(p.keywords)) state.extractKeywords = p.keywords;
+        if (p.viewMode) state.viewMode = p.viewMode;
+        if (p.columnRules && typeof p.columnRules === "object") state.columnRules = p.columnRules;
+        if (p.activeCol) state.activeCol = p.activeCol;
+        if (Array.isArray(p.displayPresets)) state.displayPresets = p.displayPresets;
+        if (typeof p.activePresetId === "string") state.activePresetId = p.activePresetId;
+        if (p.exportMap && window.ExportMap) state.exportMap = ExportMap.normalize(p.exportMap);
+        if (Array.isArray(p.exportMapPresets)) state.exportMapPresets = p.exportMapPresets;
+        if (typeof p.activeExportMapId === "string") state.activeExportMapId = p.activeExportMapId;
       }
-      if (Array.isArray(p.keywords)) state.extractKeywords = p.keywords;
-      if (p.viewMode) state.viewMode = p.viewMode;
-      if (p.columnRules && typeof p.columnRules === "object") state.columnRules = p.columnRules;
-      if (p.activeCol) state.activeCol = p.activeCol;
-      if (Array.isArray(p.displayPresets)) state.displayPresets = p.displayPresets;
-      if (typeof p.activePresetId === "string") state.activePresetId = p.activePresetId;
-      if (p.exportMap && window.ExportMap) state.exportMap = ExportMap.normalize(p.exportMap);
-      if (Array.isArray(p.exportMapPresets)) state.exportMapPresets = p.exportMapPresets;
-      if (typeof p.activeExportMapId === "string") state.activeExportMapId = p.activeExportMapId;
+    } catch (e) {}
+    try {
+      const mapRaw = localStorage.getItem(MAP_KEY);
+      if (mapRaw) applyMapPack(JSON.parse(mapRaw));
     } catch (e) {}
   }
 
+  function prefsPayload() {
+    return {
+      parentFields: [...state.selectedParentFields],
+      bomFields: [...state.selectedBomFields],
+      bomDescs: state.selectedBomDescs.slice(),
+      keywords: state.extractKeywords,
+      viewMode: state.viewMode,
+      columnRules: state.columnRules,
+      activeCol: state.activeCol,
+      displayPresets: state.displayPresets,
+      activePresetId: state.activePresetId,
+      exportMap: state.exportMap,
+      exportMapPresets: state.exportMapPresets,
+      activeExportMapId: state.activeExportMapId,
+    };
+  }
+
   function savePrefs() {
-    localStorage.setItem(
-      "kone-po-select-v1",
-      JSON.stringify({
-        parentFields: [...state.selectedParentFields],
-        bomFields: [...state.selectedBomFields],
-        bomDescs: state.selectedBomDescs.slice(),
-        keywords: state.extractKeywords,
-        viewMode: state.viewMode,
-        columnRules: state.columnRules,
-        activeCol: state.activeCol,
-        displayPresets: state.displayPresets,
-        activePresetId: state.activePresetId,
-        exportMap: state.exportMap,
-        exportMapPresets: state.exportMapPresets,
-        activeExportMapId: state.activeExportMapId,
-      })
-    );
+    const pack = currentMapPack();
+    try {
+      if (pack) localStorage.setItem(MAP_KEY, JSON.stringify(pack));
+    } catch (err) {
+      try {
+        if (pack && pack.exportMap) {
+          pack.exportMap.prefixRows = [];
+          localStorage.setItem(MAP_KEY, JSON.stringify(pack));
+        }
+      } catch (e2) {}
+    }
+    try {
+      localStorage.setItem(PREFS_KEY, JSON.stringify(prefsPayload()));
+    } catch (err) {
+      try {
+        const slim = prefsPayload();
+        if (slim.exportMap) slim.exportMap.prefixRows = [];
+        localStorage.setItem(PREFS_KEY, JSON.stringify(slim));
+      } catch (e2) {
+        toast("本机存不下完整配置，请点「导出映射配置」另存 JSON");
+      }
+    }
+  }
+
+  async function restoreBundledMap() {
+    if (!window.ExportMap) return;
+    if ((state.exportMap.columns && state.exportMap.columns.length) || state.exportMapPresets.length) return;
+    try {
+      const res = await fetch("data/export-map.json");
+      if (!res.ok) return;
+      const pack = await res.json();
+      applyMapPack(pack);
+      if (!ExportMap.hasMapping(state.exportMap) && !state.exportMapPresets.length) return;
+      savePrefs();
+    } catch (e) {}
   }
 
   function fmtMoney(v) {
@@ -1290,9 +1345,12 @@
     state.exportMap.templateName = name;
     state.exportMap.fileName = ExportMap.baseName(name) || state.exportMap.fileName;
     state.exportMap.enabled = true;
+    const schemeName = ExportMap.baseName(name) || "导出模板";
+    const saved = ExportMap.addOrUpdate(state.exportMapPresets, schemeName, state.exportMap);
+    state.activeExportMapId = saved.id;
     savePrefs();
     renderExportMap();
-    toast("已按模板「" + name + "」生成映射列");
+    toast("已按模板「" + name + "」生成映射列，并保存为方案「" + schemeName + "」。换环境请再导出映射配置");
   }
 
   function readTemplateFile(file) {
@@ -1649,6 +1707,33 @@
       savePrefs();
       renderExportMap();
     });
+    $("#mapExportCfg").addEventListener("click", () => {
+      const pack = currentMapPack();
+      if (!pack || !(pack.exportMap.columns || []).length) return toast("还没有可导出的映射");
+      downloadBlob(
+        new Blob([JSON.stringify(pack, null, 2)], { type: "application/json" }),
+        ExportMap.ensureExt(state.exportMap.fileName || "kone-po-export-map", "json")
+      );
+      toast("已导出映射配置，下次可用「导入映射配置」恢复");
+    });
+    $("#mapImportCfg").addEventListener("click", () => $("#mapCfgFile").click());
+    $("#mapCfgFile").addEventListener("change", (e) => {
+      const file = e.target.files && e.target.files[0];
+      e.target.value = "";
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          applyMapPack(JSON.parse(String(reader.result || "{}")));
+          savePrefs();
+          renderExportMap();
+          toast("已导入映射配置");
+        } catch (err) {
+          toast("映射配置无法读取：" + (err.message || err));
+        }
+      };
+      reader.readAsText(file, "utf-8");
+    });
     $("#mapFromCurrent").addEventListener("click", () => {
       state.exportMap.columns = ExportMap.columnsFromSources(columnOptions());
       state.exportMap.prefixRows = [];
@@ -1678,8 +1763,12 @@
 
   loadPrefs();
   bind();
-  loadDemo().catch((err) => {
-    console.warn(err);
-    toast("\u793a\u4f8b\u6570\u636e\u672a\u52a0\u8f7d\uff0c\u8bf7\u76f4\u63a5\u4e0a\u4f20 PDF");
-  });
+  restoreBundledMap()
+    .then(function () {
+      return loadDemo();
+    })
+    .catch((err) => {
+      console.warn(err);
+      toast("\u793a\u4f8b\u6570\u636e\u672a\u52a0\u8f7d\uff0c\u8bf7\u76f4\u63a5\u4e0a\u4f20 PDF");
+    });
 })();

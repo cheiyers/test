@@ -208,15 +208,18 @@
         </div>
         <div class="dropzone map-drop" id="mapDrop">
           <strong>拖入 Excel / CSV 模板，或点击选择</strong>
-          <span>读取表头作为列，并带上文件名。也可以不上传，下面手动加列。</span>
+          <span>读取表头作为列。映射会记在本机浏览器；换电脑或云端预览请再导出一份 JSON 配置。</span>
         </div>
         <input id="mapFile" type="file" accept=".xlsx,.xls,.csv,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden />
         <p class="hint" id="mapTemplateHint">还没有模板。手输列名，或从当前识别列生成。</p>
         <div class="actions" style="margin-top:8px">
           <button class="secondary" id="mapAddCol" type="button">添加一列</button>
           <button class="ghost" id="mapFromCurrent" type="button">从当前识别列生成</button>
+          <button class="ghost" id="mapExportCfg" type="button">导出映射配置</button>
+          <button class="ghost" id="mapImportCfg" type="button">导入映射配置</button>
           <button class="ghost" id="mapClear" type="button">清空映射</button>
         </div>
+        <input id="mapCfgFile" type="file" accept="application/json,.json" hidden />
         <p class="hint" style="margin:8px 0 4px">公式用 A、B、C 或 [列名] 引用本表其他列，THIS() 是本列映射值。函数可嵌套，例如 IF(AND(A&lt;&gt;&quot;&quot;,NUM(C)&gt;0),CONCAT(A,&quot;×&quot;,C),IFEMPTY(B,&quot;—&quot;))。先点公式框，再点下面的函数或列。</p>
         <div class="formula-bar" id="formulaBar"></div>
         <div class="map-table-wrap">

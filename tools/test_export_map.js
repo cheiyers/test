@@ -107,4 +107,15 @@ assert.strictEqual(again.updated, true);
 assert.strictEqual(schemes.length, 1);
 assert.strictEqual(M.removeById(schemes, schemes[0].id).length, 0);
 
+const packed = M.packConfig(map, [Object.assign({ id: "s1", name: "出货" }, M.snapshot(map))], "s1");
+assert.strictEqual(packed.kind, "kone-po-export-map");
+assert.strictEqual(packed.presets.length, 1);
+const round = M.unpackConfig(JSON.parse(JSON.stringify(packed)));
+assert.strictEqual(round.activeId, "s1");
+assert.strictEqual(round.exportMap.fileName, "清单");
+assert.strictEqual(round.presets[0].name, "出货");
+const fromMapOnly = M.unpackConfig({ fileName: "only", columns: cols, enabled: true });
+assert.strictEqual(fromMapOnly.exportMap.fileName, "only");
+assert.strictEqual(fromMapOnly.presets.length, 0);
+
 console.log("ok export map");
