@@ -338,6 +338,31 @@
     return (list || []).filter((p) => p.id !== id);
   }
 
+  function packConfig(map, presets, activeId) {
+    return {
+      version: 1,
+      kind: "kone-po-export-map",
+      exportMap: normalize(map),
+      presets: Array.isArray(presets)
+        ? presets.map((p) => Object.assign({ id: p.id || uid(), name: String(p.name || "").trim() }, snapshot(p)))
+        : [],
+      activeId: String(activeId || ""),
+    };
+  }
+
+  function unpackConfig(raw) {
+    const data = raw && raw.exportMap ? raw : { exportMap: raw };
+    const exportMap = normalize(data.exportMap);
+    const presets = Array.isArray(data.presets)
+      ? data.presets
+          .filter((p) => p && (p.name || p.columns))
+          .map((p) => Object.assign({ id: p.id || uid(), name: String(p.name || "未命名").trim() }, snapshot(p)))
+      : [];
+    let activeId = String(data.activeId || "");
+    if (activeId && !presets.some((p) => p.id === activeId)) activeId = "";
+    return { exportMap, presets, activeId };
+  }
+
   const api = {
     uid,
     emptyColumn,
@@ -366,6 +391,8 @@
     addOrUpdate,
     updateById,
     removeById,
+    packConfig,
+    unpackConfig,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.ExportMap = api;
