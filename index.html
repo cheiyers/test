@@ -192,7 +192,7 @@
       </div>
       <div class="map-box">
         <div class="preset-box">
-          <p class="hint" style="margin:8px 0 6px">已保存的映射方案：点选切换。会记住文件名、列名、字段映射、公式和模板表头。</p>
+          <p class="hint" style="margin:8px 0 6px">已保存的映射方案：点选切换。同一浏览器刷新会保留。更新页面或换地址前先「导出映射配置」，再在新页面「导入映射配置」（合并，同名方案不覆盖）。</p>
           <div class="preset-list" id="mapSchemeList"></div>
           <div class="actions" style="margin-top:8px">
             <input id="mapSchemeName" type="text" placeholder="例如：出货清单 · 物料数量" />
@@ -216,11 +216,11 @@
           <button class="secondary" id="mapAddCol" type="button">添加一列</button>
           <button class="ghost" id="mapFromCurrent" type="button">从当前识别列生成</button>
           <button class="ghost" id="mapExportCfg" type="button">导出映射配置</button>
-          <button class="ghost" id="mapImportCfg" type="button">导入映射配置</button>
+          <button class="ghost" id="mapImportCfg" type="button">导入并合并方案</button>
           <button class="ghost" id="mapClear" type="button">清空映射</button>
         </div>
         <input id="mapCfgFile" type="file" accept="application/json,.json" hidden />
-        <p class="hint" style="margin:8px 0 4px">公式用 A、B、C 或 [列名] 引用本表其他列，THIS() 是本列映射值。函数可嵌套，例如 IF(AND(A&lt;&gt;&quot;&quot;,NUM(C)&gt;0),CONCAT(A,&quot;×&quot;,C),IFEMPTY(B,&quot;—&quot;))。先点公式框，再点下面的函数或列。</p>
+        <p class="hint" style="margin:8px 0 4px">命中关键字后不要拆整段汇总，按列各写一条：BOMKEY("KM522","物料")、BOMKEY("KM522","数量")、BOMKEY("KM522","备注A")。第三参取第几条命中，例如 BOMKEY("KM522","物料",2)。也可用 TEXTSPLIT(A," | ",1) 拆「 | 」拼接的文本。先点公式框再点按钮。</p>
         <div class="formula-bar" id="formulaBar"></div>
         <div class="map-table-wrap">
           <table class="map-table">

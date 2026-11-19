@@ -78,18 +78,40 @@
     exportMapPresets: [],
     activeExportMapId: "",
     lastFormulaId: "",
+    matCodes: "",
   };
 
   const $ = (sel) => document.querySelector(sel);
   const PREFS_KEY = "kone-po-select-v1";
   const MAP_KEY = "kone-po-export-map-v1";
 
-  function applyMapPack(pack) {
-    if (!window.ExportMap || !pack) return;
+  function applyMapPack(pack, opts) {
+    if (!window.ExportMap || !pack) return { added: 0, kept: 0 };
+    opts = opts || {};
     const unpacked = ExportMap.unpackConfig(pack);
-    state.exportMap = unpacked.exportMap;
-    if (unpacked.presets.length) state.exportMapPresets = unpacked.presets;
-    if (unpacked.activeId) state.activeExportMapId = unpacked.activeId;
+    const incomingCols = unpacked.exportMap && unpacked.exportMap.columns ? unpacked.exportMap.columns.length : 0;
+    const haveCols = state.exportMap && state.exportMap.columns && state.exportMap.columns.length;
+    if (incomingCols && (!opts.merge || !haveCols || opts.replaceMap)) {
+      state.exportMap = unpacked.exportMap;
+    }
+    let added = 0;
+    let kept = 0;
+    if (unpacked.presets.length) {
+      if (opts.replace) {
+        state.exportMapPresets = unpacked.presets;
+        added = unpacked.presets.length;
+      } else {
+        const merged = ExportMap.mergePresets(state.exportMapPresets, unpacked.presets);
+        state.exportMapPresets = merged.list;
+        added = merged.added;
+        kept = merged.kept;
+      }
+    }
+    if (unpacked.activeId) {
+      const hit = state.exportMapPresets.find((p) => p.id === unpacked.activeId);
+      if (hit) state.activeExportMapId = hit.id;
+    }
+    return { added, kept, incomingCols };
   }
 
   function currentMapPack() {
@@ -120,7 +142,7 @@
     } catch (e) {}
     try {
       const mapRaw = localStorage.getItem(MAP_KEY);
-      if (mapRaw) applyMapPack(JSON.parse(mapRaw));
+      if (mapRaw) applyMapPack(JSON.parse(mapRaw), { merge: true });
     } catch (e) {}
   }
 
@@ -173,7 +195,7 @@
       const res = await fetch("data/export-map.json");
       if (!res.ok) return;
       const pack = await res.json();
-      applyMapPack(pack);
+      applyMapPack(pack, { merge: true });
       if (!ExportMap.hasMapping(state.exportMap) && !state.exportMapPresets.length) return;
       savePrefs();
     } catch (e) {}
@@ -402,6 +424,50 @@
     return opts;
   }
 
+  function mapColumnOptions() {
+    const opts = columnOptions();
+    state.selectedBomDescs.forEach((d) => {
+      BOM_FIELDS.forEach((f) => {
+        opts.push({
+          key: "bd:" + d + "::" + f.id,
+          label: "\u5b50\u4ef6\u00b7" + d + "\u00b7" + f.label,
+          kind: "bomdesc-field",
+          desc: d,
+          field: f.id,
+        });
+      });
+    });
+    return opts;
+  }
+
+  function splitBomDescKey(colKey) {
+    const rest = String(colKey || "").slice(3);
+    const parts = String(rest || "").split("::");
+    return {
+      desc: parts[0] || "",
+      field: parts[1] || "",
+      index: parts[2] ? Number(parts[2]) || 0 : 0,
+    };
+  }
+
+  function resolveSourceKey(name) {
+    const want = String(name == null ? "" : name).trim();
+    if (!want) return "";
+    if (/^(p|b|k):/.test(want) || want.indexOf("bd:") === 0 || want.indexOf("bm:") === 0 || want.indexOf("bk:") === 0)
+      return want;
+    const opts = mapColumnOptions();
+    const exact = opts.find((o) => o.key === want || o.label === want);
+    if (exact) return exact.key;
+    const parent = PARENT_FIELDS.find((f) => f.id === want || f.label === want);
+    if (parent) return "p:" + parent.id;
+    const bom = BOM_FIELDS.find((f) => f.id === want || f.label === want || f.label === "\u5b50\u4ef6\u00b7" + want);
+    if (bom) return "b:" + bom.id;
+    if ((state.extractKeywords || []).indexOf(want) >= 0) return "k:" + want;
+    const descHit = (state.selectedBomDescs || []).find((d) => d === want || "\u5b50\u4ef6\u00b7" + d === want);
+    if (descHit) return "bd:" + descHit;
+    return want;
+  }
+
   function processValue(colKey, raw) {
     return ColumnTransform.applyPipeline(raw, (state.columnRules && state.columnRules[colKey]) || []);
   }
@@ -431,7 +497,19 @@
       return "";
     }
     if (colKey.startsWith("k:")) return KonePoParser.specValueForKeyword(row.item, colKey.slice(2));
-    if (colKey.startsWith("bd:")) return KonePoParser.bomDescValue(row.item, colKey.slice(3));
+    if (colKey.startsWith("bd:")) {
+      const parsed = splitBomDescKey(colKey);
+      return KonePoParser.bomDescValue(row.item, parsed.desc, parsed.field, parsed.index);
+    }
+    if (colKey.startsWith("bm:")) {
+      const parsed = splitBomDescKey(colKey);
+      return KonePoParser.bomMaterialValue(row.item, parsed.desc, parsed.field, parsed.index);
+    }
+    if (colKey.startsWith("bk:")) {
+      const parsed = splitBomDescKey(colKey);
+      const keys = parsed.desc.split(/\|\|/).map((s) => s.trim()).filter(Boolean);
+      return KonePoParser.bomKeywordValue(row.item, keys, parsed.field, parsed.index);
+    }
     return "";
   }
 
@@ -1051,6 +1129,11 @@
   }
 
   function mappedGetValue(row, src) {
+    const key = resolveSourceKey(src);
+    if (!key) return "";
+    if (/^(p|b|k):/.test(key) || key.indexOf("bd:") === 0 || key.indexOf("bm:") === 0 || key.indexOf("bk:") === 0) {
+      return processValue(key, rawFromRow(row, key));
+    }
     return processValue(src, rawFromRow(row, src));
   }
 
@@ -1080,14 +1163,28 @@
   }
 
   function sourceOptionsHtml(selected) {
-    const opts = [`<option value="">（空）</option>`];
-    opts.push(`<option value="const"${selected === "const" ? " selected" : ""}>固定值</option>`);
-    columnOptions().forEach((o) => {
-      opts.push(
-        `<option value="${escapeHtml(o.key)}"${o.key === selected ? " selected" : ""}>${escapeHtml(o.label)}</option>`
-      );
+    const groups = [
+      { kind: "parent", label: "订单行" },
+      { kind: "bom", label: "当前行子件字段" },
+      { kind: "kw", label: "规格关键字" },
+      { kind: "bomdesc", label: "子件按描述（汇总）" },
+      { kind: "bomdesc-field", label: "子件按描述取字段" },
+    ];
+    const list = mapColumnOptions();
+    const parts = [`<option value="">（空）</option>`];
+    parts.push(`<option value="const"${selected === "const" ? " selected" : ""}>固定值</option>`);
+    groups.forEach((g) => {
+      const items = list.filter((o) => o.kind === g.kind);
+      if (!items.length) return;
+      parts.push(`<optgroup label="${escapeHtml(g.label)}">`);
+      items.forEach((o) => {
+        parts.push(
+          `<option value="${escapeHtml(o.key)}"${o.key === selected ? " selected" : ""}>${escapeHtml(o.label)}</option>`
+        );
+      });
+      parts.push("</optgroup>");
     });
-    return opts.join("");
+    return parts.join("");
   }
 
   function findMapCol(id) {
@@ -1290,6 +1387,10 @@
     el.focus();
   }
 
+  function formulaQuote(s) {
+    return '"' + String(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
+  }
+
   function renderFormulaBar() {
     const bar = $("#formulaBar");
     if (!bar || !window.MapFormula) return;
@@ -1302,6 +1403,81 @@
         )}">${letter}</button>`;
       })
       .join("");
+    const recBtns = columnOptions()
+      .filter((o) => o.kind === "parent" || o.kind === "kw")
+      .map((o) => {
+        const snippet = "FIELD(" + formulaQuote(o.label) + ")";
+        return `<button class="suggest src" type="button" data-insert="${escapeHtml(snippet)}" title="${escapeHtml(
+          o.key
+        )}">${escapeHtml(o.label)}</button>`;
+      })
+      .join("");
+    const bomBtns = (state.selectedBomDescs || [])
+      .map((d) => {
+        const sum = "BOM(" + formulaQuote(d) + ")";
+        const fields = BOM_FIELDS.map((f) => {
+          const snippet = "BOM(" + formulaQuote(d) + "," + formulaQuote(f.label.replace(/^\u5b50\u4ef6/, "") || f.label) + ")";
+          const short = f.label.replace(/^\u5b50\u4ef6/, "") || f.label;
+          return `<button class="suggest src" type="button" data-insert="${escapeHtml(snippet)}" title="${escapeHtml(
+            d + " · " + f.label
+          )}">${escapeHtml(short)}</button>`;
+        }).join("");
+        return `<span class="formula-bom-group"><button class="suggest src" type="button" data-insert="${escapeHtml(
+          sum
+        )}" title="该子件汇总">${escapeHtml(d)}</button>${fields}</span>`;
+      })
+      .join("");
+    const descArgs = (state.selectedBomDescs || []).map(formulaQuote).join(",");
+    const countBtns = descArgs
+      ? `<button class="suggest src" type="button" data-insert="${escapeHtml(
+          "BOMCOUNT(" + descArgs + ")"
+        )}" title="勾选的子件里，有几种存在，结果就是几">存在几个</button>
+         <button class="suggest src" type="button" data-insert="${escapeHtml(
+           "BOMQTY(" + descArgs + ")"
+         )}" title="勾选的子件数量相加">数量合计</button>`
+      : "";
+    const matRow = `<label class="mat-codes-label">物料号或关键字
+      <input id="matCountCodes" type="text" value="${escapeHtml(
+        state.matCodes || ""
+      )}" placeholder="整号 KM52255324，或关键字 KM522、LED" />
+    </label>
+    <button class="suggest src" type="button" data-mat-fn="MATCOUNT" title="整号：指定物料号存在几个">这些物料有几个</button>
+    <button class="suggest src" type="button" data-mat-fn="MATQTY" title="整号：同料号多行数量加总">这些物料数量合计</button>
+    <button class="suggest src" type="button" data-mat-fn="MATHAS" title="整号：是否含此物料号">含此物料</button>
+    <button class="suggest src" type="button" data-mat-fn="KEYCOUNT" title="关键字：有几个出现在子件物料或描述里">含关键字有几个</button>
+    <button class="suggest src" type="button" data-mat-fn="KEYHITS" title="关键字：命中多少行子件">含关键字行数</button>
+    <button class="suggest src" type="button" data-mat-fn="KEYQTY" title="关键字：命中子件的数量加总">含关键字数量合计</button>
+    <button class="suggest src" type="button" data-mat-fn="BOMKEY" title="关键字：显示命中的子件内容">显示含关键字内容</button>`;
+    const kwFieldDefs = [
+      { field: "", label: "汇总" },
+      { field: "物料", label: "物料" },
+      { field: "数量", label: "数量" },
+      { field: "描述", label: "描述" },
+      { field: "Pos", label: "Pos" },
+      { field: "备注A", label: "备注A" },
+      { field: "备注B", label: "备注B" },
+      { field: "备注C", label: "备注C" },
+      { field: "备注D", label: "备注D" },
+    ];
+    const kwSplitBtns = kwFieldDefs
+      .map((f) => {
+        return `<span class="formula-bom-group">
+          <button class="suggest src" type="button" data-kw-field="${escapeHtml(
+            f.field
+          )}" title="命中行的${escapeHtml(f.label)}">${escapeHtml(f.label)}</button>
+          ${
+            f.field
+              ? `<button class="suggest src" type="button" data-kw-field="${escapeHtml(
+                  f.field
+                )}" data-kw-index="1" title="第 1 条命中的${escapeHtml(f.label)}">第1条</button>
+                 <button class="suggest src" type="button" data-kw-field="${escapeHtml(
+                   f.field
+                 )}" data-kw-index="2" title="第 2 条命中的${escapeHtml(f.label)}">第2条</button>`
+              : ""
+          }
+        </span>`;
+      })
+      .join("");
     const fnBtns = MapFormula.HELP.map(
       (h) =>
         `<button class="suggest" type="button" data-snippet="${escapeHtml(h.snippet)}" title="${escapeHtml(
@@ -1309,8 +1485,14 @@
         )}">${escapeHtml(h.id)}</button>`
     ).join("");
     bar.innerHTML =
-      (cols.length ? `<span class="hint">插入列</span>${colBtns}` : "") +
-      `<span class="hint">插入函数</span>${fnBtns}`;
+      (cols.length ? `<span class="hint">插入导出列</span>${colBtns}` : "") +
+      (recBtns ? `<span class="formula-break"></span><span class="hint">插入识别字段</span>${recBtns}` : "") +
+      `<span class="formula-break"></span><span class="hint">插入子件</span>` +
+      (countBtns ? countBtns : "") +
+      (bomBtns || '<span class="muted">先在左侧勾选子件描述，再点公式框插入 BOM("描述","物料")</span>') +
+      `<span class="formula-break"></span><span class="hint">按物料号</span>${matRow}` +
+      `<span class="formula-break"></span><span class="hint">拆分命中内容</span>${kwSplitBtns}` +
+      `<span class="formula-break"></span><span class="hint">插入函数</span>${fnBtns}`;
     bar.querySelectorAll("[data-insert]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const el = formulaTarget();
@@ -1323,6 +1505,40 @@
         const el = formulaTarget();
         if (!el) return toast("请先点选某一列的公式框");
         insertAtCursor(el, btn.dataset.snippet);
+      });
+    });
+    const matInput = $("#matCountCodes");
+    if (matInput) {
+      matInput.addEventListener("input", () => {
+        state.matCodes = matInput.value;
+      });
+    }
+    bar.querySelectorAll("[data-mat-fn]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const el = formulaTarget();
+        if (!el) return toast("请先点选某一列的公式框");
+        const raw = (matInput && matInput.value) || state.matCodes || "";
+        const parts = raw.split(/[,，;；\s]+/).map((s) => s.trim()).filter(Boolean);
+        if (!parts.length) return toast("先填物料号或关键字，用逗号分隔");
+        const fn = btn.dataset.matFn;
+        const one = fn === "MATHAS" || fn === "KEYHAS";
+        const args = (one ? parts.slice(0, 1) : parts).map(formulaQuote).join(",");
+        insertAtCursor(el, fn + "(" + args + ")");
+      });
+    });
+    bar.querySelectorAll("[data-kw-field]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const el = formulaTarget();
+        if (!el) return toast("请先点选某一列的公式框");
+        const raw = (matInput && matInput.value) || state.matCodes || "";
+        const parts = raw.split(/[,，;；\s]+/).map((s) => s.trim()).filter(Boolean);
+        if (!parts.length) return toast("先填关键字，再点要拆出的字段");
+        const args = parts.map(formulaQuote);
+        const field = btn.dataset.kwField || "";
+        const index = btn.dataset.kwIndex || "";
+        if (field) args.push(formulaQuote(field));
+        if (index) args.push(index);
+        insertAtCursor(el, "BOMKEY(" + args.join(",") + ")");
       });
     });
   }
@@ -1709,12 +1925,14 @@
     });
     $("#mapExportCfg").addEventListener("click", () => {
       const pack = currentMapPack();
-      if (!pack || !(pack.exportMap.columns || []).length) return toast("还没有可导出的映射");
+      const cols = pack && pack.exportMap && pack.exportMap.columns ? pack.exportMap.columns.length : 0;
+      const schemes = pack && pack.presets ? pack.presets.length : 0;
+      if (!cols && !schemes) return toast("还没有可导出的映射或方案");
       downloadBlob(
         new Blob([JSON.stringify(pack, null, 2)], { type: "application/json" }),
         ExportMap.ensureExt(state.exportMap.fileName || "kone-po-export-map", "json")
       );
-      toast("已导出映射配置，下次可用「导入映射配置」恢复");
+      toast("已导出映射配置（含 " + schemes + " 个方案）。新页面用「导入」合并，重名会保留原来的");
     });
     $("#mapImportCfg").addEventListener("click", () => $("#mapCfgFile").click());
     $("#mapCfgFile").addEventListener("change", (e) => {
@@ -1724,10 +1942,14 @@
       const reader = new FileReader();
       reader.onload = () => {
         try {
-          applyMapPack(JSON.parse(String(reader.result || "{}")));
+          const result = applyMapPack(JSON.parse(String(reader.result || "{}")), { merge: true });
           savePrefs();
           renderExportMap();
-          toast("已导入映射配置");
+          const bits = [];
+          if (result.added) bits.push("新增 " + result.added + " 个方案");
+          if (result.kept) bits.push("保留同名 " + result.kept + " 个");
+          if (!result.added && !result.kept) bits.push("没有新方案（可能已全部在列表里）");
+          toast("已合并导入。" + bits.join("，"));
         } catch (err) {
           toast("映射配置无法读取：" + (err.message || err));
         }

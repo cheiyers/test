@@ -3,6 +3,7 @@ const assert = require("assert");
 const path = require("path");
 const F = require(path.join(__dirname, "../assets/js/map-formula.js"));
 const M = require(path.join(__dirname, "../assets/js/export-map.js"));
+const P = require(path.join(__dirname, "../assets/js/parser.js"));
 
 function ctxFrom(cols) {
   const letters = {};
@@ -103,5 +104,101 @@ const nestedCol = [
 const nbody = M.mappedMatrix([{ material: "KM9" }], nestedCol, getValue).body;
 assert.strictEqual(nbody[0][1], "KM");
 assert.strictEqual(nbody[0][2], "KM9");
+
+const srcRows = [
+  {
+    material: "KM-P",
+    led: "KMLED1",
+    qty: "2 PC",
+    empty: "",
+  },
+];
+const srcGet = (row, src) => {
+  if (src === "p:material" || src === "物料") return row.material;
+  if (src === "bd:LED STRIP") return row.led + " · " + row.qty;
+  if (src === "bd:LED STRIP::物料" || src === "bd:LED STRIP::bomMaterial") return row.led;
+  if (src === "bd:LED STRIP::数量" || src === "bd:LED STRIP::bomQty") return row.qty;
+  if (src === "bd:MISSING") return "";
+  return "";
+};
+const fieldCol = [Object.assign(M.emptyColumn("码"), { formula: 'FIELD("p:material")' })];
+assert.strictEqual(M.mappedMatrix(srcRows, fieldCol, srcGet).body[0][0], "KM-P");
+const bomCols = [
+  Object.assign(M.emptyColumn("灯物料"), { formula: 'BOM("LED STRIP","物料")' }),
+  Object.assign(M.emptyColumn("灯数"), { formula: 'BOM("LED STRIP","数量")' }),
+  Object.assign(M.emptyColumn("有灯"), { formula: 'IF(BOMHAS("LED STRIP"),BOM("LED STRIP"),"—")' }),
+  Object.assign(M.emptyColumn("无柜"), { formula: 'IF(BOMHAS("MISSING"),"有","无")' }),
+];
+const bbody = M.mappedMatrix(srcRows, bomCols, srcGet).body[0];
+assert.strictEqual(bbody[0], "KMLED1");
+assert.strictEqual(bbody[1], "2 PC");
+assert.strictEqual(bbody[2], "KMLED1 · 2 PC");
+assert.strictEqual(bbody[3], "无");
+assert.strictEqual(F.evaluate('识别("p:material")', { sourceValue: (n) => srcGet(srcRows[0], n) }), "KM-P");
+const countGet = (row, src) => {
+  if (src === "bd:LED STRIP") return row.led;
+  if (src === "bd:MAIN SWITCH") return "SW";
+  if (src === "bd:MISSING") return "";
+  if (src === "bd:LED STRIP::数量") return row.qty;
+  if (src === "bd:MAIN SWITCH::数量") return "1.000 PC";
+  return "";
+};
+const countCtx = { sourceValue: (n) => countGet(srcRows[0], n) };
+assert.strictEqual(F.evaluate('BOMCOUNT("LED STRIP","MAIN SWITCH","MISSING")', countCtx), 2);
+assert.strictEqual(F.evaluate('BOMCOUNT("LED STRIP,MISSING,MAIN SWITCH")', countCtx), 2);
+assert.strictEqual(F.evaluate('存在几个("LED STRIP","MISSING")', countCtx), 1);
+assert.strictEqual(F.evaluate('BOMQTY("LED STRIP","MAIN SWITCH")', countCtx), 3);
+assert.strictEqual(
+  M.mappedMatrix(srcRows, [Object.assign(M.emptyColumn("几种"), { formula: 'BOMCOUNT("LED STRIP","MISSING")' })], countGet)
+    .body[0][0],
+  "1"
+);
+const matGet = (row, src) => {
+  if (src === "bm:KMLED1") return "KMLED1 · 2 PC";
+  if (src === "bm:KMLED1::数量") return "2 PC";
+  if (src === "bm:KMSW1") return "KMSW1 · 1 PC";
+  if (src === "bm:KMSW1::数量") return "1 PC";
+  if (src === "bm:NONE") return "";
+  return "";
+};
+const matCtx = { sourceValue: (n) => matGet(srcRows[0], n) };
+assert.strictEqual(F.evaluate('MATCOUNT("KMLED1","KMSW1","NONE")', matCtx), 2);
+assert.strictEqual(F.evaluate('物料几个("KMLED1,NONE")', matCtx), 1);
+assert.strictEqual(F.evaluate('MATHAS("KMLED1")', matCtx), true);
+assert.strictEqual(F.evaluate('MATHAS("NONE")', matCtx), false);
+assert.strictEqual(F.evaluate('MATQTY("KMLED1","KMSW1")', matCtx), 3);
+assert.strictEqual(F.evaluate('BOMMAT("KMLED1","数量")', matCtx), "2 PC");
+
+const dupItem = {
+  bom: [
+    { material: "KMABC11", description: "LED STRIP A", qty: "1.5", unit: "PC" },
+    { material: "KMABC11", description: "LED STRIP A", qty: "2", unit: "PC" },
+    { material: "KMZZZ99", description: "SWITCH BLOCK", qty: "4", unit: "PC" },
+  ],
+};
+function fromItem(src) {
+  const prefix = src.slice(0, 3);
+  const parts = src.slice(3).split("::");
+  const head = parts[0] || "";
+  const field = parts[1] || "";
+  const index = parts[2] ? Number(parts[2]) : 0;
+  if (prefix === "bm:") return P.bomMaterialValue(dupItem, head, field, index);
+  if (prefix === "bk:") return P.bomKeywordValue(dupItem, head.split("||"), field, index);
+  return "";
+}
+const dupCtx = { sourceValue: fromItem };
+assert.strictEqual(F.evaluate('MATQTY("KMABC11")', dupCtx), 3.5);
+assert.strictEqual(F.evaluate('BOMMAT("KMABC11","数量")', dupCtx), "3.5 PC");
+assert.strictEqual(F.evaluate('KEYHAS("LED")', dupCtx), true);
+assert.strictEqual(F.evaluate('KEYCOUNT("LED","NONE","SWITCH")', dupCtx), 2);
+assert.strictEqual(F.evaluate('KEYHITS("KMABC")', dupCtx), 2);
+assert.strictEqual(F.evaluate('KEYQTY("LED")', dupCtx), 3.5);
+assert.ok(String(F.evaluate('BOMKEY("LED")', dupCtx)).indexOf("KMABC11") >= 0);
+assert.strictEqual(F.evaluate('BOMKEY("LED","数量")', dupCtx), "3.5 PC");
+assert.strictEqual(F.evaluate('BOMKEY("LED","物料",1)', dupCtx), "KMABC11");
+assert.strictEqual(F.evaluate('BOMKEY("LED","数量",1)', dupCtx), "1.5 PC");
+assert.strictEqual(F.evaluate('BOMKEY("LED","数量",2)', dupCtx), "2 PC");
+assert.strictEqual(F.evaluate('TEXTSPLIT("KM1 | KM2"," | ",2)', matCtx), "KM2");
+assert.strictEqual(F.evaluate('分段("a / b / c"," / ",3)'), "c");
 
 console.log("ok map formula");

@@ -7,6 +7,23 @@
     拼接: "CONCAT",
     列: "COL",
     本列: "THIS",
+    识别: "FIELD",
+    字段: "FIELD",
+    子件: "BOM",
+    含子件: "BOMHAS",
+    存在几个: "BOMCOUNT",
+    子件数: "BOMCOUNT",
+    子件数量和: "BOMQTY",
+    含物料: "MATHAS",
+    物料几个: "MATCOUNT",
+    物料号几个: "MATCOUNT",
+    物料数量和: "MATQTY",
+    含关键字: "KEYHAS",
+    关键字几个: "KEYCOUNT",
+    关键字数量和: "KEYQTY",
+    关键字行数: "KEYHITS",
+    关键字子件: "BOMKEY",
+    分段: "TEXTSPLIT",
     如果空: "IFEMPTY",
     如果错误: "IFERROR",
   };
@@ -53,7 +70,22 @@
     { id: "REGEXEXTRACT", snippet: 'REGEXEXTRACT(A,"KM[A-Z0-9]+")', hint: "正则提取" },
     { id: "REGEXREPLACE", snippet: 'REGEXREPLACE(A,"\\\\s+","")', hint: "正则替换" },
     { id: "THIS", snippet: "THIS()", hint: "本列映射/固定值（不含公式）" },
-    { id: "COL", snippet: 'COL("品名")', hint: "按列名引用" },
+    { id: "COL", snippet: 'COL("品名")', hint: "按导出列名引用" },
+    { id: "FIELD", snippet: 'FIELD("物料")', hint: "引用识别字段（订单行或规格列）" },
+    { id: "BOM", snippet: 'BOM("LED STRIP","物料")', hint: "指定描述的子件；第二参为物料/数量/备注A 等，省略则为汇总" },
+    { id: "BOMHAS", snippet: 'BOMHAS("LED STRIP")', hint: "该订单行是否包含该子件描述" },
+    { id: "BOMCOUNT", snippet: 'BOMCOUNT("LED STRIP","主开关")', hint: "列出的子件里，有几种存在，数量就是几" },
+    { id: "BOMQTY", snippet: 'BOMQTY("LED STRIP","主开关")', hint: "列出的子件数量相加（抽出数字）" },
+    { id: "MATHAS", snippet: 'MATHAS("KM52255324")', hint: "该订单行子件里是否有此物料号" },
+    { id: "MATCOUNT", snippet: 'MATCOUNT("KM52255324","KM51705345")', hint: "指定的物料号里，子件中存在几个，数量就是几" },
+    { id: "MATQTY", snippet: 'MATQTY("KM52255324","KM51705345")', hint: "指定物料号的子件数量相加" },
+    { id: "BOMMAT", snippet: 'BOMMAT("KM52255324","数量")', hint: "按物料号取该子件；第二参为数量/描述/备注等。同料号多行会把数量加总" },
+    { id: "KEYHAS", snippet: 'KEYHAS("KM522")', hint: "子件物料号或描述是否包含该关键字" },
+    { id: "KEYCOUNT", snippet: 'KEYCOUNT("KM522","LED")', hint: "列出的关键字里，有几个在子件物料/描述中出现" },
+    { id: "KEYHITS", snippet: 'KEYHITS("KM522")', hint: "子件物料/描述包含关键字的行数（同料号两行算 2）" },
+    { id: "KEYQTY", snippet: 'KEYQTY("KM522","LED")', hint: "包含这些关键字的子件数量相加" },
+    { id: "BOMKEY", snippet: 'BOMKEY("KM522","物料",1)', hint: "命中关键字的子件：第二参拆字段（物料/数量/描述/备注A），第三参取第几条" },
+    { id: "TEXTSPLIT", snippet: 'TEXTSPLIT(A," | ",1)', hint: "按分隔符拆段，取第 n 段（从 1 起）" },
   ];
 
   function letterToIndex(s) {
@@ -370,6 +402,50 @@
     return out;
   }
 
+  function sourceFilled(ctx, key) {
+    if (!ctx || !ctx.sourceValue) return false;
+    var has = ctx.sourceValue(key);
+    return has != null && String(has).trim() !== "";
+  }
+
+  function bomPresent(ctx, desc) {
+    return sourceFilled(ctx, "bd:" + String(desc || "").trim());
+  }
+
+  function matPresent(ctx, material) {
+    return sourceFilled(ctx, "bm:" + String(material || "").trim());
+  }
+
+  function flattenBomNames(args) {
+    var names = [];
+    (args || []).forEach(function (arg) {
+      String(toText(arg) || "")
+        .split(/[,，;；]+/)
+        .forEach(function (part) {
+          var s = String(part || "").trim();
+          if (s) names.push(s);
+        });
+    });
+    return names;
+  }
+
+  function isBomFieldWord(s) {
+    var t = String(s || "")
+      .replace(/\s+/g, "")
+      .toLowerCase();
+    return /^(数量|物料|描述|pos|备注a|备注b|备注c|备注d|条数|行数|件数|qty|material|description|bomqty|bommaterial|bomdescription|bompos|bomcount|数量合计)$/.test(
+      t
+    );
+  }
+
+  function bkPath(names, field, index) {
+    var k = "bk:" + (names || []).join("||");
+    var nth = Number(index) || 0;
+    if (field || nth > 0) k += "::" + (field || "");
+    if (nth > 0) k += "::" + nth;
+    return k;
+  }
+
   function callFn(name, args, ctx) {
     var a0 = args[0];
     var a1 = args[1];
@@ -468,6 +544,18 @@
         var start = Math.max(1, toNumber(a1) || 1) - 1;
         var len = Math.max(0, a2 == null ? 1 : toNumber(a2) || 0);
         return toText(a0).substr(start, len);
+      }
+      case "TEXTSPLIT":
+      case "PART":
+      case "SPLIT": {
+        var src = toText(a0);
+        if (isError(src)) return src;
+        var sep = a1 == null || a1 === "" ? " | " : toText(a1);
+        var bits = src.split(sep);
+        var which = a2 == null || a2 === "" ? 1 : Math.floor(toNumber(a2));
+        if (which < 0) which = bits.length + which + 1;
+        var piece = bits[which - 1];
+        return piece == null ? "" : String(piece).trim();
       }
       case "LEN":
       case "LENGTH":
@@ -652,6 +740,100 @@
         }
         return ctx.valueByName(toText(a0));
       }
+      case "FIELD":
+      case "SRC": {
+        if (!ctx.sourceValue) return "";
+        return ctx.sourceValue(toText(a0));
+      }
+      case "BOM": {
+        if (!ctx.sourceValue) return "";
+        var desc = toText(a0);
+        var part = a1 == null || a1 === "" ? "" : toText(a1);
+        return ctx.sourceValue(part ? "bd:" + desc + "::" + part : "bd:" + desc);
+      }
+      case "BOMHAS": {
+        return bomPresent(ctx, toText(a0));
+      }
+      case "BOMCOUNT": {
+        var names = flattenBomNames(args);
+        var n = 0;
+        for (var bi = 0; bi < names.length; bi++) {
+          if (bomPresent(ctx, names[bi])) n += 1;
+        }
+        return n;
+      }
+      case "BOMQTY": {
+        if (!ctx.sourceValue) return 0;
+        var qnames = flattenBomNames(args);
+        var total = 0;
+        for (var qi = 0; qi < qnames.length; qi++) {
+          var qv = toNumber(ctx.sourceValue("bd:" + qnames[qi] + "::数量"));
+          if (isError(qv)) return qv;
+          if (!isNaN(qv)) total += qv;
+        }
+        return total;
+      }
+      case "BOMMAT": {
+        if (!ctx.sourceValue) return "";
+        var mat = toText(a0);
+        var mpart = a1 == null || a1 === "" ? "" : toText(a1);
+        return ctx.sourceValue(mpart ? "bm:" + mat + "::" + mpart : "bm:" + mat);
+      }
+      case "MATHAS": {
+        return matPresent(ctx, toText(a0));
+      }
+      case "MATCOUNT": {
+        var mats = flattenBomNames(args);
+        var mn = 0;
+        for (var mi = 0; mi < mats.length; mi++) {
+          if (matPresent(ctx, mats[mi])) mn += 1;
+        }
+        return mn;
+      }
+      case "MATQTY": {
+        if (!ctx.sourceValue) return 0;
+        var mq = flattenBomNames(args);
+        var mtotal = 0;
+        for (var mj = 0; mj < mq.length; mj++) {
+          var mv = toNumber(ctx.sourceValue("bm:" + mq[mj] + "::数量"));
+          if (isError(mv)) return mv;
+          if (!isNaN(mv)) mtotal += mv;
+        }
+        return mtotal;
+      }
+      case "BOMKEY": {
+        if (!ctx.sourceValue) return "";
+        var klist = (args || []).slice();
+        var kindex = 0;
+        if (klist.length && looksNumber(klist[klist.length - 1]) && String(klist[klist.length - 1]).trim() !== "") {
+          kindex = Math.floor(toNumber(klist.pop()));
+        }
+        var kws = flattenBomNames(klist);
+        var kfield = "";
+        if (kws.length >= 2 && isBomFieldWord(kws[kws.length - 1])) kfield = kws.pop();
+        return ctx.sourceValue(bkPath(kws, kfield, kindex));
+      }
+      case "KEYHAS": {
+        return sourceFilled(ctx, bkPath(flattenBomNames(args).slice(0, 1)));
+      }
+      case "KEYCOUNT": {
+        var knames = flattenBomNames(args);
+        var kn = 0;
+        for (var ki = 0; ki < knames.length; ki++) {
+          if (sourceFilled(ctx, bkPath([knames[ki]]))) kn += 1;
+        }
+        return kn;
+      }
+      case "KEYHITS": {
+        if (!ctx.sourceValue) return 0;
+        var hv = toNumber(ctx.sourceValue(bkPath(flattenBomNames(args), "条数")));
+        return isError(hv) || isNaN(hv) ? 0 : hv;
+      }
+      case "KEYQTY": {
+        if (!ctx.sourceValue) return 0;
+        var kv = toNumber(ctx.sourceValue(bkPath(flattenBomNames(args), "数量")));
+        return isError(kv) || isNaN(kv) ? 0 : kv;
+      }
       default:
         return "#NAME?";
     }
@@ -732,7 +914,7 @@
     }
   }
 
-  function evalRow(columns, rawOf) {
+  function evalRow(columns, rawOf, sourceOf) {
     var cols = columns || [];
     var cache = [];
     var ready = [];
@@ -752,6 +934,9 @@
           thisValue: raw,
           valueAt: valueAt,
           valueByName: valueByName,
+          sourceValue: sourceOf || function () {
+            return "";
+          },
         });
       }
       visiting[index] = false;

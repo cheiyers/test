@@ -560,26 +560,184 @@
     return parts.join(" \u00b7 ");
   }
 
-  function bomDescValue(item, description) {
+  function normalizeBomFieldId(field) {
+    const s = String(field || "").trim();
+    if (!s) return "";
+    const compact = s.replace(/\s+/g, "").toLowerCase();
+    const aliases = {
+      全部: "",
+      汇总: "",
+      all: "",
+      pivot: "",
+      物料: "bomMaterial",
+      子件物料: "bomMaterial",
+      bommaterial: "bomMaterial",
+      material: "bomMaterial",
+      数量: "bomQty",
+      子件数量: "bomQty",
+      bomqty: "bomQty",
+      qty: "bomQty",
+      单位: "bomUnit",
+      unit: "bomUnit",
+      bomunit: "bomUnit",
+      pos: "bomPos",
+      子件pos: "bomPos",
+      bompos: "bomPos",
+      描述: "bomDescription",
+      子件描述: "bomDescription",
+      bomdescription: "bomDescription",
+      description: "bomDescription",
+      备注a: "remarkA",
+      remarka: "remarkA",
+      a: "remarkA",
+      备注b: "remarkB",
+      remarkb: "remarkB",
+      b: "remarkB",
+      备注c: "remarkC",
+      remarkc: "remarkC",
+      c: "remarkC",
+      备注d: "remarkD",
+      remarkd: "remarkD",
+      d: "remarkD",
+      条数: "bomCount",
+      行数: "bomCount",
+      件数: "bomCount",
+      count: "bomCount",
+      bomcount: "bomCount",
+      数量合计: "bomQty",
+    };
+    if (Object.prototype.hasOwnProperty.call(aliases, compact)) return aliases[compact];
+    if (/^(bomPos|bomMaterial|bomQty|bomUnit|bomDescription|remark[A-D]|bomCount)$/.test(s)) return s;
+    return s;
+  }
+
+  function bomFieldValue(bom, field) {
+    if (!bom) return "";
+    const id = normalizeBomFieldId(field);
+    const rf = bom.remarkFields || {};
+    switch (id) {
+      case "bomPos":
+        return bom.pos || "";
+      case "bomMaterial":
+        return bom.material || "";
+      case "bomQty":
+        return ((bom.qty || "") + " " + (bom.unit || "")).trim();
+      case "bomUnit":
+        return bom.unit || "";
+      case "bomDescription":
+        return bom.description || "";
+      case "remarkA":
+        return rf.A || "";
+      case "remarkB":
+        return rf.B || "";
+      case "remarkC":
+        return rf.C || "";
+      case "remarkD":
+        return rf.D || "";
+      default:
+        return "";
+    }
+  }
+
+  function matchingBom(item, description) {
     const want = String(description || "")
       .trim()
       .toLowerCase();
-    if (!want) return "";
-    const counts = new Map();
-    ((item && item.bom) || []).forEach((b) => {
-      if (
+    if (!want) return [];
+    return ((item && item.bom) || []).filter(
+      (b) =>
         String(b.description || "")
           .trim()
-          .toLowerCase() !== want
+          .toLowerCase() === want
+    );
+  }
+
+  function matchingBomByMaterial(item, material) {
+    const want = String(material || "")
+      .trim()
+      .toLowerCase();
+    if (!want) return [];
+    return ((item && item.bom) || []).filter(
+      (b) =>
+        String(b.material || "")
+          .trim()
+          .toLowerCase() === want
+    );
+  }
+
+  function matchingBomByKeywords(item, keywords) {
+    const list = (Array.isArray(keywords) ? keywords : [keywords])
+      .map((k) => String(k || "").trim())
+      .filter(Boolean);
+    if (!list.length) return [];
+    return ((item && item.bom) || []).filter((b) =>
+      list.some(
+        (kw) => matchKeyword(b.material, kw) || matchKeyword(b.description, kw)
       )
-        return;
-      const s = formatBomPivot(b);
-      if (!s) return;
-      counts.set(s, (counts.get(s) || 0) + 1);
+    );
+  }
+
+  function parseQtyNumber(raw) {
+    const s = String(raw == null ? "" : raw)
+      .replace(/,/g, "")
+      .trim();
+    const m = s.match(/-?\d+(?:\.\d+)?/);
+    return m ? Number(m[0]) : NaN;
+  }
+
+  function sumBomQty(matches) {
+    let total = 0;
+    let any = false;
+    const units = [];
+    (matches || []).forEach((b) => {
+      const n = parseQtyNumber(b && b.qty);
+      if (!isNaN(n)) {
+        total += n;
+        any = true;
+      }
+      const u = String((b && b.unit) || "").trim();
+      if (u && units.indexOf(u) < 0) units.push(u);
+    });
+    if (!any) return "";
+    const num = Math.round(total * 1000) / 1000;
+    return units.length === 1 ? num + " " + units[0] : String(num);
+  }
+
+  function joinCounted(values) {
+    const counts = new Map();
+    (values || []).forEach((s) => {
+      const t = String(s == null ? "" : s).trim();
+      if (!t || t === "-") return;
+      counts.set(t, (counts.get(t) || 0) + 1);
     });
     return [...counts.entries()]
       .map(([s, n]) => (n > 1 ? s + " \u00d7" + n : s))
       .join(" | ");
+  }
+
+  function formatBomField(matches, field, index) {
+    let list = matches || [];
+    const nth = Number(index);
+    if (nth > 0) {
+      const one = list[nth - 1];
+      list = one ? [one] : [];
+    }
+    const fieldId = normalizeBomFieldId(field);
+    if (fieldId === "bomQty") return sumBomQty(list);
+    if (fieldId === "bomCount") return list.length ? String(list.length) : "";
+    return joinCounted(list.map((b) => (fieldId ? bomFieldValue(b, fieldId) : formatBomPivot(b))));
+  }
+
+  function bomMaterialValue(item, material, field, index) {
+    return formatBomField(matchingBomByMaterial(item, material), field, index);
+  }
+
+  function bomDescValue(item, description, field, index) {
+    return formatBomField(matchingBom(item, description), field, index);
+  }
+
+  function bomKeywordValue(item, keywords, field, index) {
+    return formatBomField(matchingBomByKeywords(item, keywords), field, index);
   }
 
   function collectSpecKeys(docs) {
@@ -637,6 +795,15 @@
     familyOf,
     specValueForKeyword,
     bomDescValue,
+    bomFieldValue,
+    normalizeBomFieldId,
+    matchingBom,
+    matchingBomByMaterial,
+    matchingBomByKeywords,
+    bomMaterialValue,
+    bomKeywordValue,
+    sumBomQty,
+    parseQtyNumber,
     formatBomPivot,
     itemSearchBlob,
     matchKeyword,

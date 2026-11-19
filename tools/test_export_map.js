@@ -118,4 +118,24 @@ const fromMapOnly = M.unpackConfig({ fileName: "only", columns: cols, enabled: t
 assert.strictEqual(fromMapOnly.exportMap.fileName, "only");
 assert.strictEqual(fromMapOnly.presets.length, 0);
 
+const legacy = M.unpackConfig({
+  exportMap: map,
+  exportMapPresets: [{ id: "old1", name: "旧方案", columns: cols, enabled: true, fileName: "旧" }],
+  activeExportMapId: "old1",
+});
+assert.strictEqual(legacy.presets[0].name, "旧方案");
+assert.strictEqual(legacy.activeId, "old1");
+
+const baseList = [Object.assign({ id: "s1", name: "出货" }, M.snapshot(map))];
+const incoming = [
+  Object.assign({ id: "s1", name: "出货" }, M.snapshot(map)),
+  Object.assign({ id: "s2", name: "新方案" }, M.snapshot(map)),
+];
+const merged = M.mergePresets(baseList, incoming);
+assert.strictEqual(merged.kept, 1);
+assert.strictEqual(merged.added, 1);
+assert.strictEqual(merged.list.length, 2);
+assert.strictEqual(merged.list[0].name, "出货");
+assert.ok(merged.list.some((p) => p.name === "新方案"));
+
 console.log("ok export map");
