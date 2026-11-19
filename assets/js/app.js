@@ -84,12 +84,33 @@
   const PREFS_KEY = "kone-po-select-v1";
   const MAP_KEY = "kone-po-export-map-v1";
 
-  function applyMapPack(pack) {
-    if (!window.ExportMap || !pack) return;
+  function applyMapPack(pack, opts) {
+    if (!window.ExportMap || !pack) return { added: 0, kept: 0 };
+    opts = opts || {};
     const unpacked = ExportMap.unpackConfig(pack);
-    state.exportMap = unpacked.exportMap;
-    if (unpacked.presets.length) state.exportMapPresets = unpacked.presets;
-    if (unpacked.activeId) state.activeExportMapId = unpacked.activeId;
+    const incomingCols = unpacked.exportMap && unpacked.exportMap.columns ? unpacked.exportMap.columns.length : 0;
+    const haveCols = state.exportMap && state.exportMap.columns && state.exportMap.columns.length;
+    if (incomingCols && (!opts.merge || !haveCols || opts.replaceMap)) {
+      state.exportMap = unpacked.exportMap;
+    }
+    let added = 0;
+    let kept = 0;
+    if (unpacked.presets.length) {
+      if (opts.replace) {
+        state.exportMapPresets = unpacked.presets;
+        added = unpacked.presets.length;
+      } else {
+        const merged = ExportMap.mergePresets(state.exportMapPresets, unpacked.presets);
+        state.exportMapPresets = merged.list;
+        added = merged.added;
+        kept = merged.kept;
+      }
+    }
+    if (unpacked.activeId) {
+      const hit = state.exportMapPresets.find((p) => p.id === unpacked.activeId);
+      if (hit) state.activeExportMapId = hit.id;
+    }
+    return { added, kept, incomingCols };
   }
 
   function currentMapPack() {
@@ -120,7 +141,7 @@
     } catch (e) {}
     try {
       const mapRaw = localStorage.getItem(MAP_KEY);
-      if (mapRaw) applyMapPack(JSON.parse(mapRaw));
+      if (mapRaw) applyMapPack(JSON.parse(mapRaw), { merge: true });
     } catch (e) {}
   }
 
@@ -173,7 +194,7 @@
       const res = await fetch("data/export-map.json");
       if (!res.ok) return;
       const pack = await res.json();
-      applyMapPack(pack);
+      applyMapPack(pack, { merge: true });
       if (!ExportMap.hasMapping(state.exportMap) && !state.exportMapPresets.length) return;
       savePrefs();
     } catch (e) {}
@@ -1802,12 +1823,14 @@
     });
     $("#mapExportCfg").addEventListener("click", () => {
       const pack = currentMapPack();
-      if (!pack || !(pack.exportMap.columns || []).length) return toast("还没有可导出的映射");
+      const cols = pack && pack.exportMap && pack.exportMap.columns ? pack.exportMap.columns.length : 0;
+      const schemes = pack && pack.presets ? pack.presets.length : 0;
+      if (!cols && !schemes) return toast("还没有可导出的映射或方案");
       downloadBlob(
         new Blob([JSON.stringify(pack, null, 2)], { type: "application/json" }),
         ExportMap.ensureExt(state.exportMap.fileName || "kone-po-export-map", "json")
       );
-      toast("已导出映射配置，下次可用「导入映射配置」恢复");
+      toast("已导出映射配置（含 " + schemes + " 个方案）。新页面用「导入」合并，重名会保留原来的");
     });
     $("#mapImportCfg").addEventListener("click", () => $("#mapCfgFile").click());
     $("#mapCfgFile").addEventListener("change", (e) => {
@@ -1817,10 +1840,14 @@
       const reader = new FileReader();
       reader.onload = () => {
         try {
-          applyMapPack(JSON.parse(String(reader.result || "{}")));
+          const result = applyMapPack(JSON.parse(String(reader.result || "{}")), { merge: true });
           savePrefs();
           renderExportMap();
-          toast("已导入映射配置");
+          const bits = [];
+          if (result.added) bits.push("新增 " + result.added + " 个方案");
+          if (result.kept) bits.push("保留同名 " + result.kept + " 个");
+          if (!result.added && !result.kept) bits.push("没有新方案（可能已全部在列表里）");
+          toast("已合并导入。" + bits.join("，"));
         } catch (err) {
           toast("映射配置无法读取：" + (err.message || err));
         }

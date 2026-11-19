@@ -192,7 +192,7 @@
       </div>
       <div class="map-box">
         <div class="preset-box">
-          <p class="hint" style="margin:8px 0 6px">已保存的映射方案：点选切换。会记住文件名、列名、字段映射、公式和模板表头。</p>
+          <p class="hint" style="margin:8px 0 6px">已保存的映射方案：点选切换。同一浏览器刷新会保留。更新页面或换地址前先「导出映射配置」，再在新页面「导入映射配置」（合并，同名方案不覆盖）。</p>
           <div class="preset-list" id="mapSchemeList"></div>
           <div class="actions" style="margin-top:8px">
             <input id="mapSchemeName" type="text" placeholder="例如：出货清单 · 物料数量" />
@@ -216,7 +216,7 @@
           <button class="secondary" id="mapAddCol" type="button">添加一列</button>
           <button class="ghost" id="mapFromCurrent" type="button">从当前识别列生成</button>
           <button class="ghost" id="mapExportCfg" type="button">导出映射配置</button>
-          <button class="ghost" id="mapImportCfg" type="button">导入映射配置</button>
+          <button class="ghost" id="mapImportCfg" type="button">导入并合并方案</button>
           <button class="ghost" id="mapClear" type="button">清空映射</button>
         </div>
         <input id="mapCfgFile" type="file" accept="application/json,.json" hidden />

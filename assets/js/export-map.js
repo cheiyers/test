@@ -338,28 +338,58 @@
     return (list || []).filter((p) => p.id !== id);
   }
 
+  function asPreset(p) {
+    if (!p || !(p.name || p.columns)) return null;
+    return Object.assign({ id: p.id || uid(), name: String(p.name || "未命名").trim() }, snapshot(p));
+  }
+
+  function mergePresets(base, extra) {
+    const out = (base || []).map((p) => asPreset(p)).filter(Boolean);
+    let added = 0;
+    let kept = 0;
+    (extra || []).forEach((raw) => {
+      const p = asPreset(raw);
+      if (!p) return;
+      const byName = out.find((x) => x.name === p.name);
+      if (byName) {
+        kept += 1;
+        return;
+      }
+      if (out.some((x) => x.id === p.id)) p.id = uid();
+      out.push(p);
+      added += 1;
+    });
+    return { list: out, added, kept };
+  }
+
   function packConfig(map, presets, activeId) {
     return {
       version: 1,
       kind: "kone-po-export-map",
       exportMap: normalize(map),
       presets: Array.isArray(presets)
-        ? presets.map((p) => Object.assign({ id: p.id || uid(), name: String(p.name || "").trim() }, snapshot(p)))
+        ? presets.map((p) => asPreset(p)).filter(Boolean)
         : [],
       activeId: String(activeId || ""),
     };
   }
 
   function unpackConfig(raw) {
-    const data = raw && raw.exportMap ? raw : { exportMap: raw };
+    if (Array.isArray(raw)) raw = { presets: raw };
+    raw = raw || {};
+    const data = raw.exportMap || raw.presets || raw.exportMapPresets ? raw : { exportMap: raw };
     const exportMap = normalize(data.exportMap);
-    const presets = Array.isArray(data.presets)
+    const rawPresets = Array.isArray(data.presets)
       ? data.presets
-          .filter((p) => p && (p.name || p.columns))
-          .map((p) => Object.assign({ id: p.id || uid(), name: String(p.name || "未命名").trim() }, snapshot(p)))
-      : [];
-    let activeId = String(data.activeId || "");
-    if (activeId && !presets.some((p) => p.id === activeId)) activeId = "";
+      : Array.isArray(data.exportMapPresets)
+        ? data.exportMapPresets
+        : [];
+    const presets = rawPresets.map((p) => asPreset(p)).filter(Boolean);
+    let activeId = String(data.activeId || data.activeExportMapId || "");
+    if (activeId && !presets.some((p) => p.id === activeId)) {
+      const byName = presets.find((p) => p.name === activeId);
+      activeId = byName ? byName.id : "";
+    }
     return { exportMap, presets, activeId };
   }
 
@@ -393,6 +423,8 @@
     removeById,
     packConfig,
     unpackConfig,
+    mergePresets,
+    asPreset,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.ExportMap = api;
