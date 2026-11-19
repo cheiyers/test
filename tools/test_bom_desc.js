@@ -40,11 +40,24 @@ assert.strictEqual(parser.bomDescValue(switchItem, "  enclosure, plastic 340x300
 
 assert.strictEqual(parser.normalizeBomFieldId("物料"), "bomMaterial");
 assert.strictEqual(parser.bomDescValue(switchItem, "RESIDUAL CURRENT BREAKER 1P+N C6A 30mA", "物料"), "KM52255324 \u00d72");
-assert.strictEqual(parser.bomDescValue(switchItem, "RESIDUAL CURRENT BREAKER 1P+N C6A 30mA", "数量"), "1.000 PC \u00d72");
+assert.strictEqual(parser.bomDescValue(switchItem, "RESIDUAL CURRENT BREAKER 1P+N C6A 30mA", "数量"), "2 PC");
 assert.ok(parser.matchingBom(switchItem, "LABEL, POSITION AND IDENTIFICATION").length >= 1);
 assert.ok(parser.bomDescValue(switchItem, "LABEL, POSITION AND IDENTIFICATION", "备注A").includes("20"));
 assert.ok(parser.matchingBomByMaterial(switchItem, "KM52255324").length >= 1);
 assert.strictEqual(parser.bomMaterialValue(switchItem, "KM52255324", "物料"), "KM52255324 \u00d72");
+assert.strictEqual(parser.bomMaterialValue(switchItem, "KM52255324", "数量"), "2 PC");
 assert.strictEqual(parser.bomMaterialValue(switchItem, "NO-SUCH-MAT"), "");
+const mixed = {
+  bom: [
+    { material: "KMABC11", description: "LED STRIP A", qty: "1.5", unit: "PC" },
+    { material: "KMABC11", description: "LED STRIP A", qty: "2", unit: "PC" },
+    { material: "KMZZZ99", description: "SWITCH BLOCK", qty: "4", unit: "PC" },
+  ],
+};
+assert.strictEqual(parser.bomMaterialValue(mixed, "KMABC11", "数量"), "3.5 PC");
+assert.strictEqual(parser.bomKeywordValue(mixed, "LED", "数量"), "3.5 PC");
+assert.strictEqual(parser.bomKeywordValue(mixed, ["KMABC", "ZZZ"], "条数"), "3");
+assert.ok(parser.bomKeywordValue(mixed, "LED").includes("KMABC11"));
+assert.strictEqual(parser.matchingBomByKeywords(mixed, "switch").length, 1);
 
 console.log("ok bom desc", list.length, residualVal, label);

@@ -3,6 +3,7 @@ const assert = require("assert");
 const path = require("path");
 const F = require(path.join(__dirname, "../assets/js/map-formula.js"));
 const M = require(path.join(__dirname, "../assets/js/export-map.js"));
+const P = require(path.join(__dirname, "../assets/js/parser.js"));
 
 function ctxFrom(cols) {
   const letters = {};
@@ -167,5 +168,37 @@ assert.strictEqual(F.evaluate('MATHAS("KMLED1")', matCtx), true);
 assert.strictEqual(F.evaluate('MATHAS("NONE")', matCtx), false);
 assert.strictEqual(F.evaluate('MATQTY("KMLED1","KMSW1")', matCtx), 3);
 assert.strictEqual(F.evaluate('BOMMAT("KMLED1","数量")', matCtx), "2 PC");
+
+const dupItem = {
+  bom: [
+    { material: "KMABC11", description: "LED STRIP A", qty: "1.5", unit: "PC" },
+    { material: "KMABC11", description: "LED STRIP A", qty: "2", unit: "PC" },
+    { material: "KMZZZ99", description: "SWITCH BLOCK", qty: "4", unit: "PC" },
+  ],
+};
+function fromItem(src) {
+  if (src.indexOf("bm:") === 0) {
+    const rest = src.slice(3);
+    const i = rest.indexOf("::");
+    return P.bomMaterialValue(dupItem, i < 0 ? rest : rest.slice(0, i), i < 0 ? "" : rest.slice(i + 2));
+  }
+  if (src.indexOf("bk:") === 0) {
+    const rest = src.slice(3);
+    const i = rest.indexOf("::");
+    const head = i < 0 ? rest : rest.slice(0, i);
+    const field = i < 0 ? "" : rest.slice(i + 2);
+    return P.bomKeywordValue(dupItem, head.split("||"), field);
+  }
+  return "";
+}
+const dupCtx = { sourceValue: fromItem };
+assert.strictEqual(F.evaluate('MATQTY("KMABC11")', dupCtx), 3.5);
+assert.strictEqual(F.evaluate('BOMMAT("KMABC11","数量")', dupCtx), "3.5 PC");
+assert.strictEqual(F.evaluate('KEYHAS("LED")', dupCtx), true);
+assert.strictEqual(F.evaluate('KEYCOUNT("LED","NONE","SWITCH")', dupCtx), 2);
+assert.strictEqual(F.evaluate('KEYHITS("KMABC")', dupCtx), 2);
+assert.strictEqual(F.evaluate('KEYQTY("LED")', dupCtx), 3.5);
+assert.ok(String(F.evaluate('BOMKEY("LED")', dupCtx)).indexOf("KMABC11") >= 0);
+assert.strictEqual(F.evaluate('BOMKEY("LED","数量")', dupCtx), "3.5 PC");
 
 console.log("ok map formula");

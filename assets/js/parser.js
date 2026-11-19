@@ -599,9 +599,15 @@
       备注d: "remarkD",
       remarkd: "remarkD",
       d: "remarkD",
+      条数: "bomCount",
+      行数: "bomCount",
+      件数: "bomCount",
+      count: "bomCount",
+      bomcount: "bomCount",
+      数量合计: "bomQty",
     };
     if (Object.prototype.hasOwnProperty.call(aliases, compact)) return aliases[compact];
-    if (/^(bomPos|bomMaterial|bomQty|bomUnit|bomDescription|remark[A-D])$/.test(s)) return s;
+    if (/^(bomPos|bomMaterial|bomQty|bomUnit|bomDescription|remark[A-D]|bomCount)$/.test(s)) return s;
     return s;
   }
 
@@ -659,10 +665,42 @@
     );
   }
 
-  function bomMaterialValue(item, material, field) {
-    const matches = matchingBomByMaterial(item, material);
-    const fieldId = normalizeBomFieldId(field);
-    return joinCounted(matches.map((b) => (fieldId ? bomFieldValue(b, fieldId) : formatBomPivot(b))));
+  function matchingBomByKeywords(item, keywords) {
+    const list = (Array.isArray(keywords) ? keywords : [keywords])
+      .map((k) => String(k || "").trim())
+      .filter(Boolean);
+    if (!list.length) return [];
+    return ((item && item.bom) || []).filter((b) =>
+      list.some(
+        (kw) => matchKeyword(b.material, kw) || matchKeyword(b.description, kw)
+      )
+    );
+  }
+
+  function parseQtyNumber(raw) {
+    const s = String(raw == null ? "" : raw)
+      .replace(/,/g, "")
+      .trim();
+    const m = s.match(/-?\d+(?:\.\d+)?/);
+    return m ? Number(m[0]) : NaN;
+  }
+
+  function sumBomQty(matches) {
+    let total = 0;
+    let any = false;
+    const units = [];
+    (matches || []).forEach((b) => {
+      const n = parseQtyNumber(b && b.qty);
+      if (!isNaN(n)) {
+        total += n;
+        any = true;
+      }
+      const u = String((b && b.unit) || "").trim();
+      if (u && units.indexOf(u) < 0) units.push(u);
+    });
+    if (!any) return "";
+    const num = Math.round(total * 1000) / 1000;
+    return units.length === 1 ? num + " " + units[0] : String(num);
   }
 
   function joinCounted(values) {
@@ -677,10 +715,23 @@
       .join(" | ");
   }
 
-  function bomDescValue(item, description, field) {
-    const matches = matchingBom(item, description);
+  function formatBomField(matches, field) {
     const fieldId = normalizeBomFieldId(field);
-    return joinCounted(matches.map((b) => (fieldId ? bomFieldValue(b, fieldId) : formatBomPivot(b))));
+    if (fieldId === "bomQty") return sumBomQty(matches);
+    if (fieldId === "bomCount") return matches && matches.length ? String(matches.length) : "";
+    return joinCounted((matches || []).map((b) => (fieldId ? bomFieldValue(b, fieldId) : formatBomPivot(b))));
+  }
+
+  function bomMaterialValue(item, material, field) {
+    return formatBomField(matchingBomByMaterial(item, material), field);
+  }
+
+  function bomDescValue(item, description, field) {
+    return formatBomField(matchingBom(item, description), field);
+  }
+
+  function bomKeywordValue(item, keywords, field) {
+    return formatBomField(matchingBomByKeywords(item, keywords), field);
   }
 
   function collectSpecKeys(docs) {
@@ -742,7 +793,11 @@
     normalizeBomFieldId,
     matchingBom,
     matchingBomByMaterial,
+    matchingBomByKeywords,
     bomMaterialValue,
+    bomKeywordValue,
+    sumBomQty,
+    parseQtyNumber,
     formatBomPivot,
     itemSearchBlob,
     matchKeyword,

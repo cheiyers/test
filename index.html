@@ -220,7 +220,7 @@
           <button class="ghost" id="mapClear" type="button">清空映射</button>
         </div>
         <input id="mapCfgFile" type="file" accept="application/json,.json" hidden />
-        <p class="hint" style="margin:8px 0 4px">公式可点识别字段或子件插入。BOMCOUNT 按子件描述计数；MATCOUNT("KM1","KM2") 看该订单行子件里指定物料号存在几个，数量就是几；MATQTY 把这些物料的数量相加。先点公式框，再点下面的按钮。</p>
+        <p class="hint" style="margin:8px 0 4px">同一物料号出现多行时，MATQTY / BOMMAT(...,"数量") 会把各行数量加总。关键字用 KEYHAS / KEYCOUNT / KEYQTY / BOMKEY，匹配子件物料号或描述中包含的文字。先点公式框，再点下面的按钮。</p>
         <div class="formula-bar" id="formulaBar"></div>
         <div class="map-table-wrap">
           <table class="map-table">

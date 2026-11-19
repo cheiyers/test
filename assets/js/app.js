@@ -450,7 +450,8 @@
   function resolveSourceKey(name) {
     const want = String(name == null ? "" : name).trim();
     if (!want) return "";
-    if (/^(p|b|k):/.test(want) || want.indexOf("bd:") === 0 || want.indexOf("bm:") === 0) return want;
+    if (/^(p|b|k):/.test(want) || want.indexOf("bd:") === 0 || want.indexOf("bm:") === 0 || want.indexOf("bk:") === 0)
+      return want;
     const opts = mapColumnOptions();
     const exact = opts.find((o) => o.key === want || o.label === want);
     if (exact) return exact.key;
@@ -500,6 +501,11 @@
     if (colKey.startsWith("bm:")) {
       const parsed = splitBomDescKey(colKey);
       return KonePoParser.bomMaterialValue(row.item, parsed.desc, parsed.field);
+    }
+    if (colKey.startsWith("bk:")) {
+      const parsed = splitBomDescKey(colKey);
+      const keys = parsed.desc.split(/\|\|/).map((s) => s.trim()).filter(Boolean);
+      return KonePoParser.bomKeywordValue(row.item, keys, parsed.field);
     }
     return "";
   }
@@ -1122,7 +1128,7 @@
   function mappedGetValue(row, src) {
     const key = resolveSourceKey(src);
     if (!key) return "";
-    if (/^(p|b|k):/.test(key) || key.indexOf("bd:") === 0 || key.indexOf("bm:") === 0) {
+    if (/^(p|b|k):/.test(key) || key.indexOf("bd:") === 0 || key.indexOf("bm:") === 0 || key.indexOf("bk:") === 0) {
       return processValue(key, rawFromRow(row, key));
     }
     return processValue(src, rawFromRow(row, src));
@@ -1427,14 +1433,18 @@
            "BOMQTY(" + descArgs + ")"
          )}" title="勾选的子件数量相加">数量合计</button>`
       : "";
-    const matRow = `<label class="mat-codes-label">指定物料号
+    const matRow = `<label class="mat-codes-label">物料号或关键字
       <input id="matCountCodes" type="text" value="${escapeHtml(
         state.matCodes || ""
-      )}" placeholder="KM52255324,KM51705345" />
+      )}" placeholder="整号 KM52255324，或关键字 KM522、LED" />
     </label>
-    <button class="suggest src" type="button" data-mat-fn="MATCOUNT" title="指定物料号在子件中存在几个，结果就是几">这些物料有几个</button>
-    <button class="suggest src" type="button" data-mat-fn="MATQTY" title="指定物料号的子件数量相加">这些物料数量合计</button>
-    <button class="suggest src" type="button" data-mat-fn="MATHAS" title="是否包含第一个物料号">含此物料</button>`;
+    <button class="suggest src" type="button" data-mat-fn="MATCOUNT" title="整号：指定物料号存在几个">这些物料有几个</button>
+    <button class="suggest src" type="button" data-mat-fn="MATQTY" title="整号：同料号多行数量加总">这些物料数量合计</button>
+    <button class="suggest src" type="button" data-mat-fn="MATHAS" title="整号：是否含此物料号">含此物料</button>
+    <button class="suggest src" type="button" data-mat-fn="KEYCOUNT" title="关键字：有几个出现在子件物料或描述里">含关键字有几个</button>
+    <button class="suggest src" type="button" data-mat-fn="KEYHITS" title="关键字：命中多少行子件">含关键字行数</button>
+    <button class="suggest src" type="button" data-mat-fn="KEYQTY" title="关键字：命中子件的数量加总">含关键字数量合计</button>
+    <button class="suggest src" type="button" data-mat-fn="BOMKEY" title="关键字：显示命中的子件内容">显示含关键字内容</button>`;
     const fnBtns = MapFormula.HELP.map(
       (h) =>
         `<button class="suggest" type="button" data-snippet="${escapeHtml(h.snippet)}" title="${escapeHtml(
@@ -1475,9 +1485,10 @@
         if (!el) return toast("请先点选某一列的公式框");
         const raw = (matInput && matInput.value) || state.matCodes || "";
         const parts = raw.split(/[,，;；\s]+/).map((s) => s.trim()).filter(Boolean);
-        if (!parts.length) return toast("先在「指定物料号」里填物料号，用逗号分隔");
+        if (!parts.length) return toast("先填物料号或关键字，用逗号分隔");
         const fn = btn.dataset.matFn;
-        const args = (fn === "MATHAS" ? parts.slice(0, 1) : parts).map(formulaQuote).join(",");
+        const one = fn === "MATHAS" || fn === "KEYHAS";
+        const args = (one ? parts.slice(0, 1) : parts).map(formulaQuote).join(",");
         insertAtCursor(el, fn + "(" + args + ")");
       });
     });

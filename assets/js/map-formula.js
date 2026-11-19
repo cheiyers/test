@@ -18,6 +18,11 @@
     物料几个: "MATCOUNT",
     物料号几个: "MATCOUNT",
     物料数量和: "MATQTY",
+    含关键字: "KEYHAS",
+    关键字几个: "KEYCOUNT",
+    关键字数量和: "KEYQTY",
+    关键字行数: "KEYHITS",
+    关键字子件: "BOMKEY",
     如果空: "IFEMPTY",
     如果错误: "IFERROR",
   };
@@ -73,7 +78,12 @@
     { id: "MATHAS", snippet: 'MATHAS("KM52255324")', hint: "该订单行子件里是否有此物料号" },
     { id: "MATCOUNT", snippet: 'MATCOUNT("KM52255324","KM51705345")', hint: "指定的物料号里，子件中存在几个，数量就是几" },
     { id: "MATQTY", snippet: 'MATQTY("KM52255324","KM51705345")', hint: "指定物料号的子件数量相加" },
-    { id: "BOMMAT", snippet: 'BOMMAT("KM52255324","数量")', hint: "按物料号取该子件；第二参为数量/描述/备注等" },
+    { id: "BOMMAT", snippet: 'BOMMAT("KM52255324","数量")', hint: "按物料号取该子件；第二参为数量/描述/备注等。同料号多行会把数量加总" },
+    { id: "KEYHAS", snippet: 'KEYHAS("KM522")', hint: "子件物料号或描述是否包含该关键字" },
+    { id: "KEYCOUNT", snippet: 'KEYCOUNT("KM522","LED")', hint: "列出的关键字里，有几个在子件物料/描述中出现" },
+    { id: "KEYHITS", snippet: 'KEYHITS("KM522")', hint: "子件物料/描述包含关键字的行数（同料号两行算 2）" },
+    { id: "KEYQTY", snippet: 'KEYQTY("KM522","LED")', hint: "包含这些关键字的子件数量相加" },
+    { id: "BOMKEY", snippet: 'BOMKEY("KM522","数量")', hint: "显示包含关键字的子件；第二参可改为物料/数量/描述" },
   ];
 
   function letterToIndex(s) {
@@ -415,6 +425,20 @@
         });
     });
     return names;
+  }
+
+  function isBomFieldWord(s) {
+    var t = String(s || "")
+      .replace(/\s+/g, "")
+      .toLowerCase();
+    return /^(数量|物料|描述|pos|备注a|备注b|备注c|备注d|条数|行数|件数|qty|material|description|bomqty|bommaterial|bomdescription|bompos|bomcount|数量合计)$/.test(
+      t
+    );
+  }
+
+  function bkPath(names, field) {
+    var k = "bk:" + (names || []).join("||");
+    return field ? k + "::" + field : k;
   }
 
   function callFn(name, args, ctx) {
@@ -759,6 +783,34 @@
           if (!isNaN(mv)) mtotal += mv;
         }
         return mtotal;
+      }
+      case "BOMKEY": {
+        if (!ctx.sourceValue) return "";
+        var kws = flattenBomNames(args);
+        var kfield = "";
+        if (kws.length >= 2 && isBomFieldWord(kws[kws.length - 1])) kfield = kws.pop();
+        return ctx.sourceValue(bkPath(kws, kfield));
+      }
+      case "KEYHAS": {
+        return sourceFilled(ctx, bkPath(flattenBomNames(args).slice(0, 1)));
+      }
+      case "KEYCOUNT": {
+        var knames = flattenBomNames(args);
+        var kn = 0;
+        for (var ki = 0; ki < knames.length; ki++) {
+          if (sourceFilled(ctx, bkPath([knames[ki]]))) kn += 1;
+        }
+        return kn;
+      }
+      case "KEYHITS": {
+        if (!ctx.sourceValue) return 0;
+        var hv = toNumber(ctx.sourceValue(bkPath(flattenBomNames(args), "条数")));
+        return isError(hv) || isNaN(hv) ? 0 : hv;
+      }
+      case "KEYQTY": {
+        if (!ctx.sourceValue) return 0;
+        var kv = toNumber(ctx.sourceValue(bkPath(flattenBomNames(args), "数量")));
+        return isError(kv) || isNaN(kv) ? 0 : kv;
       }
       default:
         return "#NAME?";
