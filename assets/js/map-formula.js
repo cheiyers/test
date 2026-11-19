@@ -11,6 +11,9 @@
     字段: "FIELD",
     子件: "BOM",
     含子件: "BOMHAS",
+    存在几个: "BOMCOUNT",
+    子件数: "BOMCOUNT",
+    子件数量和: "BOMQTY",
     如果空: "IFEMPTY",
     如果错误: "IFERROR",
   };
@@ -61,6 +64,8 @@
     { id: "FIELD", snippet: 'FIELD("物料")', hint: "引用识别字段（订单行或规格列）" },
     { id: "BOM", snippet: 'BOM("LED STRIP","物料")', hint: "指定描述的子件；第二参为物料/数量/备注A 等，省略则为汇总" },
     { id: "BOMHAS", snippet: 'BOMHAS("LED STRIP")', hint: "该订单行是否包含该子件描述" },
+    { id: "BOMCOUNT", snippet: 'BOMCOUNT("LED STRIP","主开关")', hint: "列出的子件里，有几种存在，数量就是几" },
+    { id: "BOMQTY", snippet: 'BOMQTY("LED STRIP","主开关")', hint: "列出的子件数量相加（抽出数字）" },
   ];
 
   function letterToIndex(s) {
@@ -377,6 +382,25 @@
     return out;
   }
 
+  function bomPresent(ctx, desc) {
+    if (!ctx || !ctx.sourceValue) return false;
+    var has = ctx.sourceValue("bd:" + String(desc || "").trim());
+    return has != null && String(has).trim() !== "";
+  }
+
+  function flattenBomNames(args) {
+    var names = [];
+    (args || []).forEach(function (arg) {
+      String(toText(arg) || "")
+        .split(/[,，;；]+/)
+        .forEach(function (part) {
+          var s = String(part || "").trim();
+          if (s) names.push(s);
+        });
+    });
+    return names;
+  }
+
   function callFn(name, args, ctx) {
     var a0 = args[0];
     var a1 = args[1];
@@ -671,9 +695,26 @@
         return ctx.sourceValue(part ? "bd:" + desc + "::" + part : "bd:" + desc);
       }
       case "BOMHAS": {
-        if (!ctx.sourceValue) return false;
-        var has = ctx.sourceValue("bd:" + toText(a0));
-        return has != null && String(has).trim() !== "";
+        return bomPresent(ctx, toText(a0));
+      }
+      case "BOMCOUNT": {
+        var names = flattenBomNames(args);
+        var n = 0;
+        for (var bi = 0; bi < names.length; bi++) {
+          if (bomPresent(ctx, names[bi])) n += 1;
+        }
+        return n;
+      }
+      case "BOMQTY": {
+        if (!ctx.sourceValue) return 0;
+        var qnames = flattenBomNames(args);
+        var total = 0;
+        for (var qi = 0; qi < qnames.length; qi++) {
+          var qv = toNumber(ctx.sourceValue("bd:" + qnames[qi] + "::数量"));
+          if (isError(qv)) return qv;
+          if (!isNaN(qv)) total += qv;
+        }
+        return total;
       }
       default:
         return "#NAME?";

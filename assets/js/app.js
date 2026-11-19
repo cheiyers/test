@@ -1413,6 +1413,15 @@
         )}" title="该子件汇总">${escapeHtml(d)}</button>${fields}</span>`;
       })
       .join("");
+    const descArgs = (state.selectedBomDescs || []).map(formulaQuote).join(",");
+    const countBtns = descArgs
+      ? `<button class="suggest src" type="button" data-insert="${escapeHtml(
+          "BOMCOUNT(" + descArgs + ")"
+        )}" title="勾选的子件里，有几种存在，结果就是几">存在几个</button>
+         <button class="suggest src" type="button" data-insert="${escapeHtml(
+           "BOMQTY(" + descArgs + ")"
+         )}" title="勾选的子件数量相加">数量合计</button>`
+      : "";
     const fnBtns = MapFormula.HELP.map(
       (h) =>
         `<button class="suggest" type="button" data-snippet="${escapeHtml(h.snippet)}" title="${escapeHtml(
@@ -1423,6 +1432,7 @@
       (cols.length ? `<span class="hint">插入导出列</span>${colBtns}` : "") +
       (recBtns ? `<span class="formula-break"></span><span class="hint">插入识别字段</span>${recBtns}` : "") +
       `<span class="formula-break"></span><span class="hint">插入子件</span>` +
+      (countBtns ? countBtns : "") +
       (bomBtns || '<span class="muted">先在左侧勾选子件描述，再点公式框插入 BOM("描述","物料")</span>') +
       `<span class="formula-break"></span><span class="hint">插入函数</span>${fnBtns}`;
     bar.querySelectorAll("[data-insert]").forEach((btn) => {

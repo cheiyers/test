@@ -134,5 +134,23 @@ assert.strictEqual(bbody[1], "2 PC");
 assert.strictEqual(bbody[2], "KMLED1 · 2 PC");
 assert.strictEqual(bbody[3], "无");
 assert.strictEqual(F.evaluate('识别("p:material")', { sourceValue: (n) => srcGet(srcRows[0], n) }), "KM-P");
+const countGet = (row, src) => {
+  if (src === "bd:LED STRIP") return row.led;
+  if (src === "bd:MAIN SWITCH") return "SW";
+  if (src === "bd:MISSING") return "";
+  if (src === "bd:LED STRIP::数量") return row.qty;
+  if (src === "bd:MAIN SWITCH::数量") return "1.000 PC";
+  return "";
+};
+const countCtx = { sourceValue: (n) => countGet(srcRows[0], n) };
+assert.strictEqual(F.evaluate('BOMCOUNT("LED STRIP","MAIN SWITCH","MISSING")', countCtx), 2);
+assert.strictEqual(F.evaluate('BOMCOUNT("LED STRIP,MISSING,MAIN SWITCH")', countCtx), 2);
+assert.strictEqual(F.evaluate('存在几个("LED STRIP","MISSING")', countCtx), 1);
+assert.strictEqual(F.evaluate('BOMQTY("LED STRIP","MAIN SWITCH")', countCtx), 3);
+assert.strictEqual(
+  M.mappedMatrix(srcRows, [Object.assign(M.emptyColumn("几种"), { formula: 'BOMCOUNT("LED STRIP","MISSING")' })], countGet)
+    .body[0][0],
+  "1"
+);
 
 console.log("ok map formula");
