@@ -177,18 +177,13 @@ const dupItem = {
   ],
 };
 function fromItem(src) {
-  if (src.indexOf("bm:") === 0) {
-    const rest = src.slice(3);
-    const i = rest.indexOf("::");
-    return P.bomMaterialValue(dupItem, i < 0 ? rest : rest.slice(0, i), i < 0 ? "" : rest.slice(i + 2));
-  }
-  if (src.indexOf("bk:") === 0) {
-    const rest = src.slice(3);
-    const i = rest.indexOf("::");
-    const head = i < 0 ? rest : rest.slice(0, i);
-    const field = i < 0 ? "" : rest.slice(i + 2);
-    return P.bomKeywordValue(dupItem, head.split("||"), field);
-  }
+  const prefix = src.slice(0, 3);
+  const parts = src.slice(3).split("::");
+  const head = parts[0] || "";
+  const field = parts[1] || "";
+  const index = parts[2] ? Number(parts[2]) : 0;
+  if (prefix === "bm:") return P.bomMaterialValue(dupItem, head, field, index);
+  if (prefix === "bk:") return P.bomKeywordValue(dupItem, head.split("||"), field, index);
   return "";
 }
 const dupCtx = { sourceValue: fromItem };
@@ -200,5 +195,10 @@ assert.strictEqual(F.evaluate('KEYHITS("KMABC")', dupCtx), 2);
 assert.strictEqual(F.evaluate('KEYQTY("LED")', dupCtx), 3.5);
 assert.ok(String(F.evaluate('BOMKEY("LED")', dupCtx)).indexOf("KMABC11") >= 0);
 assert.strictEqual(F.evaluate('BOMKEY("LED","数量")', dupCtx), "3.5 PC");
+assert.strictEqual(F.evaluate('BOMKEY("LED","物料",1)', dupCtx), "KMABC11");
+assert.strictEqual(F.evaluate('BOMKEY("LED","数量",1)', dupCtx), "1.5 PC");
+assert.strictEqual(F.evaluate('BOMKEY("LED","数量",2)', dupCtx), "2 PC");
+assert.strictEqual(F.evaluate('TEXTSPLIT("KM1 | KM2"," | ",2)', matCtx), "KM2");
+assert.strictEqual(F.evaluate('分段("a / b / c"," / ",3)'), "c");
 
 console.log("ok map formula");

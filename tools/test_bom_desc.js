@@ -56,6 +56,9 @@ const mixed = {
 };
 assert.strictEqual(parser.bomMaterialValue(mixed, "KMABC11", "数量"), "3.5 PC");
 assert.strictEqual(parser.bomKeywordValue(mixed, "LED", "数量"), "3.5 PC");
+assert.strictEqual(parser.bomKeywordValue(mixed, "LED", "数量", 1), "1.5 PC");
+assert.strictEqual(parser.bomKeywordValue(mixed, "LED", "数量", 2), "2 PC");
+assert.strictEqual(parser.bomKeywordValue(mixed, "LED", "物料", 2), "KMABC11");
 assert.strictEqual(parser.bomKeywordValue(mixed, ["KMABC", "ZZZ"], "条数"), "3");
 assert.ok(parser.bomKeywordValue(mixed, "LED").includes("KMABC11"));
 assert.strictEqual(parser.matchingBomByKeywords(mixed, "switch").length, 1);

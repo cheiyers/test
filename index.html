@@ -220,7 +220,7 @@
           <button class="ghost" id="mapClear" type="button">清空映射</button>
         </div>
         <input id="mapCfgFile" type="file" accept="application/json,.json" hidden />
-        <p class="hint" style="margin:8px 0 4px">同一物料号出现多行时，MATQTY / BOMMAT(...,"数量") 会把各行数量加总。关键字用 KEYHAS / KEYCOUNT / KEYQTY / BOMKEY，匹配子件物料号或描述中包含的文字。先点公式框，再点下面的按钮。</p>
+        <p class="hint" style="margin:8px 0 4px">命中关键字后不要拆整段汇总，按列各写一条：BOMKEY("KM522","物料")、BOMKEY("KM522","数量")、BOMKEY("KM522","备注A")。第三参取第几条命中，例如 BOMKEY("KM522","物料",2)。也可用 TEXTSPLIT(A," | ",1) 拆「 | 」拼接的文本。先点公式框再点按钮。</p>
         <div class="formula-bar" id="formulaBar"></div>
         <div class="map-table-wrap">
           <table class="map-table">

@@ -23,6 +23,7 @@
     关键字数量和: "KEYQTY",
     关键字行数: "KEYHITS",
     关键字子件: "BOMKEY",
+    分段: "TEXTSPLIT",
     如果空: "IFEMPTY",
     如果错误: "IFERROR",
   };
@@ -83,7 +84,8 @@
     { id: "KEYCOUNT", snippet: 'KEYCOUNT("KM522","LED")', hint: "列出的关键字里，有几个在子件物料/描述中出现" },
     { id: "KEYHITS", snippet: 'KEYHITS("KM522")', hint: "子件物料/描述包含关键字的行数（同料号两行算 2）" },
     { id: "KEYQTY", snippet: 'KEYQTY("KM522","LED")', hint: "包含这些关键字的子件数量相加" },
-    { id: "BOMKEY", snippet: 'BOMKEY("KM522","数量")', hint: "显示包含关键字的子件；第二参可改为物料/数量/描述" },
+    { id: "BOMKEY", snippet: 'BOMKEY("KM522","物料",1)', hint: "命中关键字的子件：第二参拆字段（物料/数量/描述/备注A），第三参取第几条" },
+    { id: "TEXTSPLIT", snippet: 'TEXTSPLIT(A," | ",1)', hint: "按分隔符拆段，取第 n 段（从 1 起）" },
   ];
 
   function letterToIndex(s) {
@@ -436,9 +438,12 @@
     );
   }
 
-  function bkPath(names, field) {
+  function bkPath(names, field, index) {
     var k = "bk:" + (names || []).join("||");
-    return field ? k + "::" + field : k;
+    var nth = Number(index) || 0;
+    if (field || nth > 0) k += "::" + (field || "");
+    if (nth > 0) k += "::" + nth;
+    return k;
   }
 
   function callFn(name, args, ctx) {
@@ -539,6 +544,18 @@
         var start = Math.max(1, toNumber(a1) || 1) - 1;
         var len = Math.max(0, a2 == null ? 1 : toNumber(a2) || 0);
         return toText(a0).substr(start, len);
+      }
+      case "TEXTSPLIT":
+      case "PART":
+      case "SPLIT": {
+        var src = toText(a0);
+        if (isError(src)) return src;
+        var sep = a1 == null || a1 === "" ? " | " : toText(a1);
+        var bits = src.split(sep);
+        var which = a2 == null || a2 === "" ? 1 : Math.floor(toNumber(a2));
+        if (which < 0) which = bits.length + which + 1;
+        var piece = bits[which - 1];
+        return piece == null ? "" : String(piece).trim();
       }
       case "LEN":
       case "LENGTH":
@@ -786,10 +803,15 @@
       }
       case "BOMKEY": {
         if (!ctx.sourceValue) return "";
-        var kws = flattenBomNames(args);
+        var klist = (args || []).slice();
+        var kindex = 0;
+        if (klist.length && looksNumber(klist[klist.length - 1]) && String(klist[klist.length - 1]).trim() !== "") {
+          kindex = Math.floor(toNumber(klist.pop()));
+        }
+        var kws = flattenBomNames(klist);
         var kfield = "";
         if (kws.length >= 2 && isBomFieldWord(kws[kws.length - 1])) kfield = kws.pop();
-        return ctx.sourceValue(bkPath(kws, kfield));
+        return ctx.sourceValue(bkPath(kws, kfield, kindex));
       }
       case "KEYHAS": {
         return sourceFilled(ctx, bkPath(flattenBomNames(args).slice(0, 1)));

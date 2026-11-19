@@ -715,23 +715,29 @@
       .join(" | ");
   }
 
-  function formatBomField(matches, field) {
+  function formatBomField(matches, field, index) {
+    let list = matches || [];
+    const nth = Number(index);
+    if (nth > 0) {
+      const one = list[nth - 1];
+      list = one ? [one] : [];
+    }
     const fieldId = normalizeBomFieldId(field);
-    if (fieldId === "bomQty") return sumBomQty(matches);
-    if (fieldId === "bomCount") return matches && matches.length ? String(matches.length) : "";
-    return joinCounted((matches || []).map((b) => (fieldId ? bomFieldValue(b, fieldId) : formatBomPivot(b))));
+    if (fieldId === "bomQty") return sumBomQty(list);
+    if (fieldId === "bomCount") return list.length ? String(list.length) : "";
+    return joinCounted(list.map((b) => (fieldId ? bomFieldValue(b, fieldId) : formatBomPivot(b))));
   }
 
-  function bomMaterialValue(item, material, field) {
-    return formatBomField(matchingBomByMaterial(item, material), field);
+  function bomMaterialValue(item, material, field, index) {
+    return formatBomField(matchingBomByMaterial(item, material), field, index);
   }
 
-  function bomDescValue(item, description, field) {
-    return formatBomField(matchingBom(item, description), field);
+  function bomDescValue(item, description, field, index) {
+    return formatBomField(matchingBom(item, description), field, index);
   }
 
-  function bomKeywordValue(item, keywords, field) {
-    return formatBomField(matchingBomByKeywords(item, keywords), field);
+  function bomKeywordValue(item, keywords, field, index) {
+    return formatBomField(matchingBomByKeywords(item, keywords), field, index);
   }
 
   function collectSpecKeys(docs) {

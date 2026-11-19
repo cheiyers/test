@@ -442,9 +442,12 @@
 
   function splitBomDescKey(colKey) {
     const rest = String(colKey || "").slice(3);
-    const sep = rest.indexOf("::");
-    if (sep < 0) return { desc: rest, field: "" };
-    return { desc: rest.slice(0, sep), field: rest.slice(sep + 2) };
+    const parts = String(rest || "").split("::");
+    return {
+      desc: parts[0] || "",
+      field: parts[1] || "",
+      index: parts[2] ? Number(parts[2]) || 0 : 0,
+    };
   }
 
   function resolveSourceKey(name) {
@@ -496,16 +499,16 @@
     if (colKey.startsWith("k:")) return KonePoParser.specValueForKeyword(row.item, colKey.slice(2));
     if (colKey.startsWith("bd:")) {
       const parsed = splitBomDescKey(colKey);
-      return KonePoParser.bomDescValue(row.item, parsed.desc, parsed.field);
+      return KonePoParser.bomDescValue(row.item, parsed.desc, parsed.field, parsed.index);
     }
     if (colKey.startsWith("bm:")) {
       const parsed = splitBomDescKey(colKey);
-      return KonePoParser.bomMaterialValue(row.item, parsed.desc, parsed.field);
+      return KonePoParser.bomMaterialValue(row.item, parsed.desc, parsed.field, parsed.index);
     }
     if (colKey.startsWith("bk:")) {
       const parsed = splitBomDescKey(colKey);
       const keys = parsed.desc.split(/\|\|/).map((s) => s.trim()).filter(Boolean);
-      return KonePoParser.bomKeywordValue(row.item, keys, parsed.field);
+      return KonePoParser.bomKeywordValue(row.item, keys, parsed.field, parsed.index);
     }
     return "";
   }
@@ -1445,6 +1448,36 @@
     <button class="suggest src" type="button" data-mat-fn="KEYHITS" title="关键字：命中多少行子件">含关键字行数</button>
     <button class="suggest src" type="button" data-mat-fn="KEYQTY" title="关键字：命中子件的数量加总">含关键字数量合计</button>
     <button class="suggest src" type="button" data-mat-fn="BOMKEY" title="关键字：显示命中的子件内容">显示含关键字内容</button>`;
+    const kwFieldDefs = [
+      { field: "", label: "汇总" },
+      { field: "物料", label: "物料" },
+      { field: "数量", label: "数量" },
+      { field: "描述", label: "描述" },
+      { field: "Pos", label: "Pos" },
+      { field: "备注A", label: "备注A" },
+      { field: "备注B", label: "备注B" },
+      { field: "备注C", label: "备注C" },
+      { field: "备注D", label: "备注D" },
+    ];
+    const kwSplitBtns = kwFieldDefs
+      .map((f) => {
+        return `<span class="formula-bom-group">
+          <button class="suggest src" type="button" data-kw-field="${escapeHtml(
+            f.field
+          )}" title="命中行的${escapeHtml(f.label)}">${escapeHtml(f.label)}</button>
+          ${
+            f.field
+              ? `<button class="suggest src" type="button" data-kw-field="${escapeHtml(
+                  f.field
+                )}" data-kw-index="1" title="第 1 条命中的${escapeHtml(f.label)}">第1条</button>
+                 <button class="suggest src" type="button" data-kw-field="${escapeHtml(
+                   f.field
+                 )}" data-kw-index="2" title="第 2 条命中的${escapeHtml(f.label)}">第2条</button>`
+              : ""
+          }
+        </span>`;
+      })
+      .join("");
     const fnBtns = MapFormula.HELP.map(
       (h) =>
         `<button class="suggest" type="button" data-snippet="${escapeHtml(h.snippet)}" title="${escapeHtml(
@@ -1458,6 +1491,7 @@
       (countBtns ? countBtns : "") +
       (bomBtns || '<span class="muted">先在左侧勾选子件描述，再点公式框插入 BOM("描述","物料")</span>') +
       `<span class="formula-break"></span><span class="hint">按物料号</span>${matRow}` +
+      `<span class="formula-break"></span><span class="hint">拆分命中内容</span>${kwSplitBtns}` +
       `<span class="formula-break"></span><span class="hint">插入函数</span>${fnBtns}`;
     bar.querySelectorAll("[data-insert]").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -1490,6 +1524,21 @@
         const one = fn === "MATHAS" || fn === "KEYHAS";
         const args = (one ? parts.slice(0, 1) : parts).map(formulaQuote).join(",");
         insertAtCursor(el, fn + "(" + args + ")");
+      });
+    });
+    bar.querySelectorAll("[data-kw-field]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const el = formulaTarget();
+        if (!el) return toast("请先点选某一列的公式框");
+        const raw = (matInput && matInput.value) || state.matCodes || "";
+        const parts = raw.split(/[,，;；\s]+/).map((s) => s.trim()).filter(Boolean);
+        if (!parts.length) return toast("先填关键字，再点要拆出的字段");
+        const args = parts.map(formulaQuote);
+        const field = btn.dataset.kwField || "";
+        const index = btn.dataset.kwIndex || "";
+        if (field) args.push(formulaQuote(field));
+        if (index) args.push(index);
+        insertAtCursor(el, "BOMKEY(" + args.join(",") + ")");
       });
     });
   }
