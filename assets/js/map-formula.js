@@ -7,6 +7,10 @@
     拼接: "CONCAT",
     列: "COL",
     本列: "THIS",
+    识别: "FIELD",
+    字段: "FIELD",
+    子件: "BOM",
+    含子件: "BOMHAS",
     如果空: "IFEMPTY",
     如果错误: "IFERROR",
   };
@@ -53,7 +57,10 @@
     { id: "REGEXEXTRACT", snippet: 'REGEXEXTRACT(A,"KM[A-Z0-9]+")', hint: "正则提取" },
     { id: "REGEXREPLACE", snippet: 'REGEXREPLACE(A,"\\\\s+","")', hint: "正则替换" },
     { id: "THIS", snippet: "THIS()", hint: "本列映射/固定值（不含公式）" },
-    { id: "COL", snippet: 'COL("品名")', hint: "按列名引用" },
+    { id: "COL", snippet: 'COL("品名")', hint: "按导出列名引用" },
+    { id: "FIELD", snippet: 'FIELD("物料")', hint: "引用识别字段（订单行或规格列）" },
+    { id: "BOM", snippet: 'BOM("LED STRIP","物料")', hint: "指定描述的子件；第二参为物料/数量/备注A 等，省略则为汇总" },
+    { id: "BOMHAS", snippet: 'BOMHAS("LED STRIP")', hint: "该订单行是否包含该子件描述" },
   ];
 
   function letterToIndex(s) {
@@ -652,6 +659,22 @@
         }
         return ctx.valueByName(toText(a0));
       }
+      case "FIELD":
+      case "SRC": {
+        if (!ctx.sourceValue) return "";
+        return ctx.sourceValue(toText(a0));
+      }
+      case "BOM": {
+        if (!ctx.sourceValue) return "";
+        var desc = toText(a0);
+        var part = a1 == null || a1 === "" ? "" : toText(a1);
+        return ctx.sourceValue(part ? "bd:" + desc + "::" + part : "bd:" + desc);
+      }
+      case "BOMHAS": {
+        if (!ctx.sourceValue) return false;
+        var has = ctx.sourceValue("bd:" + toText(a0));
+        return has != null && String(has).trim() !== "";
+      }
       default:
         return "#NAME?";
     }
@@ -732,7 +755,7 @@
     }
   }
 
-  function evalRow(columns, rawOf) {
+  function evalRow(columns, rawOf, sourceOf) {
     var cols = columns || [];
     var cache = [];
     var ready = [];
@@ -752,6 +775,9 @@
           thisValue: raw,
           valueAt: valueAt,
           valueByName: valueByName,
+          sourceValue: sourceOf || function () {
+            return "";
+          },
         });
       }
       visiting[index] = false;

@@ -104,4 +104,35 @@ const nbody = M.mappedMatrix([{ material: "KM9" }], nestedCol, getValue).body;
 assert.strictEqual(nbody[0][1], "KM");
 assert.strictEqual(nbody[0][2], "KM9");
 
+const srcRows = [
+  {
+    material: "KM-P",
+    led: "KMLED1",
+    qty: "2 PC",
+    empty: "",
+  },
+];
+const srcGet = (row, src) => {
+  if (src === "p:material" || src === "物料") return row.material;
+  if (src === "bd:LED STRIP") return row.led + " · " + row.qty;
+  if (src === "bd:LED STRIP::物料" || src === "bd:LED STRIP::bomMaterial") return row.led;
+  if (src === "bd:LED STRIP::数量" || src === "bd:LED STRIP::bomQty") return row.qty;
+  if (src === "bd:MISSING") return "";
+  return "";
+};
+const fieldCol = [Object.assign(M.emptyColumn("码"), { formula: 'FIELD("p:material")' })];
+assert.strictEqual(M.mappedMatrix(srcRows, fieldCol, srcGet).body[0][0], "KM-P");
+const bomCols = [
+  Object.assign(M.emptyColumn("灯物料"), { formula: 'BOM("LED STRIP","物料")' }),
+  Object.assign(M.emptyColumn("灯数"), { formula: 'BOM("LED STRIP","数量")' }),
+  Object.assign(M.emptyColumn("有灯"), { formula: 'IF(BOMHAS("LED STRIP"),BOM("LED STRIP"),"—")' }),
+  Object.assign(M.emptyColumn("无柜"), { formula: 'IF(BOMHAS("MISSING"),"有","无")' }),
+];
+const bbody = M.mappedMatrix(srcRows, bomCols, srcGet).body[0];
+assert.strictEqual(bbody[0], "KMLED1");
+assert.strictEqual(bbody[1], "2 PC");
+assert.strictEqual(bbody[2], "KMLED1 · 2 PC");
+assert.strictEqual(bbody[3], "无");
+assert.strictEqual(F.evaluate('识别("p:material")', { sourceValue: (n) => srcGet(srcRows[0], n) }), "KM-P");
+
 console.log("ok map formula");

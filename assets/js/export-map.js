@@ -187,7 +187,7 @@
     const body = (rows || []).map((row) => {
       const getter = (src) => getValue(row, src);
       if (Formula && Formula.evalRow) {
-        return Formula.evalRow(cols, (i) => cellValue(cols[i], getter));
+        return Formula.evalRow(cols, (i) => cellValue(cols[i], getter), getter);
       }
       return cols.map((col) => cellValue(col, getter));
     });

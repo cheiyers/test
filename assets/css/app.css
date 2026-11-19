@@ -248,6 +248,9 @@ table.map-table textarea {
 }
 .formula-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 8px; }
 .formula-bar .suggest { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+.formula-bar .suggest.src { font-family: inherit; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.formula-bar .formula-break { flex-basis: 100%; height: 0; }
+.formula-bom-group { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 4px 6px; border: 1px dashed var(--line); border-radius: 8px; background: #fafcf8; }
 table.map-table .letter { font-family: "IBM Plex Mono", ui-monospace, monospace; color: var(--muted); }
 .map-row-actions { display: flex; gap: 4px; }
 .map-row-actions button {

@@ -402,6 +402,46 @@
     return opts;
   }
 
+  function mapColumnOptions() {
+    const opts = columnOptions();
+    state.selectedBomDescs.forEach((d) => {
+      BOM_FIELDS.forEach((f) => {
+        opts.push({
+          key: "bd:" + d + "::" + f.id,
+          label: "\u5b50\u4ef6\u00b7" + d + "\u00b7" + f.label,
+          kind: "bomdesc-field",
+          desc: d,
+          field: f.id,
+        });
+      });
+    });
+    return opts;
+  }
+
+  function splitBomDescKey(colKey) {
+    const rest = String(colKey || "").slice(3);
+    const sep = rest.indexOf("::");
+    if (sep < 0) return { desc: rest, field: "" };
+    return { desc: rest.slice(0, sep), field: rest.slice(sep + 2) };
+  }
+
+  function resolveSourceKey(name) {
+    const want = String(name == null ? "" : name).trim();
+    if (!want) return "";
+    if (/^(p|b|k):/.test(want) || want.indexOf("bd:") === 0) return want;
+    const opts = mapColumnOptions();
+    const exact = opts.find((o) => o.key === want || o.label === want);
+    if (exact) return exact.key;
+    const parent = PARENT_FIELDS.find((f) => f.id === want || f.label === want);
+    if (parent) return "p:" + parent.id;
+    const bom = BOM_FIELDS.find((f) => f.id === want || f.label === want || f.label === "\u5b50\u4ef6\u00b7" + want);
+    if (bom) return "b:" + bom.id;
+    if ((state.extractKeywords || []).indexOf(want) >= 0) return "k:" + want;
+    const descHit = (state.selectedBomDescs || []).find((d) => d === want || "\u5b50\u4ef6\u00b7" + d === want);
+    if (descHit) return "bd:" + descHit;
+    return want;
+  }
+
   function processValue(colKey, raw) {
     return ColumnTransform.applyPipeline(raw, (state.columnRules && state.columnRules[colKey]) || []);
   }
@@ -431,7 +471,10 @@
       return "";
     }
     if (colKey.startsWith("k:")) return KonePoParser.specValueForKeyword(row.item, colKey.slice(2));
-    if (colKey.startsWith("bd:")) return KonePoParser.bomDescValue(row.item, colKey.slice(3));
+    if (colKey.startsWith("bd:")) {
+      const parsed = splitBomDescKey(colKey);
+      return KonePoParser.bomDescValue(row.item, parsed.desc, parsed.field);
+    }
     return "";
   }
 
@@ -1051,6 +1094,11 @@
   }
 
   function mappedGetValue(row, src) {
+    const key = resolveSourceKey(src);
+    if (!key) return "";
+    if (/^(p|b|k):/.test(key) || key.indexOf("bd:") === 0) {
+      return processValue(key, rawFromRow(row, key));
+    }
     return processValue(src, rawFromRow(row, src));
   }
 
@@ -1080,14 +1128,28 @@
   }
 
   function sourceOptionsHtml(selected) {
-    const opts = [`<option value="">（空）</option>`];
-    opts.push(`<option value="const"${selected === "const" ? " selected" : ""}>固定值</option>`);
-    columnOptions().forEach((o) => {
-      opts.push(
-        `<option value="${escapeHtml(o.key)}"${o.key === selected ? " selected" : ""}>${escapeHtml(o.label)}</option>`
-      );
+    const groups = [
+      { kind: "parent", label: "订单行" },
+      { kind: "bom", label: "当前行子件字段" },
+      { kind: "kw", label: "规格关键字" },
+      { kind: "bomdesc", label: "子件按描述（汇总）" },
+      { kind: "bomdesc-field", label: "子件按描述取字段" },
+    ];
+    const list = mapColumnOptions();
+    const parts = [`<option value="">（空）</option>`];
+    parts.push(`<option value="const"${selected === "const" ? " selected" : ""}>固定值</option>`);
+    groups.forEach((g) => {
+      const items = list.filter((o) => o.kind === g.kind);
+      if (!items.length) return;
+      parts.push(`<optgroup label="${escapeHtml(g.label)}">`);
+      items.forEach((o) => {
+        parts.push(
+          `<option value="${escapeHtml(o.key)}"${o.key === selected ? " selected" : ""}>${escapeHtml(o.label)}</option>`
+        );
+      });
+      parts.push("</optgroup>");
     });
-    return opts.join("");
+    return parts.join("");
   }
 
   function findMapCol(id) {
@@ -1290,6 +1352,10 @@
     el.focus();
   }
 
+  function formulaQuote(s) {
+    return '"' + String(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
+  }
+
   function renderFormulaBar() {
     const bar = $("#formulaBar");
     if (!bar || !window.MapFormula) return;
@@ -1302,6 +1368,30 @@
         )}">${letter}</button>`;
       })
       .join("");
+    const recBtns = columnOptions()
+      .filter((o) => o.kind === "parent" || o.kind === "kw")
+      .map((o) => {
+        const snippet = "FIELD(" + formulaQuote(o.label) + ")";
+        return `<button class="suggest src" type="button" data-insert="${escapeHtml(snippet)}" title="${escapeHtml(
+          o.key
+        )}">${escapeHtml(o.label)}</button>`;
+      })
+      .join("");
+    const bomBtns = (state.selectedBomDescs || [])
+      .map((d) => {
+        const sum = "BOM(" + formulaQuote(d) + ")";
+        const fields = BOM_FIELDS.map((f) => {
+          const snippet = "BOM(" + formulaQuote(d) + "," + formulaQuote(f.label.replace(/^\u5b50\u4ef6/, "") || f.label) + ")";
+          const short = f.label.replace(/^\u5b50\u4ef6/, "") || f.label;
+          return `<button class="suggest src" type="button" data-insert="${escapeHtml(snippet)}" title="${escapeHtml(
+            d + " · " + f.label
+          )}">${escapeHtml(short)}</button>`;
+        }).join("");
+        return `<span class="formula-bom-group"><button class="suggest src" type="button" data-insert="${escapeHtml(
+          sum
+        )}" title="该子件汇总">${escapeHtml(d)}</button>${fields}</span>`;
+      })
+      .join("");
     const fnBtns = MapFormula.HELP.map(
       (h) =>
         `<button class="suggest" type="button" data-snippet="${escapeHtml(h.snippet)}" title="${escapeHtml(
@@ -1309,8 +1399,11 @@
         )}">${escapeHtml(h.id)}</button>`
     ).join("");
     bar.innerHTML =
-      (cols.length ? `<span class="hint">插入列</span>${colBtns}` : "") +
-      `<span class="hint">插入函数</span>${fnBtns}`;
+      (cols.length ? `<span class="hint">插入导出列</span>${colBtns}` : "") +
+      (recBtns ? `<span class="formula-break"></span><span class="hint">插入识别字段</span>${recBtns}` : "") +
+      `<span class="formula-break"></span><span class="hint">插入子件</span>` +
+      (bomBtns || '<span class="muted">先在左侧勾选子件描述，再点公式框插入 BOM("描述","物料")</span>') +
+      `<span class="formula-break"></span><span class="hint">插入函数</span>${fnBtns}`;
     bar.querySelectorAll("[data-insert]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const el = formulaTarget();

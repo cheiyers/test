@@ -38,4 +38,10 @@ assert.strictEqual(parser.bomDescValue(led, "ENCLOSURE, PLASTIC 340x300x132MM"),
 assert.strictEqual(parser.bomDescValue(switchItem, "not a real description"), "");
 assert.strictEqual(parser.bomDescValue(switchItem, "  enclosure, plastic 340x300x132mm "), enclosure);
 
+assert.strictEqual(parser.normalizeBomFieldId("物料"), "bomMaterial");
+assert.strictEqual(parser.bomDescValue(switchItem, "RESIDUAL CURRENT BREAKER 1P+N C6A 30mA", "物料"), "KM52255324 \u00d72");
+assert.strictEqual(parser.bomDescValue(switchItem, "RESIDUAL CURRENT BREAKER 1P+N C6A 30mA", "数量"), "1.000 PC \u00d72");
+assert.ok(parser.matchingBom(switchItem, "LABEL, POSITION AND IDENTIFICATION").length >= 1);
+assert.ok(parser.bomDescValue(switchItem, "LABEL, POSITION AND IDENTIFICATION", "备注A").includes("20"));
+
 console.log("ok bom desc", list.length, residualVal, label);

@@ -220,7 +220,7 @@
           <button class="ghost" id="mapClear" type="button">清空映射</button>
         </div>
         <input id="mapCfgFile" type="file" accept="application/json,.json" hidden />
-        <p class="hint" style="margin:8px 0 4px">公式用 A、B、C 或 [列名] 引用本表其他列，THIS() 是本列映射值。函数可嵌套，例如 IF(AND(A&lt;&gt;&quot;&quot;,NUM(C)&gt;0),CONCAT(A,&quot;×&quot;,C),IFEMPTY(B,&quot;—&quot;))。先点公式框，再点下面的函数或列。</p>
+        <p class="hint" style="margin:8px 0 4px">公式可点识别字段或子件插入：FIELD("物料")、BOM("LED STRIP","物料")、BOMHAS("LED STRIP")。也可用 A、B、C 或 [列名] 引用本表其他列。映射列的下拉可直接选「子件按描述取字段」。先点公式框，再点下面的按钮。</p>
         <div class="formula-bar" id="formulaBar"></div>
         <div class="map-table-wrap">
           <table class="map-table">

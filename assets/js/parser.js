@@ -560,26 +560,108 @@
     return parts.join(" \u00b7 ");
   }
 
-  function bomDescValue(item, description) {
+  function normalizeBomFieldId(field) {
+    const s = String(field || "").trim();
+    if (!s) return "";
+    const compact = s.replace(/\s+/g, "").toLowerCase();
+    const aliases = {
+      全部: "",
+      汇总: "",
+      all: "",
+      pivot: "",
+      物料: "bomMaterial",
+      子件物料: "bomMaterial",
+      bommaterial: "bomMaterial",
+      material: "bomMaterial",
+      数量: "bomQty",
+      子件数量: "bomQty",
+      bomqty: "bomQty",
+      qty: "bomQty",
+      单位: "bomUnit",
+      unit: "bomUnit",
+      bomunit: "bomUnit",
+      pos: "bomPos",
+      子件pos: "bomPos",
+      bompos: "bomPos",
+      描述: "bomDescription",
+      子件描述: "bomDescription",
+      bomdescription: "bomDescription",
+      description: "bomDescription",
+      备注a: "remarkA",
+      remarka: "remarkA",
+      a: "remarkA",
+      备注b: "remarkB",
+      remarkb: "remarkB",
+      b: "remarkB",
+      备注c: "remarkC",
+      remarkc: "remarkC",
+      c: "remarkC",
+      备注d: "remarkD",
+      remarkd: "remarkD",
+      d: "remarkD",
+    };
+    if (Object.prototype.hasOwnProperty.call(aliases, compact)) return aliases[compact];
+    if (/^(bomPos|bomMaterial|bomQty|bomUnit|bomDescription|remark[A-D])$/.test(s)) return s;
+    return s;
+  }
+
+  function bomFieldValue(bom, field) {
+    if (!bom) return "";
+    const id = normalizeBomFieldId(field);
+    const rf = bom.remarkFields || {};
+    switch (id) {
+      case "bomPos":
+        return bom.pos || "";
+      case "bomMaterial":
+        return bom.material || "";
+      case "bomQty":
+        return ((bom.qty || "") + " " + (bom.unit || "")).trim();
+      case "bomUnit":
+        return bom.unit || "";
+      case "bomDescription":
+        return bom.description || "";
+      case "remarkA":
+        return rf.A || "";
+      case "remarkB":
+        return rf.B || "";
+      case "remarkC":
+        return rf.C || "";
+      case "remarkD":
+        return rf.D || "";
+      default:
+        return "";
+    }
+  }
+
+  function matchingBom(item, description) {
     const want = String(description || "")
       .trim()
       .toLowerCase();
-    if (!want) return "";
-    const counts = new Map();
-    ((item && item.bom) || []).forEach((b) => {
-      if (
+    if (!want) return [];
+    return ((item && item.bom) || []).filter(
+      (b) =>
         String(b.description || "")
           .trim()
-          .toLowerCase() !== want
-      )
-        return;
-      const s = formatBomPivot(b);
-      if (!s) return;
-      counts.set(s, (counts.get(s) || 0) + 1);
+          .toLowerCase() === want
+    );
+  }
+
+  function joinCounted(values) {
+    const counts = new Map();
+    (values || []).forEach((s) => {
+      const t = String(s == null ? "" : s).trim();
+      if (!t || t === "-") return;
+      counts.set(t, (counts.get(t) || 0) + 1);
     });
     return [...counts.entries()]
       .map(([s, n]) => (n > 1 ? s + " \u00d7" + n : s))
       .join(" | ");
+  }
+
+  function bomDescValue(item, description, field) {
+    const matches = matchingBom(item, description);
+    const fieldId = normalizeBomFieldId(field);
+    return joinCounted(matches.map((b) => (fieldId ? bomFieldValue(b, fieldId) : formatBomPivot(b))));
   }
 
   function collectSpecKeys(docs) {
@@ -637,6 +719,9 @@
     familyOf,
     specValueForKeyword,
     bomDescValue,
+    bomFieldValue,
+    normalizeBomFieldId,
+    matchingBom,
     formatBomPivot,
     itemSearchBlob,
     matchKeyword,
