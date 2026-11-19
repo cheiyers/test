@@ -251,6 +251,8 @@ table.map-table textarea {
 .formula-bar .suggest.src { font-family: inherit; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .formula-bar .formula-break { flex-basis: 100%; height: 0; }
 .formula-bom-group { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 4px 6px; border: 1px dashed var(--line); border-radius: 8px; background: #fafcf8; }
+.formula-bar .mat-codes-label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.formula-bar .mat-codes-label input { min-width: 260px; padding: 6px 8px; }
 table.map-table .letter { font-family: "IBM Plex Mono", ui-monospace, monospace; color: var(--muted); }
 .map-row-actions { display: flex; gap: 4px; }
 .map-row-actions button {

@@ -14,6 +14,10 @@
     存在几个: "BOMCOUNT",
     子件数: "BOMCOUNT",
     子件数量和: "BOMQTY",
+    含物料: "MATHAS",
+    物料几个: "MATCOUNT",
+    物料号几个: "MATCOUNT",
+    物料数量和: "MATQTY",
     如果空: "IFEMPTY",
     如果错误: "IFERROR",
   };
@@ -66,6 +70,10 @@
     { id: "BOMHAS", snippet: 'BOMHAS("LED STRIP")', hint: "该订单行是否包含该子件描述" },
     { id: "BOMCOUNT", snippet: 'BOMCOUNT("LED STRIP","主开关")', hint: "列出的子件里，有几种存在，数量就是几" },
     { id: "BOMQTY", snippet: 'BOMQTY("LED STRIP","主开关")', hint: "列出的子件数量相加（抽出数字）" },
+    { id: "MATHAS", snippet: 'MATHAS("KM52255324")', hint: "该订单行子件里是否有此物料号" },
+    { id: "MATCOUNT", snippet: 'MATCOUNT("KM52255324","KM51705345")', hint: "指定的物料号里，子件中存在几个，数量就是几" },
+    { id: "MATQTY", snippet: 'MATQTY("KM52255324","KM51705345")', hint: "指定物料号的子件数量相加" },
+    { id: "BOMMAT", snippet: 'BOMMAT("KM52255324","数量")', hint: "按物料号取该子件；第二参为数量/描述/备注等" },
   ];
 
   function letterToIndex(s) {
@@ -382,10 +390,18 @@
     return out;
   }
 
-  function bomPresent(ctx, desc) {
+  function sourceFilled(ctx, key) {
     if (!ctx || !ctx.sourceValue) return false;
-    var has = ctx.sourceValue("bd:" + String(desc || "").trim());
+    var has = ctx.sourceValue(key);
     return has != null && String(has).trim() !== "";
+  }
+
+  function bomPresent(ctx, desc) {
+    return sourceFilled(ctx, "bd:" + String(desc || "").trim());
+  }
+
+  function matPresent(ctx, material) {
+    return sourceFilled(ctx, "bm:" + String(material || "").trim());
   }
 
   function flattenBomNames(args) {
@@ -715,6 +731,34 @@
           if (!isNaN(qv)) total += qv;
         }
         return total;
+      }
+      case "BOMMAT": {
+        if (!ctx.sourceValue) return "";
+        var mat = toText(a0);
+        var mpart = a1 == null || a1 === "" ? "" : toText(a1);
+        return ctx.sourceValue(mpart ? "bm:" + mat + "::" + mpart : "bm:" + mat);
+      }
+      case "MATHAS": {
+        return matPresent(ctx, toText(a0));
+      }
+      case "MATCOUNT": {
+        var mats = flattenBomNames(args);
+        var mn = 0;
+        for (var mi = 0; mi < mats.length; mi++) {
+          if (matPresent(ctx, mats[mi])) mn += 1;
+        }
+        return mn;
+      }
+      case "MATQTY": {
+        if (!ctx.sourceValue) return 0;
+        var mq = flattenBomNames(args);
+        var mtotal = 0;
+        for (var mj = 0; mj < mq.length; mj++) {
+          var mv = toNumber(ctx.sourceValue("bm:" + mq[mj] + "::数量"));
+          if (isError(mv)) return mv;
+          if (!isNaN(mv)) mtotal += mv;
+        }
+        return mtotal;
       }
       default:
         return "#NAME?";

@@ -78,6 +78,7 @@
     exportMapPresets: [],
     activeExportMapId: "",
     lastFormulaId: "",
+    matCodes: "",
   };
 
   const $ = (sel) => document.querySelector(sel);
@@ -449,7 +450,7 @@
   function resolveSourceKey(name) {
     const want = String(name == null ? "" : name).trim();
     if (!want) return "";
-    if (/^(p|b|k):/.test(want) || want.indexOf("bd:") === 0) return want;
+    if (/^(p|b|k):/.test(want) || want.indexOf("bd:") === 0 || want.indexOf("bm:") === 0) return want;
     const opts = mapColumnOptions();
     const exact = opts.find((o) => o.key === want || o.label === want);
     if (exact) return exact.key;
@@ -495,6 +496,10 @@
     if (colKey.startsWith("bd:")) {
       const parsed = splitBomDescKey(colKey);
       return KonePoParser.bomDescValue(row.item, parsed.desc, parsed.field);
+    }
+    if (colKey.startsWith("bm:")) {
+      const parsed = splitBomDescKey(colKey);
+      return KonePoParser.bomMaterialValue(row.item, parsed.desc, parsed.field);
     }
     return "";
   }
@@ -1117,7 +1122,7 @@
   function mappedGetValue(row, src) {
     const key = resolveSourceKey(src);
     if (!key) return "";
-    if (/^(p|b|k):/.test(key) || key.indexOf("bd:") === 0) {
+    if (/^(p|b|k):/.test(key) || key.indexOf("bd:") === 0 || key.indexOf("bm:") === 0) {
       return processValue(key, rawFromRow(row, key));
     }
     return processValue(src, rawFromRow(row, src));
@@ -1422,6 +1427,14 @@
            "BOMQTY(" + descArgs + ")"
          )}" title="勾选的子件数量相加">数量合计</button>`
       : "";
+    const matRow = `<label class="mat-codes-label">指定物料号
+      <input id="matCountCodes" type="text" value="${escapeHtml(
+        state.matCodes || ""
+      )}" placeholder="KM52255324,KM51705345" />
+    </label>
+    <button class="suggest src" type="button" data-mat-fn="MATCOUNT" title="指定物料号在子件中存在几个，结果就是几">这些物料有几个</button>
+    <button class="suggest src" type="button" data-mat-fn="MATQTY" title="指定物料号的子件数量相加">这些物料数量合计</button>
+    <button class="suggest src" type="button" data-mat-fn="MATHAS" title="是否包含第一个物料号">含此物料</button>`;
     const fnBtns = MapFormula.HELP.map(
       (h) =>
         `<button class="suggest" type="button" data-snippet="${escapeHtml(h.snippet)}" title="${escapeHtml(
@@ -1434,6 +1447,7 @@
       `<span class="formula-break"></span><span class="hint">插入子件</span>` +
       (countBtns ? countBtns : "") +
       (bomBtns || '<span class="muted">先在左侧勾选子件描述，再点公式框插入 BOM("描述","物料")</span>') +
+      `<span class="formula-break"></span><span class="hint">按物料号</span>${matRow}` +
       `<span class="formula-break"></span><span class="hint">插入函数</span>${fnBtns}`;
     bar.querySelectorAll("[data-insert]").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -1447,6 +1461,24 @@
         const el = formulaTarget();
         if (!el) return toast("请先点选某一列的公式框");
         insertAtCursor(el, btn.dataset.snippet);
+      });
+    });
+    const matInput = $("#matCountCodes");
+    if (matInput) {
+      matInput.addEventListener("input", () => {
+        state.matCodes = matInput.value;
+      });
+    }
+    bar.querySelectorAll("[data-mat-fn]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const el = formulaTarget();
+        if (!el) return toast("请先点选某一列的公式框");
+        const raw = (matInput && matInput.value) || state.matCodes || "";
+        const parts = raw.split(/[,，;；\s]+/).map((s) => s.trim()).filter(Boolean);
+        if (!parts.length) return toast("先在「指定物料号」里填物料号，用逗号分隔");
+        const fn = btn.dataset.matFn;
+        const args = (fn === "MATHAS" ? parts.slice(0, 1) : parts).map(formulaQuote).join(",");
+        insertAtCursor(el, fn + "(" + args + ")");
       });
     });
   }

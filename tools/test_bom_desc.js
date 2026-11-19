@@ -43,5 +43,8 @@ assert.strictEqual(parser.bomDescValue(switchItem, "RESIDUAL CURRENT BREAKER 1P+
 assert.strictEqual(parser.bomDescValue(switchItem, "RESIDUAL CURRENT BREAKER 1P+N C6A 30mA", "数量"), "1.000 PC \u00d72");
 assert.ok(parser.matchingBom(switchItem, "LABEL, POSITION AND IDENTIFICATION").length >= 1);
 assert.ok(parser.bomDescValue(switchItem, "LABEL, POSITION AND IDENTIFICATION", "备注A").includes("20"));
+assert.ok(parser.matchingBomByMaterial(switchItem, "KM52255324").length >= 1);
+assert.strictEqual(parser.bomMaterialValue(switchItem, "KM52255324", "物料"), "KM52255324 \u00d72");
+assert.strictEqual(parser.bomMaterialValue(switchItem, "NO-SUCH-MAT"), "");
 
 console.log("ok bom desc", list.length, residualVal, label);

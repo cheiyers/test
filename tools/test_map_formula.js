@@ -152,5 +152,20 @@ assert.strictEqual(
     .body[0][0],
   "1"
 );
+const matGet = (row, src) => {
+  if (src === "bm:KMLED1") return "KMLED1 · 2 PC";
+  if (src === "bm:KMLED1::数量") return "2 PC";
+  if (src === "bm:KMSW1") return "KMSW1 · 1 PC";
+  if (src === "bm:KMSW1::数量") return "1 PC";
+  if (src === "bm:NONE") return "";
+  return "";
+};
+const matCtx = { sourceValue: (n) => matGet(srcRows[0], n) };
+assert.strictEqual(F.evaluate('MATCOUNT("KMLED1","KMSW1","NONE")', matCtx), 2);
+assert.strictEqual(F.evaluate('物料几个("KMLED1,NONE")', matCtx), 1);
+assert.strictEqual(F.evaluate('MATHAS("KMLED1")', matCtx), true);
+assert.strictEqual(F.evaluate('MATHAS("NONE")', matCtx), false);
+assert.strictEqual(F.evaluate('MATQTY("KMLED1","KMSW1")', matCtx), 3);
+assert.strictEqual(F.evaluate('BOMMAT("KMLED1","数量")', matCtx), "2 PC");
 
 console.log("ok map formula");

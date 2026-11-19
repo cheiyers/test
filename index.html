@@ -220,7 +220,7 @@
           <button class="ghost" id="mapClear" type="button">清空映射</button>
         </div>
         <input id="mapCfgFile" type="file" accept="application/json,.json" hidden />
-        <p class="hint" style="margin:8px 0 4px">公式可点识别字段或子件插入：FIELD("物料")、BOM("LED STRIP","物料")、BOMHAS("LED STRIP")。BOMCOUNT("子件A","子件B") 是这几个里存在几种，结果就是几；BOMQTY 把它们的数量加起来。也可用 A、B、C 或 [列名] 引用本表其他列。先点公式框，再点下面的按钮。</p>
+        <p class="hint" style="margin:8px 0 4px">公式可点识别字段或子件插入。BOMCOUNT 按子件描述计数；MATCOUNT("KM1","KM2") 看该订单行子件里指定物料号存在几个，数量就是几；MATQTY 把这些物料的数量相加。先点公式框，再点下面的按钮。</p>
         <div class="formula-bar" id="formulaBar"></div>
         <div class="map-table-wrap">
           <table class="map-table">
